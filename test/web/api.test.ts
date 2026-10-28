@@ -144,10 +144,11 @@ describe('api client review', () => {
   });
 
   it('submitReview posts the event and body and returns the url', async () => {
-    const fetchMock = serve(200, { url: 'https://github.com/r' });
+    const fetchMock = serve(200, { url: 'https://github.com/r', sent: [1, 2] });
 
     expect(await submitReview('acme/loans', 42, 'APPROVE', 'LGTM', 'h1')).toEqual({
       url: 'https://github.com/r',
+      sent: [1, 2],
     });
 
     const { url, init, headers } = sent(fetchMock);

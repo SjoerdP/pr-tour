@@ -559,7 +559,10 @@ describe('POST /review/submit', () => {
     });
 
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ url: 'https://github.com/acme/greet/pull/7#review-1' });
+    expect(await res.json()).toEqual({
+      url: 'https://github.com/acme/greet/pull/7#review-1',
+      sent: [sent.id],
+    });
     expect(fakes.review.submitReview).toHaveBeenCalledWith({
       prId: 'PR_7',
       commitOid: HEAD,

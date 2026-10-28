@@ -115,6 +115,9 @@ export const SubmitBodySchema = z.object({
 export const DraftPatchSchema = z.object({ body });
 
 export type SubmitBody = z.infer<typeof SubmitBodySchema>;
+
+/** A sent review: its URL on GitHub and the ids of the drafts it sent (now cleared). */
+export type SubmitResponse = { url: string; sent: number[] };
 export type DraftPatch = z.infer<typeof DraftPatchSchema>;
 
 /** Both placements keep the selected lines; a file-level one also has the quoted code. */

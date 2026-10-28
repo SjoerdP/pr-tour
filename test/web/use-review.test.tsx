@@ -164,7 +164,10 @@ describe('useReview', () => {
         loads += 1;
         return { status: 200, body: loads === 1 ? review() : review({ drafts: [] }) };
       },
-      [`POST ${BASE}/review/submit`]: () => ({ status: 200, body: { url: 'https://gh/r/1' } }),
+      [`POST ${BASE}/review/submit`]: () => ({
+        status: 200,
+        body: { url: 'https://gh/r/1', sent: [1, 2, 3] },
+      }),
     });
     const { result } = await loaded();
 
@@ -173,7 +176,7 @@ describe('useReview', () => {
       out = await result.current.submit('APPROVE', 'LGTM', 'h1');
     });
 
-    expect(out).toEqual({ url: 'https://gh/r/1' });
+    expect(out).toEqual({ url: 'https://gh/r/1', sent: [1, 2, 3] });
     await waitFor(() => expect(result.current.drafts).toEqual([]));
     expect(result.current.submitError).toBeNull();
     const submitCall = fetchMock.mock.calls.find(([url]) => url.endsWith('/review/submit'));
@@ -182,6 +185,31 @@ describe('useReview', () => {
       body: 'LGTM',
       headSha: 'h1',
     });
+  });
+
+  it('submit success drops the sent drafts even when the reload fails', async () => {
+    let loads = 0;
+    serve({
+      [`GET ${BASE}/review`]: () => {
+        loads += 1;
+        return loads === 1
+          ? { status: 200, body: review() }
+          : { status: 500, body: { error: 'x' } };
+      },
+      [`POST ${BASE}/review/submit`]: () => ({
+        status: 200,
+        body: { url: 'https://gh/r/1', sent: [1, 3] },
+      }),
+    });
+    const { result } = await loaded();
+
+    await act(async () => {
+      await result.current.submit('COMMENT', '', 'h1');
+    });
+
+    expect(loads).toBe(2);
+    expect(result.current.error).toBe('x');
+    expect(result.current.drafts.map((d) => d.id)).toEqual([2]);
   });
 
   it('submit failure keeps the drafts and exposes the error and failed draft', async () => {
@@ -228,8 +256,8 @@ describe('useReview', () => {
     expect(submits).toHaveLength(1);
 
     await act(async () => {
-      finish({ status: 200, body: { url: 'https://gh/r/2' } });
-      expect(await first).toEqual({ url: 'https://gh/r/2' });
+      finish({ status: 200, body: { url: 'https://gh/r/2', sent: [] } });
+      expect(await first).toEqual({ url: 'https://gh/r/2', sent: [] });
     });
     await waitFor(() => expect(result.current.submitting).toBe(false));
   });
@@ -294,8 +322,8 @@ describe('useReview', () => {
     expect(hook.result.current.submitting).toBe(false);
 
     await act(async () => {
-      finishSubmit({ status: 200, body: { url: 'https://gh/r/3' } });
-      expect(await submitted).toEqual({ url: 'https://gh/r/3' });
+      finishSubmit({ status: 200, body: { url: 'https://gh/r/3', sent: [] } });
+      expect(await submitted).toEqual({ url: 'https://gh/r/3', sent: [] });
     });
     await act(async () => {
       finishOther({ status: 200, body: review({ threads: [thread('o1', 'o.ts')] }) });
@@ -392,7 +420,10 @@ describe('useReview', () => {
           ? { status: 200, body: review() }
           : { status: 500, body: { error: 'GitHub is down' } };
       },
-      [`POST ${BASE}/review/submit`]: () => ({ status: 200, body: { url: 'https://gh/r/4' } }),
+      [`POST ${BASE}/review/submit`]: () => ({
+        status: 200,
+        body: { url: 'https://gh/r/4', sent: [] },
+      }),
     });
     const { result } = await loaded();
 
@@ -401,7 +432,7 @@ describe('useReview', () => {
       out = await result.current.submit('COMMENT', 'ok', 'h1');
     });
 
-    expect(out).toEqual({ url: 'https://gh/r/4' });
+    expect(out).toEqual({ url: 'https://gh/r/4', sent: [] });
     expect(result.current.state).toBe('ready');
     expect(result.current.error).toBe('GitHub is down');
     expect(result.current.threads).toHaveLength(2);

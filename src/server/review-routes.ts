@@ -12,6 +12,7 @@ import {
   type NewDraft,
   type ReviewResponse,
   type StoredNewDraft,
+  type SubmitResponse,
 } from '../shared/review.js';
 import type { Tour } from '../shared/tour.js';
 import { findFileDiff, parseDiff } from './diff.js';
@@ -176,12 +177,10 @@ export function registerReviewRoutes(app: Hono, deps: ReviewRouteDeps): void {
         console.error(`Submitting the review of ${key} failed:\n${err.stack ?? err.message}`);
         return c.json({ error: err.message, failedDraftId: err.failedDraftId }, 502);
       }
-      store.clearDrafts(
-        repo,
-        pr,
-        drafts.map((d) => d.id),
-      );
-      return c.json({ url });
+      const sent = drafts.map((d) => d.id);
+      store.clearDrafts(repo, pr, sent);
+      const answer: SubmitResponse = { url, sent };
+      return c.json(answer);
     } finally {
       submitting.delete(key);
     }

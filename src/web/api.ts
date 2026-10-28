@@ -2,7 +2,13 @@
 
 import type { InboxResponse, Job, PrResponse } from '../shared/api.js';
 import type { FileDiff } from '../shared/diff.js';
-import type { Draft, NewDraft, ReviewEvent, ReviewResponse } from '../shared/review.js';
+import type {
+  Draft,
+  NewDraft,
+  ReviewEvent,
+  ReviewResponse,
+  SubmitResponse,
+} from '../shared/review.js';
 
 /**
  * A failed API call: the server's short `error` message and the HTTP status.
@@ -137,7 +143,8 @@ export function deleteDraft(repo: string, pr: number, id: number): Promise<void>
 }
 
 /**
- * Sends the review with all drafts to GitHub; returns the review's URL. `headSha` is the head
+ * Sends the review with all drafts to GitHub; returns the review's URL and the ids of the
+ * drafts it sent. `headSha` is the head
  * of the tour the page shows: the server answers 409 when its tour has changed since.
  */
 export function submitReview(
@@ -146,7 +153,7 @@ export function submitReview(
   event: ReviewEvent,
   body: string,
   headSha: string,
-): Promise<{ url: string }> {
+): Promise<SubmitResponse> {
   return request(`${prPath(repo, pr)}/review/submit`, withJson('POST', { event, body, headSha }));
 }
 

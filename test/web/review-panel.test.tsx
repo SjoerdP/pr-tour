@@ -307,7 +307,7 @@ describe('ReviewPanel: submit', () => {
 
   it('on success says "Review sent" with a link; following it closes the panel', async () => {
     const review = fakeReview({ drafts: [comment()] });
-    vi.mocked(review.submit).mockResolvedValue({ url: 'https://github.com/r/1' });
+    vi.mocked(review.submit).mockResolvedValue({ url: 'https://github.com/r/1', sent: [7] });
     const props = renderPanel(review);
     fireEvent.click(submitButton());
 
@@ -388,7 +388,7 @@ describe('ReviewPanel: submit', () => {
 
   it('after "Review sent" there is no hint about an empty review', async () => {
     const review = fakeReview();
-    vi.mocked(review.submit).mockResolvedValue({ url: 'https://github.com/r/1' });
+    vi.mocked(review.submit).mockResolvedValue({ url: 'https://github.com/r/1', sent: [7] });
     renderPanel(review);
     fireEvent.change(screen.getByRole('textbox', { name: 'Summary' }), {
       target: { value: 'Fine.' },

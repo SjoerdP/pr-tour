@@ -114,7 +114,9 @@ Plan 2 lets the user do the GitHub review inside a tour. The pieces:
 `POST review/submit` with `{ event, body, headSha }`:
 
 1. A `headSha` other than the stored tour's is refused with 409. A per-PR lock (`submitting` set) answers 409 to a second submit while one runs.
-2. Takes the current drafts. These, and only these, are cleared on success.
+2. Takes the current drafts. These, and only these, are cleared on success; the
+   answer is `{ url, sent }` with their ids, so the web drops them even when its
+   reload fails.
 3. Reads `viewerIsAuthor`; on the user's own PR only `COMMENT` is allowed (400).
 4. `ReviewGitHub.submitReview` runs `addPullRequestReview` on the tour's `headSha`
    (a pending review), then one `addPullRequestReviewThread` per comment draft or

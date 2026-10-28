@@ -6,6 +6,7 @@ import type {
   ReviewEvent,
   ReviewResponse,
   ReviewThread,
+  SubmitResponse,
 } from '../shared/review.js';
 import {
   addDraft,
@@ -46,11 +47,11 @@ export type ReviewState = {
   update: (id: number, body: string) => Promise<void>;
   remove: (id: number) => Promise<void>;
   /**
-   * Sends the review, made on the tour with `headSha`. Returns its URL and reloads, or returns
-   * null and sets `submitError`. Also returns null, without a request, while a submit is
+   * Sends the review, made on the tour with `headSha`. Returns its URL and the sent draft ids,
+   * drops those drafts and reloads; or returns null and sets `submitError`. Also returns null, without a request, while a submit is
    * already in flight.
    */
-  submit: (event: ReviewEvent, body: string, headSha: string) => Promise<{ url: string } | null>;
+  submit: (event: ReviewEvent, body: string, headSha: string) => Promise<SubmitResponse | null>;
   submitting: boolean;
   submitError: SubmitError | null;
   /** Resolves or unresolves a thread on GitHub; rejects with the server's error. */
@@ -153,7 +154,13 @@ export function useReview(repo: string, pr: number): ReviewState {
     try {
       const result = await submitReview(repo, pr, event, body, headSha);
       // After a switch to another PR, reloading this one would cancel that PR's load.
-      if (currentKey.current === k) await reload();
+      if (currentKey.current === k) {
+        // The sent drafts are gone on the server: drop them here too, so a failed reload
+        // cannot leave them looking unsent.
+        const sent = new Set(result.sent);
+        patch((d) => ({ ...d, drafts: d.drafts.filter((x) => !sent.has(x.id)) }));
+        await reload();
+      }
       return result;
     } catch (err) {
       const error = {
