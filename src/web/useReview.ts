@@ -23,7 +23,10 @@ export type SubmitError = { message: string; failedDraftId: number | null };
 
 export type ReviewState = {
   state: 'loading' | 'ready' | 'error';
-  /** Set when `state` is `error`. */
+  /**
+   * Why loading failed. Set when `state` is `error`, or when `state` is `ready` and a
+   * reload failed (the data from before stays).
+   */
   error?: string;
   viewerIsAuthor: boolean;
   /** Head of the current tour; null without a tour (or before loading). */
@@ -54,7 +57,7 @@ export type ReviewState = {
 /** A load result, for the PR named by `key` (`repo#pr`). */
 type Load =
   | { key: string; state: 'error'; error: string }
-  | { key: string; state: 'ready'; data: ReviewResponse };
+  | { key: string; state: 'ready'; data: ReviewResponse; error?: string };
 
 const NO_CI: CiStatus = { state: 'none', failing: null };
 
@@ -68,11 +71,19 @@ export function useReview(repo: string, pr: number): ReviewState {
   const [stored, setLoad] = useState<Load | null>(null);
   // A result for another PR counts as still loading this one.
   const load = stored?.key === key ? stored : ({ state: 'loading' } as const);
-  const [submitting, setSubmitting] = useState(false);
-  const [submitError, setSubmitError] = useState<SubmitError | null>(null);
-  const inFlight = useRef(false);
-  // Which load is current: answers to older loads are dropped.
+  // PRs with a submit in flight; the ref blocks a second submit within one tick.
+  const [sending, setSending] = useState<string[]>([]);
+  const inFlight = useRef(new Set<string>());
+  const [failed, setFailed] = useState<{ key: string; error: SubmitError } | null>(null);
+  const submitting = sending.includes(key);
+  const submitError = failed?.key === key ? failed.error : null;
+  // Which load is current: answers to older loads, or loads older than a change, are dropped.
   const loadId = useRef(0);
+  // The PR shown now, for async work that started on another one.
+  const currentKey = useRef(key);
+  useEffect(() => {
+    currentKey.current = key;
+  }, [key]);
 
   // Loads the review into state; answers to an older load than the latest are dropped.
   const fetchReview = useCallback((): Promise<void> => {
@@ -83,7 +94,14 @@ export function useReview(repo: string, pr: number): ReviewState {
         if (id === loadId.current) setLoad({ key: k, state: 'ready', data });
       },
       (err: unknown) => {
-        if (id === loadId.current) setLoad({ key: k, state: 'error', error: errorText(err) });
+        if (id !== loadId.current) return;
+        const error = errorText(err);
+        // A failed reload keeps the data it has and only reports the error.
+        setLoad((prev) =>
+          prev?.key === k && prev.state === 'ready'
+            ? { ...prev, error }
+            : { key: k, state: 'error', error },
+        );
       },
     );
   }, [repo, pr]);
@@ -95,6 +113,9 @@ export function useReview(repo: string, pr: number): ReviewState {
   const reload = fetchReview;
 
   function patch(change: (data: ReviewResponse) => ReviewResponse) {
+    // A load that started before this change would undo it: drop it. Only while ready, so
+    // the first load is never dropped (there is nothing to change before it).
+    if (stored?.key === key && stored.state === 'ready') loadId.current++;
     setLoad((prev) =>
       prev?.key === key && prev.state === 'ready' ? { ...prev, data: change(prev.data) } : prev,
     );
@@ -116,23 +137,26 @@ export function useReview(repo: string, pr: number): ReviewState {
   }
 
   async function submit(event: ReviewEvent, body: string) {
-    if (inFlight.current) return null;
-    inFlight.current = true;
-    setSubmitting(true);
-    setSubmitError(null);
+    const k = key;
+    if (inFlight.current.has(k)) return null;
+    inFlight.current.add(k);
+    setSending((prev) => [...prev, k]);
+    setFailed((prev) => (prev?.key === k ? null : prev));
     try {
       const result = await submitReview(repo, pr, event, body);
-      await reload();
+      // After a switch to another PR, reloading this one would cancel that PR's load.
+      if (currentKey.current === k) await reload();
       return result;
     } catch (err) {
-      setSubmitError({
+      const error = {
         message: errorText(err),
         failedDraftId: err instanceof ApiError ? (err.failedDraftId ?? null) : null,
-      });
+      };
+      setFailed({ key: k, error });
       return null;
     } finally {
-      inFlight.current = false;
-      setSubmitting(false);
+      inFlight.current.delete(k);
+      setSending((prev) => prev.filter((x) => x !== k));
     }
   }
 
@@ -150,7 +174,7 @@ export function useReview(repo: string, pr: number): ReviewState {
 
   return {
     state: load.state,
-    ...(load.state === 'error' ? { error: load.error } : {}),
+    ...(load.state !== 'loading' && load.error !== undefined ? { error: load.error } : {}),
     viewerIsAuthor: data?.viewerIsAuthor ?? false,
     headSha: data?.headSha ?? null,
     threads,

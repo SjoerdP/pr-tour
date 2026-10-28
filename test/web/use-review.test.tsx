@@ -70,6 +70,11 @@ function serve(routes: Record<string, Route>) {
 
 const BASE = '/api/pr/acme/loans/42';
 
+/** Lets pending responses and their state updates land. */
+function settled(): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, 0));
+}
+
 async function loaded() {
   const hook = renderHook(() => useReview('acme/loans', 42));
   await waitFor(() => expect(hook.result.current.state).toBe('ready'));
@@ -255,5 +260,145 @@ describe('useReview', () => {
     await act(() => result.current.reload());
 
     expect(result.current.threadsFor('c.ts').map((t) => t.id)).toEqual(['t9']);
+  });
+
+  it('a submit that ends after a PR switch leaves the new PR alone', async () => {
+    const OTHER = '/api/pr/acme/other/7';
+    let finishSubmit: (r: Reply) => void = () => {};
+    let finishOther: (r: Reply) => void = () => {};
+    const fetchMock = serve({
+      [`GET ${BASE}/review`]: () => ({ status: 200, body: review() }),
+      [`POST ${BASE}/review/submit`]: () =>
+        new Promise<Reply>((resolve) => (finishSubmit = resolve)),
+      [`GET ${OTHER}/review`]: () => new Promise<Reply>((resolve) => (finishOther = resolve)),
+    });
+    const hook = renderHook(({ repo, pr }) => useReview(repo, pr), {
+      initialProps: { repo: 'acme/loans', pr: 42 },
+    });
+    await waitFor(() => expect(hook.result.current.state).toBe('ready'));
+
+    let submitted: Promise<{ url: string } | null> = Promise.resolve(null);
+    act(() => {
+      submitted = hook.result.current.submit('COMMENT', 'a');
+    });
+    await waitFor(() => expect(hook.result.current.submitting).toBe(true));
+
+    hook.rerender({ repo: 'acme/other', pr: 7 });
+    expect(hook.result.current.state).toBe('loading');
+    // The submit belongs to the other PR.
+    expect(hook.result.current.submitting).toBe(false);
+
+    await act(async () => {
+      finishSubmit({ status: 200, body: { url: 'https://gh/r/3' } });
+      expect(await submitted).toEqual({ url: 'https://gh/r/3' });
+    });
+    await act(async () => {
+      finishOther({ status: 200, body: review({ threads: [thread('o1', 'o.ts')] }) });
+      await settled();
+    });
+
+    await waitFor(() => expect(hook.result.current.state).toBe('ready'));
+    expect(hook.result.current.threadsFor('o.ts').map((t) => t.id)).toEqual(['o1']);
+    // No reload of the old PR after the switch.
+    const oldLoads = fetchMock.mock.calls.filter(([url]) => url === `${BASE}/review`);
+    expect(oldLoads).toHaveLength(1);
+  });
+
+  it('a submit error stays with its PR', async () => {
+    const OTHER = '/api/pr/acme/other/7';
+    serve({
+      [`GET ${BASE}/review`]: () => ({ status: 200, body: review() }),
+      [`POST ${BASE}/review/submit`]: () => ({
+        status: 502,
+        body: { error: 'No', failedDraftId: 1 },
+      }),
+      [`GET ${OTHER}/review`]: () => ({ status: 200, body: review() }),
+    });
+    const hook = renderHook(({ repo, pr }) => useReview(repo, pr), {
+      initialProps: { repo: 'acme/loans', pr: 42 },
+    });
+    await waitFor(() => expect(hook.result.current.state).toBe('ready'));
+    await act(async () => {
+      await hook.result.current.submit('COMMENT', '');
+    });
+    expect(hook.result.current.submitError).not.toBeNull();
+
+    hook.rerender({ repo: 'acme/other', pr: 7 });
+
+    expect(hook.result.current.submitError).toBeNull();
+  });
+
+  it('a load that ends after a PR switch is dropped', async () => {
+    const OTHER = '/api/pr/acme/other/7';
+    let finishOld: (r: Reply) => void = () => {};
+    serve({
+      [`GET ${BASE}/review`]: () => new Promise<Reply>((resolve) => (finishOld = resolve)),
+      [`GET ${OTHER}/review`]: () => ({
+        status: 200,
+        body: review({ threads: [thread('o1', 'o.ts')] }),
+      }),
+    });
+    const hook = renderHook(({ repo, pr }) => useReview(repo, pr), {
+      initialProps: { repo: 'acme/loans', pr: 42 },
+    });
+
+    hook.rerender({ repo: 'acme/other', pr: 7 });
+    await waitFor(() => expect(hook.result.current.state).toBe('ready'));
+    await act(async () => {
+      finishOld({ status: 200, body: review() });
+      await settled();
+    });
+
+    expect(hook.result.current.threads.map((t) => t.id)).toEqual(['o1']);
+  });
+
+  it('a load that started before a change does not undo it', async () => {
+    let loads = 0;
+    let finishReload: (r: Reply) => void = () => {};
+    serve({
+      [`GET ${BASE}/review`]: () => {
+        loads += 1;
+        if (loads === 1) return { status: 200, body: review({ drafts: [] }) };
+        return new Promise<Reply>((resolve) => (finishReload = resolve));
+      },
+      [`POST ${BASE}/drafts`]: () => ({ status: 201, body: comment(9, 'a.ts') }),
+    });
+    const { result } = await loaded();
+
+    let reloading: Promise<void> = Promise.resolve();
+    act(() => {
+      reloading = result.current.reload();
+    });
+    await act(() => result.current.add({ kind: 'reply', threadId: 't1', body: 'x' }));
+    await act(async () => {
+      finishReload({ status: 200, body: review({ drafts: [] }) });
+      await reloading;
+    });
+
+    expect(result.current.drafts.map((d) => d.id)).toEqual([9]);
+  });
+
+  it('a failed reload after a submit keeps the data and shows the error', async () => {
+    let loads = 0;
+    serve({
+      [`GET ${BASE}/review`]: () => {
+        loads += 1;
+        return loads === 1
+          ? { status: 200, body: review() }
+          : { status: 500, body: { error: 'GitHub is down' } };
+      },
+      [`POST ${BASE}/review/submit`]: () => ({ status: 200, body: { url: 'https://gh/r/4' } }),
+    });
+    const { result } = await loaded();
+
+    let out: { url: string } | null = null;
+    await act(async () => {
+      out = await result.current.submit('COMMENT', 'ok');
+    });
+
+    expect(out).toEqual({ url: 'https://gh/r/4' });
+    expect(result.current.state).toBe('ready');
+    expect(result.current.error).toBe('GitHub is down');
+    expect(result.current.threads).toHaveLength(2);
   });
 });
