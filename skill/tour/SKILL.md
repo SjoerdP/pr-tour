@@ -38,6 +38,9 @@ as a pr-tour tour: the reviewer reads it next to the code, in the order the code
      on an older version will be sent as file-level comments. Ask if you should replace
      the tour. Only if the user says yes, run the same import again with `--replace`.
      Never pass `--replace` without the user's yes.
+   - That yes holds for the rest of this /tour run. The drafts are still there, so every
+     later import in this run (a retry after a zod error or problems) also needs
+     `--replace`. Do not ask again.
 6. **Open it.** Run `pr-tour open <owner/name>#<number>`. It starts pr-tour in the
    background if it is not running yet, opens the browser and exits; it does not keep
    running in your shell. Give the user the URL it prints.
