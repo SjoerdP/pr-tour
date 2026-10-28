@@ -3,6 +3,7 @@ import { BuildStatus } from './BuildStatus.js';
 import { homesInOrder, nextFlowStart, previousFlowStart } from './homes.js';
 import { Outline } from './Outline.js';
 import { StepPane } from './StepPane.js';
+import { TopBar } from './TopBar.js';
 import { useKeys } from './useKeys.js';
 import { useSeenMarks } from './useSeenMarks.js';
 import { useTourBuild } from './useTourBuild.js';
@@ -87,71 +88,73 @@ export function TourView({ repo, pr }: { repo: string; pr: number }) {
 
   const { pr: summary, outdated } = load.data;
   const currentHome = homes.find((h) => h.id === current);
+  const notices = (tour && outdated) || build.state !== 'idle' || !tour || seenError;
 
   return (
-    <main className="page page-wide">
-      <header className="tour-header">
-        <p>
-          <a href="/">← Inbox</a>
-        </p>
-        <h1 className="page-title">
-          <span className="pr-number">
-            {summary.repo}#{summary.number}
-          </span>{' '}
-          <a href={summary.url}>{summary.title}</a>
-        </h1>
-        {tour && <p className="tour-summary">{tour.summary}</p>}
-      </header>
+    <div className="tour-app">
+      <TopBar pr={summary} tour={tour} isSeen={isSeen} />
 
-      {tour && outdated && (
-        <div className="banner">
-          <span>New commits since this tour was built</span>{' '}
-          <button
-            type="button"
-            onClick={startBuild}
-            disabled={build.state === 'starting' || build.state === 'running'}
-          >
-            Rebuild tour
-          </button>
-        </div>
-      )}
-      {tour ? (
-        build.state !== 'idle' && <BuildStatus build={build} onRetry={startBuild} />
-      ) : (
-        <section className="build-panel">
-          <p>There is no tour for this pull request yet.</p>
-          {build.state === 'idle' ? (
-            <button type="button" onClick={startBuild}>
-              Build tour
-            </button>
-          ) : (
-            <BuildStatus build={build} onRetry={startBuild} />
+      {notices && (
+        <div className="notices">
+          {tour && outdated && (
+            <div className="banner">
+              <span>New commits since this tour was built</span>
+              <button
+                type="button"
+                onClick={startBuild}
+                disabled={build.state === 'starting' || build.state === 'running'}
+              >
+                Rebuild tour
+              </button>
+            </div>
           )}
-        </section>
-      )}
-
-      {seenError && (
-        <p className="error seen-error" role="status">
-          {seenError}
-        </p>
+          {tour ? (
+            build.state !== 'idle' && <BuildStatus build={build} onRetry={startBuild} />
+          ) : (
+            <section className="build-panel">
+              <p>There is no tour for this pull request yet.</p>
+              {build.state === 'idle' ? (
+                <button type="button" className="primary" onClick={startBuild}>
+                  Build tour
+                </button>
+              ) : (
+                <BuildStatus build={build} onRetry={startBuild} />
+              )}
+            </section>
+          )}
+          {seenError && (
+            <p className="error seen-error" role="status">
+              {seenError}
+            </p>
+          )}
+        </div>
       )}
 
       {tour && current !== null && currentHome && (
-        <div className="tour-layout">
-          <Outline tour={tour} currentId={current} isSeen={isSeen} onSelect={goTo} />
-          <StepPane
-            repo={repo}
-            pr={pr}
+        <div className="tour-body">
+          <Outline
             tour={tour}
-            home={currentHome}
-            jump={jump}
-            onJump={(file, line) => setJump({ file, line })}
-            onBack={() => setJump(null)}
-            onOpenHome={goTo}
-            nav={nav}
+            currentId={current}
+            isSeen={isSeen}
+            onSelect={goTo}
+            previousFlow={nav.previousFlow}
+            nextFlow={nav.nextFlow}
           />
+          <main className="tour-main">
+            <StepPane
+              repo={repo}
+              pr={pr}
+              tour={tour}
+              home={currentHome}
+              jump={jump}
+              onJump={(file, line) => setJump({ file, line })}
+              onBack={() => setJump(null)}
+              onOpenHome={goTo}
+              nav={nav}
+            />
+          </main>
         </div>
       )}
-    </main>
+    </div>
   );
 }

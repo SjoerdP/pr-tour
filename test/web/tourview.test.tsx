@@ -4,6 +4,7 @@ import type { Job, PrResponse, PrSummary } from '../../src/shared/api.js';
 import type { OtherGroup, Tour } from '../../src/shared/tour.js';
 import * as api from '../../src/web/api.js';
 import { TourView } from '../../src/web/TourView.js';
+import { outline, outlineItem } from './outline-helpers.js';
 
 vi.mock('../../src/web/api.js', () => ({
   getPr: vi.fn(),
@@ -152,15 +153,6 @@ function withGroups(tour: Tour, ...groups: OtherGroup[]): Tour {
   return { ...tour, other: [...tour.other, ...groups], hashes };
 }
 
-function outline(): HTMLElement {
-  return screen.getByRole('navigation', { name: 'Tour outline' });
-}
-
-/** The outline entry for the item with this title. */
-function outlineItem(title: string): HTMLElement {
-  return within(outline()).getByRole('button', { name: new RegExp(title) });
-}
-
 beforeEach(() => {
   markSeen.mockResolvedValue(undefined);
 });
@@ -228,24 +220,23 @@ describe('TourView', () => {
       .map((h) => h.textContent);
     expect(headings).toEqual(['Foundations', 'Flows', 'Other changes']);
 
-    const items = within(outline())
-      .getAllByRole('button')
-      .map((b) => b.textContent ?? '');
-    const order = [
+    const items = [
       'Create repayments table',
       'Validate and record the repayment',
       'src/misc.ts lines 3–4',
       'Repay tests',
-    ].map((title) => items.findIndex((text) => text.includes(title)));
-    expect(order).toEqual([...order].sort((a, b) => a - b));
-    expect(order).not.toContain(-1);
+    ].map(outlineItem);
+    for (const [a, b] of items.slice(0, -1).map((a, i) => [a, items[i + 1]!] as const)) {
+      expect(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    }
   });
 
   it('pressing j marks the current step seen and moves on', async () => {
     getPr.mockResolvedValue(response());
     render(<TourView repo="acme/loans" pr={42} />);
 
-    const first = await screen.findByRole('button', { name: /Create repayments table/ });
+    await screen.findByRole('navigation', { name: 'Tour outline' });
+    const first = outlineItem('Create repayments table');
     expect(first.getAttribute('aria-current')).toBe('step');
     expect(within(first).queryByLabelText('seen')).toBeNull();
     expect(markSeen).not.toHaveBeenCalled();
@@ -263,7 +254,8 @@ describe('TourView', () => {
     getPr.mockResolvedValue(response());
     render(<TourView repo="acme/loans" pr={42} />);
 
-    fireEvent.click(await screen.findByRole('button', { name: /Repay tests/ }));
+    await screen.findByRole('navigation', { name: 'Tour outline' });
+    fireEvent.click(outlineItem('Repay tests'));
     fireEvent.keyDown(window, { key: 'j' });
 
     expect(markSeen).toHaveBeenCalledWith('acme/loans', 42, 'o1.1', 'h-o1');
@@ -329,18 +321,20 @@ describe('TourView', () => {
     getPr.mockResolvedValue(response({ tour: makeTour({ source: 'inferred' }) }));
     render(<TourView repo="acme/loans" pr={42} />);
 
-    expect(await screen.findByText('Notes inferred by Claude')).toBeTruthy();
+    expect(await screen.findByText(/notes inferred by Claude$/)).toBeTruthy();
     expect(screen.getByText(/Why · inferred by Claude/)).toBeTruthy();
-    expect(screen.queryByText('Notes by the author')).toBeNull();
+    expect(screen.queryByText(/notes by the author/)).toBeNull();
   });
 
   it('a changed step without tests warns that no tests cover it', async () => {
     getPr.mockResolvedValue(response());
     render(<TourView repo="acme/loans" pr={42} />);
 
-    fireEvent.click(await screen.findByRole('button', { name: /Validate and record/ }));
+    await screen.findByRole('navigation', { name: 'Tour outline' });
+    fireEvent.click(outlineItem('Validate and record'));
 
     expect(screen.getByText('no tests cover this step')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Why read closely' }));
     expect(screen.getByText('Check and insert are not in one transaction.')).toBeTruthy();
   });
   it('j and k follow the outline order: unexplained changes come before other groups', async () => {
@@ -348,7 +342,8 @@ describe('TourView', () => {
     getPr.mockResolvedValue(response({ tour }));
     render(<TourView repo="acme/loans" pr={42} />);
 
-    fireEvent.click(await screen.findByRole('button', { name: /Validate and record/ }));
+    await screen.findByRole('navigation', { name: 'Tour outline' });
+    fireEvent.click(outlineItem('Validate and record'));
     fireEvent.keyDown(window, { key: 'j' });
     expect(outlineItem('Unexplained lines').getAttribute('aria-current')).toBe('step');
 
@@ -413,7 +408,7 @@ describe('TourView', () => {
     expect(getPr).toHaveBeenCalledTimes(calls);
   });
 
-  it('generated and refactor groups start collapsed and expand on click', async () => {
+  it('groups start collapsed and expand on click to their summary and items', async () => {
     const tour = withGroups(
       makeTour(),
       group('generated', 'g1', 'Lockfile'),
@@ -423,8 +418,9 @@ describe('TourView', () => {
     render(<TourView repo="acme/loans" pr={42} />);
 
     await screen.findByRole('navigation', { name: 'Tour outline' });
-    expect(within(outline()).getByText('skim only')).toBeTruthy();
-    expect(within(outline()).getByText('Summary of the refactor group.')).toBeTruthy();
+    expect(within(outline()).getByText('skim')).toBeTruthy();
+    expect(within(outline()).queryByText('Summary of the refactor group.')).toBeNull();
+    expect(within(outline()).queryByText('Repay tests')).toBeNull();
     expect(within(outline()).queryByText('Lockfile')).toBeNull();
     expect(within(outline()).queryByText('Rename helper')).toBeNull();
 
@@ -433,6 +429,7 @@ describe('TourView', () => {
     fireEvent.click(toggle);
     expect(toggle.getAttribute('aria-expanded')).toBe('true');
     expect(within(outline()).getByText('Rename helper')).toBeTruthy();
+    expect(within(outline()).getByText('Summary of the refactor group.')).toBeTruthy();
     expect(within(outline()).queryByText('Lockfile')).toBeNull();
   });
 
@@ -441,7 +438,8 @@ describe('TourView', () => {
     getPr.mockResolvedValue(response({ tour }));
     render(<TourView repo="acme/loans" pr={42} />);
 
-    fireEvent.click(await screen.findByRole('button', { name: /Repay tests/ }));
+    await screen.findByRole('navigation', { name: 'Tour outline' });
+    fireEvent.click(outlineItem('Repay tests'));
     expect(screen.getByTestId('code-view').dataset.plain).toBe('no');
 
     fireEvent.keyDown(window, { key: 'j' });
@@ -454,7 +452,8 @@ describe('TourView', () => {
     getPr.mockResolvedValue(response({ tour }));
     render(<TourView repo="acme/loans" pr={42} />);
 
-    fireEvent.click(await screen.findByRole('button', { name: /Repay tests/ }));
+    await screen.findByRole('navigation', { name: 'Tour outline' });
+    fireEvent.click(outlineItem('Repay tests'));
     fireEvent.keyDown(window, { key: 'j' });
     const toggle = within(outline()).getByRole('button', { name: /generated group/ });
     expect(toggle.getAttribute('aria-expanded')).toBe('true');
@@ -465,7 +464,7 @@ describe('TourView', () => {
     expect(within(outline()).queryByText('Lockfile')).toBeNull();
   });
 
-  it('check problems are listed under the outline', async () => {
+  it('check problems are listed in About this PR', async () => {
     const tour = makeTour({ check: { problems: ['src/a.ts:3 has two homes: F1.S1, o1.1'] } });
     getPr.mockResolvedValue(response({ tour }));
     render(<TourView repo="acme/loans" pr={42} />);
@@ -478,14 +477,18 @@ describe('TourView', () => {
     getPr.mockResolvedValue(response());
     render(<TourView repo="acme/loans" pr={42} />);
 
-    expect(await screen.findByText('repayments(id uuid pk, amount_cents bigint)')).toBeTruthy();
+    await screen.findByRole('navigation', { name: 'Tour outline' });
+    fireEvent.click(screen.getByRole('button', { name: 'Schema after' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Deploy compatibility' }));
+    expect(screen.getByText('repayments(id uuid pk, amount_cents bigint)')).toBeTruthy();
     expect(screen.getByText(/Additive only\./).textContent).toBe('Compatible: Additive only.');
   });
 
   it('following a traced call shows that file without marking the step seen', async () => {
     getPr.mockResolvedValue(response());
     render(<TourView repo="acme/loans" pr={42} />);
-    fireEvent.click(await screen.findByRole('button', { name: /Validate and record/ }));
+    await screen.findByRole('navigation', { name: 'Tour outline' });
+    fireEvent.click(outlineItem('Validate and record'));
     markSeen.mockClear();
 
     fireEvent.click(screen.getByRole('button', { name: 'follow chargeFee' }));

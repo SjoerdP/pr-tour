@@ -1,109 +1,25 @@
-import { Fragment, useId, useState } from 'react';
+import { Fragment, useId, useState, type ReactNode } from 'react';
 import {
   lastChangedStepIndex,
+  type Flow,
+  type Foundation,
   type OtherGroup,
   type Risk,
   type SideEffect,
   type Tour,
 } from '../shared/tour.js';
 import { otherGroupsInOrder } from './homes.js';
+import { withKey } from './shortcuts.js';
 
 type Props = {
   tour: Tour;
   currentId: string;
   isSeen: (homeId: string) => boolean;
   onSelect: (homeId: string) => void;
+  /** Go to the first step of the previous or next flow; undefined when there is none. */
+  previousFlow: (() => void) | undefined;
+  nextFlow: (() => void) | undefined;
 };
-
-/** Groups shut by default: generated code is skim-only, refactors read from their summary. */
-const COLLAPSED_BY_DEFAULT: ReadonlySet<OtherGroup['kind']> = new Set(['generated', 'refactor']);
-
-/** The tour's table of contents: foundations, then flows, then other changes. */
-export function Outline({ tour, currentId, isSeen, onSelect }: Props) {
-  const other = otherGroupsInOrder(tour);
-  const itemProps = { currentId, isSeen, onSelect };
-
-  return (
-    <nav className="outline" aria-label="Tour outline">
-      <p className="outline-source muted">
-        {tour.source === 'author' ? 'Notes by the author' : 'Notes inferred by Claude'}
-      </p>
-
-      {tour.foundations.length > 0 && (
-        <section>
-          <h2>Foundations</h2>
-          <ul>
-            {tour.foundations.map((f) => (
-              <Item key={f.id} id={f.id} title={f.title} risk={f.risk} {...itemProps} />
-            ))}
-          </ul>
-        </section>
-      )}
-
-      {tour.flows.length > 0 && (
-        <section>
-          <h2>Flows</h2>
-          {tour.flows.map((flow) => {
-            // Steps after the last change are context: dimmed, below a divider.
-            const lastChanged = lastChangedStepIndex(flow);
-            return (
-              <div key={flow.id} className="outline-flow">
-                <h3>{flow.title}</h3>
-                <p className="muted entry">{flow.entry.label}</p>
-                {lastChanged === -1 && flow.steps.length > 0 && (
-                  <p className="flow-end-note">No changes in this flow</p>
-                )}
-                <ul>
-                  {flow.steps.map((step, i) => (
-                    <Fragment key={step.id}>
-                      <Item
-                        id={step.id}
-                        title={step.title}
-                        changed={step.changed}
-                        risk={step.risk}
-                        sideEffects={step.sideEffects}
-                        afterChanges={i > lastChanged}
-                        {...itemProps}
-                      />
-                      {i === lastChanged && i < flow.steps.length - 1 && (
-                        <li role="separator" className="flow-end-divider">
-                          No more changes in this flow
-                        </li>
-                      )}
-                    </Fragment>
-                  ))}
-                </ul>
-              </div>
-            );
-          })}
-        </section>
-      )}
-
-      {other.length > 0 && (
-        <section>
-          <h2>Other changes</h2>
-          {other.map((group, i) => (
-            <Group key={`${group.kind}-${i}`} group={group} {...itemProps} />
-          ))}
-        </section>
-      )}
-
-      {tour.check.problems.length > 0 && (
-        <details className="check-problems">
-          <summary>
-            {tour.check.problems.length}{' '}
-            {tour.check.problems.length === 1 ? 'check problem' : 'check problems'}
-          </summary>
-          <ul>
-            {tour.check.problems.map((problem, i) => (
-              <li key={i}>{problem}</li>
-            ))}
-          </ul>
-        </details>
-      )}
-    </nav>
-  );
-}
 
 type ItemProps = {
   currentId: string;
@@ -111,40 +27,194 @@ type ItemProps = {
   onSelect: (homeId: string) => void;
 };
 
-function Group({ group, ...itemProps }: { group: OtherGroup } & ItemProps) {
-  const listId = useId();
-  const collapsible = COLLAPSED_BY_DEFAULT.has(group.kind);
-  // `null` until the user toggles: then their choice wins, also over the current item.
-  const [expanded, setExpanded] = useState<boolean | null>(null);
-  // By default a group never hides the item being read (j/k can land inside a shut group).
-  const open =
-    expanded ?? (!collapsible || group.items.some((item) => item.id === itemProps.currentId));
+/**
+ * A card opened or shut by hand. The choice holds while the reader stays in the section
+ * (`at`: the foundations, one flow, or the other changes) where it was made; moving into
+ * another section goes back to "the card with the current item is open".
+ */
+type Choice<T> = { at: string; value: T } | null;
+
+/** The section the current item is in: 'foundations', a flow id, or 'other'. */
+function sectionOf(tour: Tour, currentId: string): string {
+  if (tour.foundations.some((f) => f.id === currentId)) return 'foundations';
+  return tour.flows.find((flow) => flow.steps.some((s) => s.id === currentId))?.id ?? 'other';
+}
+
+/** "seen / total" over the reviewable homes (those with changed lines) among `homes`. */
+function progress(
+  homes: Array<{ id: string; homes: unknown[] }>,
+  isSeen: (homeId: string) => boolean,
+): { seen: number; total: number } {
+  const reviewable = homes.filter((h) => h.homes.length > 0);
+  return { seen: reviewable.filter((h) => isSeen(h.id)).length, total: reviewable.length };
+}
+
+/** The tour's table of contents: foundations, then flows, then other changes. */
+export function Outline({ tour, currentId, isSeen, onSelect, previousFlow, nextFlow }: Props) {
+  const other = otherGroupsInOrder(tour);
+  const itemProps = { currentId, isSeen, onSelect };
+  const section = sectionOf(tour, currentId);
+
+  const [foundationsChoice, setFoundationsChoice] = useState<Choice<boolean>>(null);
+  const [flowChoice, setFlowChoice] = useState<Choice<string | null>>(null);
+  const foundationsOpen =
+    foundationsChoice?.at === section ? foundationsChoice.value : section === 'foundations';
+  const currentFlow = tour.flows.some((f) => f.id === section) ? section : null;
+  const openFlow = flowChoice?.at === section ? flowChoice.value : currentFlow;
+
+  const flowProgress = progress(
+    tour.flows.flatMap((f) => f.steps),
+    isSeen,
+  );
+  const otherProgress = progress(
+    other.flatMap((g) => g.items),
+    isSeen,
+  );
 
   return (
-    <div className={`outline-group outline-group-${group.kind}`}>
-      <h3>
-        {collapsible ? (
-          <button
-            type="button"
-            className="group-toggle"
-            aria-expanded={open}
-            aria-controls={listId}
-            onClick={() => setExpanded(!open)}
-          >
-            {open ? '▾' : '▸'} {group.title}
-          </button>
-        ) : (
-          group.title
-        )}
-        {group.kind === 'generated' && <span className="tag">skim only</span>}
-      </h3>
-      {(group.kind === 'refactor' || group.kind === 'unexplained') && (
-        <p className="muted group-summary">{group.summary}</p>
+    <nav className="outline" aria-label="Tour outline">
+      {tour.foundations.length > 0 && (
+        <section className="outline-section">
+          <SectionHead title="Foundations" {...progress(tour.foundations, isSeen)} />
+          <FoundationsCard
+            foundations={tour.foundations}
+            open={foundationsOpen}
+            current={section === 'foundations'}
+            onToggle={() => setFoundationsChoice({ at: section, value: !foundationsOpen })}
+            {...itemProps}
+          />
+        </section>
       )}
+
+      {tour.flows.length > 0 && (
+        <section className="outline-section">
+          <SectionHead title="Flows" {...flowProgress} />
+          <div className="flow-nav">
+            <button
+              type="button"
+              onClick={previousFlow}
+              disabled={previousFlow === undefined}
+              title={withKey('Previous flow', '[')}
+            >
+              Previous flow
+            </button>
+            <button
+              type="button"
+              onClick={nextFlow}
+              disabled={nextFlow === undefined}
+              title={withKey('Next flow', ']')}
+            >
+              Next flow
+            </button>
+          </div>
+          {tour.flows.map((flow, i) => (
+            <FlowCard
+              key={flow.id}
+              flow={flow}
+              number={i + 1}
+              open={openFlow === flow.id}
+              current={currentFlow === flow.id}
+              onToggle={() =>
+                setFlowChoice({ at: section, value: openFlow === flow.id ? null : flow.id })
+              }
+              {...itemProps}
+            />
+          ))}
+        </section>
+      )}
+
+      {other.length > 0 && (
+        <section className="outline-section">
+          <SectionHead title="Other changes" {...otherProgress} />
+          {other.map((group, i) => (
+            <Group key={`${group.kind}-${i}`} group={group} {...itemProps} />
+          ))}
+        </section>
+      )}
+    </nav>
+  );
+}
+
+function SectionHead({ title, seen, total }: { title: string; seen: number; total: number }) {
+  return (
+    <div className="section-head">
+      <h2>{title}</h2>
+      <span className="section-progress">
+        {seen} / {total} seen
+      </span>
+    </div>
+  );
+}
+
+/** A card's header: a button that opens and shuts it, inside a heading. */
+function CardHead({
+  open,
+  controls,
+  onToggle,
+  children,
+}: {
+  open: boolean;
+  controls: string;
+  onToggle: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <h3 className="card-head">
+      <button
+        type="button"
+        className="card-toggle"
+        aria-expanded={open}
+        aria-controls={controls}
+        onClick={onToggle}
+      >
+        <span className="chev" aria-hidden="true" />
+        {children}
+      </button>
+    </h3>
+  );
+}
+
+function capitalize(text: string): string {
+  return text.charAt(0).toUpperCase() + text.slice(1);
+}
+
+function FoundationsCard({
+  foundations,
+  open,
+  current,
+  onToggle,
+  ...itemProps
+}: {
+  foundations: Foundation[];
+  open: boolean;
+  current: boolean;
+  onToggle: () => void;
+} & ItemProps) {
+  const listId = useId();
+  const kinds = [...new Set(foundations.map((f) => f.kind))];
+  const title = capitalize(kinds.join(', '));
+  const readClosely = foundations.filter((f) => f.risk === 'read-closely').length;
+  const count = foundations.length;
+
+  return (
+    <div className={`card${current ? ' card-current' : ''}`}>
+      <CardHead open={open} controls={listId} onToggle={onToggle}>
+        <span className="card-title">{title}</span>{' '}
+        <span className="card-meta">
+          {count} {count === 1 ? 'item' : 'items'}
+          {readClosely > 0 && (
+            <>
+              {' · '}
+              {readClosely} <span className="rc-dot" aria-hidden="true" />
+              <span className="sr-only">read closely</span>
+            </>
+          )}
+        </span>
+      </CardHead>
       {open && (
-        <ul id={listId}>
-          {group.items.map((item) => (
-            <Item key={item.id} id={item.id} title={item.title} {...itemProps} />
+        <ul id={listId} className="card-list">
+          {foundations.map((f) => (
+            <Item key={f.id} id={f.id} title={f.title} risk={f.risk} {...itemProps} />
           ))}
         </ul>
       )}
@@ -152,10 +222,123 @@ function Group({ group, ...itemProps }: { group: OtherGroup } & ItemProps) {
   );
 }
 
+function FlowCard({
+  flow,
+  number,
+  open,
+  current,
+  onToggle,
+  ...itemProps
+}: {
+  flow: Flow;
+  number: number;
+  open: boolean;
+  current: boolean;
+  onToggle: () => void;
+} & ItemProps) {
+  const bodyId = useId();
+  // Steps after the last change are context: dimmed, below a divider.
+  const lastChanged = lastChangedStepIndex(flow);
+  const { seen, total } = progress(flow.steps, itemProps.isSeen);
+
+  return (
+    <div className={`card${current ? ' card-current' : ''}`}>
+      <CardHead open={open} controls={bodyId} onToggle={onToggle}>
+        <span className="card-num">{number}</span>{' '}
+        <span className="card-title" title={flow.title}>
+          {flow.title}
+        </span>{' '}
+        <span className="card-meta">{total === 0 ? 'no changes' : `${seen} / ${total}`}</span>
+      </CardHead>
+      {open && (
+        <div id={bodyId} className="card-body">
+          <p className="entry" title={flow.entry.label}>
+            {flow.entry.label}
+          </p>
+          {lastChanged === -1 && flow.steps.length > 0 && (
+            <p className="flow-end-note">No changes in this flow</p>
+          )}
+          <ul className="card-list">
+            {flow.steps.map((step, i) => (
+              <Fragment key={step.id}>
+                <Item
+                  id={step.id}
+                  title={step.title}
+                  dot={step.homes.length > 0 ? 'changed' : 'unchanged'}
+                  risk={step.risk}
+                  sideEffects={step.sideEffects}
+                  afterChanges={i > lastChanged}
+                  {...itemProps}
+                />
+                {i === lastChanged && i < flow.steps.length - 1 && (
+                  <li role="separator" className="flow-end-divider">
+                    no more changes
+                  </li>
+                )}
+              </Fragment>
+            ))}
+          </ul>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function Group({ group, ...itemProps }: { group: OtherGroup } & ItemProps) {
+  const bodyId = useId();
+  // `null` until the user toggles: then their choice wins, also over the current item.
+  const [expanded, setExpanded] = useState<boolean | null>(null);
+  // By default a group is shut, but never hides the item being read (j/k can land inside).
+  const open = expanded ?? group.items.some((item) => item.id === itemProps.currentId);
+
+  return (
+    <div className={`outline-group outline-group-${group.kind}`}>
+      <CardHead open={open} controls={bodyId} onToggle={() => setExpanded(!open)}>
+        <span className="card-title" title={group.summary}>
+          {group.title}
+        </span>{' '}
+        {group.kind === 'generated' && (
+          <>
+            <span className="skim">skim</span>{' '}
+          </>
+        )}
+        <span className="card-meta">{group.items.length}</span>
+      </CardHead>
+      {open && (
+        <div id={bodyId} className="group-body">
+          <p className="group-summary">{group.summary}</p>
+          <ul className="card-list">
+            {group.items.map((item) => (
+              <Item key={item.id} id={item.id} title={item.title} {...itemProps} />
+            ))}
+          </ul>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Short words for side effects in the outline. */
+const EFFECT_WORDS: Record<SideEffect['kind'], string> = {
+  'db-write': 'db',
+  event: 'event',
+  'external-call': 'ext',
+};
+
+/** Side effects grouped by kind, in first-seen order: one word each, with all their labels. */
+function effectWords(effects: SideEffect[]): Array<{ word: string; labels: string[] }> {
+  const byKind = new Map<SideEffect['kind'], string[]>();
+  for (const e of effects) byKind.set(e.kind, [...(byKind.get(e.kind) ?? []), e.label]);
+  return [...byKind].map(([kind, labels]) => ({
+    word: labels.length > 1 ? `${EFFECT_WORDS[kind]} ×${labels.length}` : EFFECT_WORDS[kind],
+    labels,
+  }));
+}
+
 function Item({
   id,
   title,
-  changed,
+  dot,
   risk,
   sideEffects = [],
   afterChanges = false,
@@ -165,40 +348,48 @@ function Item({
 }: {
   id: string;
   title: string;
-  changed?: boolean;
+  /** Flow steps only: filled when the step has changes, hollow for unchanged context. */
+  dot?: 'changed' | 'unchanged';
   risk?: Risk;
   sideEffects?: SideEffect[];
   /** A flow step after the flow's last change: shown dimmed. */
   afterChanges?: boolean;
 } & ItemProps) {
   const current = id === currentId;
+  const seen = isSeen(id);
+  const classes = [seen && 'seen', afterChanges && 'after-changes'].filter(Boolean).join(' ');
   return (
-    <li className={afterChanges ? 'after-changes' : undefined}>
+    <li className={classes || undefined}>
       <button
         type="button"
         className="outline-item"
         aria-current={current ? 'step' : undefined}
+        title={title}
         onClick={() => onSelect(id)}
       >
-        <span className="seen-mark">
-          {isSeen(id) && (
-            <span role="img" aria-label="seen">
-              ✓
-            </span>
-          )}
-        </span>
-        <span className="outline-item-title">{title}</span>
-        {changed !== undefined && (
-          <span className={changed ? 'tag' : 'tag tag-quiet'}>
-            {changed ? 'changed' : 'unchanged'}
-          </span>
+        {dot === 'changed' && <span className="dot" aria-hidden="true" />}
+        {dot === 'unchanged' && (
+          <span className="dot dot-hollow" role="img" aria-label="unchanged" />
         )}
-        {risk === 'read-closely' && <span className="tag tag-warn">read closely</span>}
-        {sideEffects.map((effect, i) => (
-          <span key={i} className="tag tag-effect" title={effect.label}>
-            {effect.kind}
+        <span className="outline-item-title">{title}</span>
+        {seen && <span className="sr-only" role="img" aria-label="seen" />}
+        {effectWords(sideEffects).map(({ word, labels }) => (
+          <span key={word} className="fx" title={labels.join('; ')}>
+            {word}
           </span>
         ))}
+        {risk === 'read-closely' &&
+          (current ? (
+            <span className="rc">
+              <span className="rc-dot" aria-hidden="true" />
+              <span className="rc-word">read closely</span>
+            </span>
+          ) : (
+            <span className="rc" title="Read closely">
+              <span className="rc-dot" aria-hidden="true" />
+              <span className="sr-only">read closely</span>
+            </span>
+          ))}
       </button>
     </li>
   );
