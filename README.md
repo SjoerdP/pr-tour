@@ -15,8 +15,9 @@ A tour comes from one of two places:
 - **By the author:** the PR's author runs `/tour` in Claude Code right after pushing.
   The author knows why each change was made, so the notes say that.
 
-pr-tour runs on your machine only. It listens on 127.0.0.1 and never comments on,
-approves or pushes to a PR.
+pr-tour runs on your machine only. It listens on 127.0.0.1. It never pushes to a
+PR. It posts to GitHub only when you submit a review or resolve a thread, and it
+does that with your own `gh` login.
 
 ## Requirements
 
@@ -66,6 +67,45 @@ click **Build tour** to get an inferred tour. In the tour:
 
 Seen marks are saved, so you can stop and come back.
 
+The inbox also shows each PR's CI status and how many unsent drafts it has.
+
+### Reviewing
+
+You can do your GitHub review inside the tour.
+
+- **Comment:** click a line number in the code view. Shift-click a second line
+  to pick a range. Type your comment and save it.
+- **Suggest:** on new lines inside the diff, click **Suggest change**. You get a
+  `suggestion` block to edit.
+- **Lines outside the diff:** GitHub can't take a line comment there. pr-tour
+  says so before you save. The comment is sent as a file-level comment that
+  quotes the lines. The same goes for a range that spans two hunks.
+- **Threads:** existing review threads show up next to their lines. You can
+  reply to them. You can resolve or unresolve them; that goes to GitHub right
+  away.
+
+Comments and replies are **drafts**. They stay on your machine until you
+submit. You can edit or delete them first.
+
+Open the **Review** panel to submit. Write a summary if you want. Pick
+**Comment**, **Approve** or **Request changes**, then click **Submit review**.
+pr-tour sends all your drafts and the summary as one GitHub review, on the
+commit the tour was built for. If any part fails, nothing is posted: the review
+is taken back and your drafts stay. If you approve while some tour items are
+not seen yet, pr-tour lists them first. You can still approve.
+
+On your own PR you can only **Comment**. GitHub does not let you approve or
+request changes on your own PR.
+
+**Drafts on an older version.** When the PR gets new commits and you rebuild the
+tour, your drafts stay. Drafts made on the older version may not match the new
+lines. So they are sent as file-level comments that quote the lines you picked.
+
+**Replacing a tour with drafts.** If a PR has unsent drafts, pr-tour asks before
+it replaces the tour. In the web app you confirm with a button. With
+`pr-tour import`, add `--replace`. Without it, `import` prints a warning and
+stops (exit code 2).
+
 ### Author tours with `/tour`
 
 After you push a PR, run `/tour` in the Claude Code session where you made the
@@ -88,11 +128,11 @@ exactly one home.
 
 ### Settings
 
-| Variable          | Default      | Meaning                          |
-| ----------------- | ------------ | -------------------------------- |
-| `PR_TOUR_PORT`    | `4317`       | port to listen on                |
-| `PR_TOUR_HOME`    | `~/.pr-tour` | data dir (clones, tours, seen)   |
-| `PR_TOUR_NO_OPEN` | unset        | set to `1` to not open a browser |
+| Variable          | Default      | Meaning                                |
+| ----------------- | ------------ | -------------------------------------- |
+| `PR_TOUR_PORT`    | `4317`       | port to listen on                      |
+| `PR_TOUR_HOME`    | `~/.pr-tour` | data dir (clones, tours, seen, drafts) |
+| `PR_TOUR_NO_OPEN` | unset        | set to `1` to not open a browser       |
 
 ## Development
 

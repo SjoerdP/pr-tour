@@ -27,7 +27,9 @@ One TypeScript package, ESM, Node >= 22. Three layers in `src/`:
 ```
 
 The server talks to the outside world only through three CLIs (`gh`, `git`,
-`claude`), all run through one injectable `Runner`. The browser talks only to
+`claude`), all run through one injectable `Runner`. The only writes to GitHub are
+review mutations in `review-github.ts`, made when the user submits a review or
+(un)resolves a thread (see Reviewing). The browser talks only to
 the server's `/api`. The shared layer is the contract between them.
 
 ## Layout and ownership
@@ -38,6 +40,7 @@ src/shared/      Contract between server and web. No I/O, no Node, no React.
   diff.ts        DiffLine / Hunk / FileDiff types (the diff model, also a wire type)
   rows.ts        buildRows / foldRows / changeBlocks (pure; used by the code view)
   api.ts         HTTP wire types: PrSummary, Inbox, TourStatus, Job, PrResponse, ...
+  review.ts      Review types and schemas (drafts, threads, CI), commentTarget, quoteLines, isOlderDraft
 src/server/      Everything that runs under Node, flat, one module per concern.
   exec.ts        Runner type, realRunner (execFile), CommandError
   repo.ts        RepoManager: bare-clone cache, worktrees, diff text, file at sha (git)
@@ -65,9 +68,67 @@ dist/            Build output: cli.js, server/, shared/ from tsc; web/ from Vite
 ```
 
 Keep `src/server` flat while it is this size. When a concern outgrows one file
-(plan 2 will grow `github.ts` with review mutations, plan 3 will grow
+(plan 2 put review reads and mutations in their own `review-github.ts`; plan 3 will grow
 `build.ts`/`store.ts` with tour versions), turn that file into a folder of the
 same name with an `index.ts` so import paths stay the same. Do not pre-split.
+
+## Reviewing
+
+Plan 2 lets the user do the GitHub review inside a tour. The pieces:
+
+- **`src/shared/review.ts`** holds the review wire types (`Draft`, `ReviewThread`,
+  `CiStatus`, `ReviewResponse`), the request schemas, and the pure placement code.
+  `commentTarget` decides whether picked lines become a line comment (all inside one
+  hunk on that side) or a file-level comment (outside the diff, or across hunks).
+  `quoteLines` makes the quote a file-level comment carries. `isOlderDraft` says
+  whether a draft was made on another head than the one being submitted.
+- **`src/server/review-github.ts`** (`ReviewGitHub`) reads a PR's review threads
+  (all pages, comments too), CI status from the head commit's status rollup, and
+  `viewerDidAuthor`. It also submits reviews and (un)resolves threads. Threads map
+  `subjectType: FILE` or a null `line` to a file-level thread (`side`/`line` null);
+  `diffSide` LEFT/RIGHT maps to `old`/`new`.
+- **`src/server/review-routes.ts`** (`registerReviewRoutes`) mounts, under
+  `/api/pr/:owner/:name/:pr`: `GET review`, `POST/PATCH/DELETE drafts`,
+  `POST review/submit` and `POST threads/:threadId/resolve`. A new comment draft is
+  placed on the server against the tour's diff, with its quote and the tour's
+  `headSha` stored next to it.
+- **Drafts table.** Migration 2 adds `drafts` to the store: one row per unsent
+  comment (`kind = 'comment'`: path, side, start/end line, placement, quote,
+  head_sha) or reply (`kind = 'reply'`: thread_id), with its body. Drafts stay
+  local until a submit sends them. Saving a new tour leaves them alone.
+- **Replacing a tour with drafts** needs a confirmation: `checkReplace` in
+  `build.ts` throws `ReplaceNeedsConfirmError`; the build route answers with it,
+  the web asks the user, and `pr-tour import` exits with code 2 until it gets
+  `--replace`.
+
+### Submit flow
+
+`POST review/submit` with `{ event, body }`:
+
+1. A per-PR lock (`submitting` set) answers 409 to a second submit while one runs.
+2. Takes the current drafts. These, and only these, are cleared on success.
+3. Reads `viewerIsAuthor`; on the user's own PR only `COMMENT` is allowed (400).
+4. `ReviewGitHub.submitReview` runs `addPullRequestReview` on the tour's `headSha`
+   (a pending review), then one `addPullRequestReviewThread` per comment draft or
+   `addPullRequestReviewThreadReply` per reply, in order, then
+   `submitPullRequestReview` with the event and summary. A comment draft with
+   file placement, or made on an older head, is sent as `subjectType: FILE` with
+   the quoted lines in its body.
+5. **Rollback:** if any step after the start fails, the pending review is deleted
+   (`deletePullRequestReview`) and `ReviewSubmitError` is thrown, with the failing
+   draft's id when a draft caused it. The route answers 502 with
+   `{ error, failedDraftId }` and keeps every draft. A failed delete is logged, not
+   thrown: the submit error matters more.
+
+### Write guard
+
+`createApp` runs one guard before every route. Every request must have our exact
+`Host` (`127.0.0.1:<port>` or `localhost:<port>`), against DNS rebinding. Every
+non-GET request must also carry `X-PR-Tour: 1` (a cross-site page cannot set it
+without a CORS preflight, which the server never approves). As a second line, a
+write whose `Origin` is not our own, or whose `Sec-Fetch-Site` is not
+`same-origin` or `none`, is refused. All responses forbid framing
+(`X-Frame-Options: DENY`, `frame-ancestors 'none'`).
 
 ## Dependency rules
 
