@@ -40,7 +40,7 @@ This is plan 1 of 3. Plan 2 = review actions (threads, comments, submit review, 
 ```
 package.json, index.html, vite.config.ts, vitest.config.ts       (Task 0, done)
 tsconfig.json, tsconfig.server.json, tsconfig.web.json, tsconfig.build.json
-eslint.config.js, .prettierrc, .editorconfig, .nvmrc, .github/workflows/ci.yml
+eslint.config.js, .prettierrc, .editorconfig, .nvmrc   (no CI workflow: CI removed at user's request)
 docs/architecture.md      Layers, dependency rules, testing strategy, naming
 src/shared/tour.ts        Tour zod schemas + types (shared by server and web)
 src/shared/diff.ts        DiffLine / Hunk / FileDiff types (diff model; also a wire type)
@@ -102,7 +102,7 @@ Not part of the original plan; done before Task 1. Created the files listed unde
   - zod: `TourBodyInputSchema`, `TourBodySchema`, `TourSchema`; `tourBodyJsonSchema(): object` = `z.toJSONSchema(TourBodyInputSchema)`
   - `homeIds(tour: Tour): string[]` — ids of every foundation, step and other item, in tour order.
 
-- [x] **Step 1: Scaffold.** Done by Task 0 (see `docs/architecture.md`): `package.json`, tsconfigs, Vitest projects, ESLint, Prettier, CI. Nothing to do here.
+- [x] **Step 1: Scaffold.** Done by Task 0 (see `docs/architecture.md`): `package.json`, tsconfigs, Vitest projects, ESLint, Prettier. (Task 0 also added a CI workflow; CI was later removed at user's request.) Nothing to do here.
 
 - [ ] **Step 2: Write the failing tests** in `test/shared/tour.test.ts`, using a fixture `test/fixtures/tour-body.json` (read it with `JSON.parse(readFileSync(new URL('../fixtures/tour-body.json', import.meta.url), 'utf8'))`) with 1 migration foundation, 1 flow (`POST /loans/{id}/repay`, 2 steps: one changed `read-closely`, one unchanged), and 1 `tests` other group:
   - `parses a valid body` — `TourBodyInputSchema.parse(fixture)` does not throw.
