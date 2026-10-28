@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { spawn } from 'node:child_process';
-import { mkdirSync, readFileSync, realpathSync } from 'node:fs';
+import { closeSync, mkdirSync, openSync, readFileSync, realpathSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -18,8 +18,9 @@ import { Store } from './server/store.js';
 import { tourBodyJsonSchema, type Tour } from './shared/tour.js';
 
 export const USAGE = `Usage:
-  pr-tour                                                   start pr-tour and open it in the browser
-  pr-tour open <owner/name>#<pr>                            open the tour of a PR
+  pr-tour                                                   run pr-tour here and open it in the browser
+  pr-tour open <owner/name>#<pr>                            open the tour of a PR (starts pr-tour in the
+                                                            background if it is not running)
   pr-tour import --repo <owner/name> --pr <n> --file <path> store a tour written by the PR's author
   pr-tour schema                                            print the JSON Schema of a tour file
   pr-tour rules                                             print the rules for writing a tour file
@@ -48,6 +49,9 @@ export type Command =
 const HOST = '127.0.0.1';
 const DEFAULT_PORT = 4317;
 const HEALTH_TIMEOUT_MS = 1000;
+/** How long `pr-tour open` waits for a server it started to answer. */
+const START_WAIT_MS = 15_000;
+const START_POLL_MS = 100;
 
 /** `owner/name`, with the characters GitHub allows and no `.`/`..` parts. */
 const REPO_RE = /^(?!\.+\/)[\w.-]+\/(?!\.+$)[\w.-]+$/;
@@ -142,8 +146,10 @@ export function listen(app: Pick<Hono, 'fetch'>, port: number): Promise<ServerTy
   });
 }
 
+export type ServerStatus = 'pr-tour' | 'free' | 'other';
+
 /** Who answers on 127.0.0.1:`port`: a pr-tour server, nobody, or something else. */
-export async function serverStatus(port: number): Promise<'pr-tour' | 'free' | 'other'> {
+export async function serverStatus(port: number): Promise<ServerStatus> {
   let res: Response;
   try {
     res = await fetch(`http://${HOST}:${port}/api/health`, {
@@ -160,6 +166,71 @@ export async function serverStatus(port: number): Promise<'pr-tour' | 'free' | '
   } catch {
     // Not JSON: some other server.
     return 'other';
+  }
+}
+
+function portTaken(port: number): Error {
+  return new Error(
+    `Port ${port} is in use by something that is not pr-tour. Set PR_TOUR_PORT to another port.`,
+  );
+}
+
+/**
+ * Make sure a pr-tour server answers on `port`: use one that runs, or call `start` (which
+ * starts one in the background) and wait until it answers. Never waits on the server itself.
+ */
+export async function ensureServer(opts: {
+  port: number;
+  start: () => void;
+  /** Where a started server writes its output; named in the error when it does not come up. */
+  log: string;
+  status?: (port: number) => Promise<ServerStatus>;
+  waitMs?: number;
+  pollMs?: number;
+}): Promise<'running' | 'started'> {
+  const { port, start, log } = opts;
+  const status = opts.status ?? serverStatus;
+  const waitMs = opts.waitMs ?? START_WAIT_MS;
+  const pollMs = opts.pollMs ?? START_POLL_MS;
+
+  const now = await status(port);
+  if (now === 'other') throw portTaken(port);
+  if (now === 'pr-tour') return 'running';
+
+  start();
+  const deadline = Date.now() + waitMs;
+  while (Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, pollMs));
+    if ((await status(port)) === 'pr-tour') return 'started';
+  }
+  throw new Error(`pr-tour did not start within ${waitMs / 1000} s; see ${log}`);
+}
+
+/**
+ * Start `pr-tour` (the server) as a detached process that outlives this one, with its
+ * output appended to `log`. Returns its pid. It never opens a browser; the caller does.
+ */
+function startInBackground(config: Config, log: string): number | undefined {
+  mkdirSync(config.home, { recursive: true });
+  const out = openSync(log, 'a');
+  try {
+    // The same Node and loader flags this process runs with (tsx in development).
+    const child = spawn(process.execPath, [...process.execArgv, fileURLToPath(import.meta.url)], {
+      detached: true,
+      stdio: ['ignore', out, out],
+      env: {
+        ...process.env,
+        PR_TOUR_PORT: String(config.port),
+        PR_TOUR_HOME: config.home,
+        PR_TOUR_NO_OPEN: '1',
+      },
+    });
+    // A failed spawn shows up as the server not answering; ensureServer reports that.
+    child.on('error', (err) => console.error(`Could not start pr-tour: ${err.message}`));
+    child.unref();
+    return child.pid;
+  } finally {
+    closeSync(out);
   }
 }
 
@@ -190,14 +261,20 @@ function wire(home: string) {
   return { repos, github, store, builder, jobs: new Jobs() };
 }
 
-/** `pr-tour` and `pr-tour open`: make sure a server runs, then show `url`. */
+/** Print `url`, and open it in the browser unless `PR_TOUR_NO_OPEN` says not to. */
+function show(config: Config, url: string): void {
+  if (!config.openBrowser) {
+    console.log(url);
+    return;
+  }
+  console.log(`Opening ${url}`);
+  openBrowser(url);
+}
+
+/** `pr-tour`: run the server in this process (until Ctrl-C), or use one that runs. */
 async function serve(config: Config, url: string): Promise<void> {
   const status = await serverStatus(config.port);
-  if (status === 'other') {
-    throw new Error(
-      `Port ${config.port} is in use by something that is not pr-tour. Set PR_TOUR_PORT to another port.`,
-    );
-  }
+  if (status === 'other') throw portTaken(config.port);
   if (status === 'free') {
     const deps = wire(config.home);
     let server: ServerType;
@@ -218,10 +295,30 @@ async function serve(config: Config, url: string): Promise<void> {
   } else {
     console.log(`pr-tour is already running at http://${HOST}:${config.port}`);
   }
-  if (config.openBrowser) {
-    console.log(`Opening ${url}`);
-    openBrowser(url);
+  show(config, url);
+}
+
+/**
+ * `pr-tour open`: show a PR's tour, starting the server in the background when none
+ * runs. Exits right away either way, so it works from scripts and Claude's Bash tool.
+ */
+async function openTour(config: Config, repo: string, pr: number): Promise<void> {
+  const log = join(config.home, 'server.log');
+  let pid: number | undefined;
+  const how = await ensureServer({
+    port: config.port,
+    log,
+    start: () => {
+      pid = startInBackground(config, log);
+    },
+  });
+  const at = `http://${HOST}:${config.port}`;
+  if (how === 'started') {
+    console.log(`Started pr-tour in the background (pid ${pid ?? '?'}) at ${at}; log: ${log}`);
+  } else {
+    console.log(`pr-tour is already running at ${at}`);
   }
+  show(config, tourUrl(config.port, repo, pr));
 }
 
 /**
@@ -281,7 +378,7 @@ async function main(argv: string[]): Promise<void> {
     if (command.cmd === 'import') {
       await importTour(config, command.repo, command.pr, command.file);
     } else if (command.cmd === 'open') {
-      await serve(config, tourUrl(config.port, command.repo, command.pr));
+      await openTour(config, command.repo, command.pr);
     } else {
       await serve(config, `http://${HOST}:${config.port}/`);
     }

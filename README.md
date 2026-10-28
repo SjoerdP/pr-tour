@@ -45,9 +45,15 @@ cp -r skill/tour ~/.claude/skills/
 ## Usage
 
 ```sh
-pr-tour                         # start pr-tour and open the inbox in the browser
+pr-tour                         # run pr-tour in this terminal and open the inbox (Ctrl-C stops it)
 pr-tour open owner/name#123     # open the tour of one PR
 ```
+
+`pr-tour open` uses the pr-tour that is already running. If none is running, it
+starts one in the background, waits until it answers, opens the browser and
+exits. That background pr-tour keeps running; it prints its pid and writes its
+output to `server.log` in the data dir (`~/.pr-tour/server.log` by default).
+Stop it with `kill <pid>`.
 
 The inbox lists PRs waiting for your review and your own open PRs. Open one and
 click **Build tour** to get an inferred tour. In the tour:

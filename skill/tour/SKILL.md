@@ -23,7 +23,8 @@ as a pr-tour tour: the reviewer reads it next to the code, in the order the code
      better than an inferred one.
    - Never invent intent you do not have. If you do not remember why something
      changed, say only what it does.
-5. **Save and import.** Write the JSON to a temp file (`mktemp --suffix .json`), then run
+5. **Save and import.** Write the JSON to a temp file
+   (`mktemp "${TMPDIR:-/tmp}/pr-tour.XXXXXX"`, which works on Linux and macOS), then run
    `pr-tour import --repo <owner/name> --pr <number> --file <path>`.
    - A zod error means the JSON does not match the schema: fix it and import again.
    - Each `problem: ...` line is a home that is wrong (it overlaps another home, covers
@@ -31,6 +32,8 @@ as a pr-tour tour: the reviewer reads it next to the code, in the order the code
      is a run of changed lines that no home covers. Fix those homes and import again.
    - Retry at most 2 times. If problems remain, keep the last import and tell the
      user which problems are left.
-6. **Open it.** Run `pr-tour open <owner/name>#<number>` and give the user the URL.
+6. **Open it.** Run `pr-tour open <owner/name>#<number>`. It starts pr-tour in the
+   background if it is not running yet, opens the browser and exits; it does not keep
+   running in your shell. Give the user the URL it prints.
 
 Never comment on, approve or push to the PR from this skill.
