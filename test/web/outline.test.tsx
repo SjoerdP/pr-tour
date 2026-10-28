@@ -267,14 +267,17 @@ describe('other changes groups', () => {
     await open(tour);
 
     const rows = within(outline())
-      .getAllByRole('button', { expanded: false })
-      .filter((b) => b.closest('.outline-group'));
+      .getAllByRole('button')
+      .filter((b) => b.classList.contains('card-toggle') && b.closest('.outline-group'));
     expect(rows.map((r) => r.textContent)).toEqual([
       'Unexplained 1',
       'Tests 1',
       'Generated skim 1',
     ]);
     expect(rows[0]!.closest('.outline-group')!.className).toContain('outline-group-unexplained');
+    // The unexplained group is a warning: open from the start. The others start shut.
+    expect(rows.map((r) => r.getAttribute('aria-expanded'))).toEqual(['true', 'false', 'false']);
+    expect(within(outline()).getByText('src/x.ts lines 1–2')).toBeTruthy();
     expect(within(outline()).queryByText('Lockfile')).toBeNull();
   });
 
@@ -286,6 +289,16 @@ describe('other changes groups', () => {
     expect(within(outline()).getByText('Tests for repay.')).toBeTruthy();
     fireEvent.click(item('Repay tests'));
     expect(currentTitle()).toContain('Repay tests');
+  });
+
+  it('card and group toggles point aria-controls only at what is shown', async () => {
+    await open();
+    for (const toggle of within(outline()).getAllByRole('button', { expanded: false })) {
+      expect(toggle.hasAttribute('aria-controls')).toBe(false);
+    }
+    for (const toggle of within(outline()).getAllByRole('button', { expanded: true })) {
+      expect(document.getElementById(toggle.getAttribute('aria-controls')!)).toBeTruthy();
+    }
   });
 
   it('a group opens by itself when the reader moves into it', async () => {

@@ -339,6 +339,46 @@ describe('CodeView', () => {
     expect(highlighted).toEqual([]);
   });
 
+  it('an added file has no old line-number column', async () => {
+    getDiff.mockResolvedValue({
+      path: 'src/new.ts',
+      oldPath: 'src/new.ts',
+      status: 'added',
+      binary: false,
+      hunks: [
+        {
+          oldStart: 0,
+          oldLines: 0,
+          newStart: 1,
+          newLines: 2,
+          lines: [
+            { kind: 'add', newNo: 1, text: 'first' },
+            { kind: 'add', newNo: 2, text: 'second' },
+          ],
+        },
+      ],
+    });
+    getFile.mockImplementation((_repo, _pr, sha) =>
+      Promise.resolve({ text: sha === HEAD ? 'first\nsecond\n' : null }),
+    );
+    renderView({ file: 'src/new.ts', focus: { start: 1, end: 2 } });
+
+    const row = (await screen.findByText('first')).closest('.code-row')!;
+    expect(row.querySelectorAll('.code-no')).toHaveLength(1);
+    expect(row.querySelector('.code-no')!.textContent).toBe('1');
+  });
+
+  it('a changed file keeps both line-number columns', async () => {
+    serve(modified('src/repay.ts', [replaceHunk(5, 'old five', 'new five')]), {
+      [`${HEAD}:src/repay.ts`]: lines(10, { 5: 'new five' }),
+      [`${BASE}:src/repay.ts`]: lines(10, { 5: 'old five' }),
+    });
+    renderView();
+
+    const row = (await screen.findByText('new five')).closest('.code-row')!;
+    expect(row.querySelectorAll('.code-no')).toHaveLength(2);
+  });
+
   it('binary file shows a placeholder', async () => {
     getDiff.mockResolvedValue({
       path: 'img/logo.png',

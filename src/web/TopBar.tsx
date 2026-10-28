@@ -1,4 +1,4 @@
-import { useEffect, useId, useState } from 'react';
+import { useEffect, useId, useRef } from 'react';
 import type { PrSummary } from '../shared/api.js';
 import { reviewableHomeIds, type Tour } from '../shared/tour.js';
 
@@ -6,46 +6,31 @@ type Props = {
   pr: PrSummary;
   tour: Tour | null;
   isSeen: (homeId: string) => boolean;
+  /** "About this PR" is shown. */
+  aboutOpen: boolean;
+  onAboutChange: (open: boolean) => void;
 };
-
-function storageKey(pr: PrSummary): string {
-  return `pr-tour:about-seen:${pr.repo}#${pr.number}`;
-}
-
-/** True when "About this PR" was shown for this PR before (in this browser). */
-function aboutShownBefore(pr: PrSummary): boolean {
-  try {
-    return localStorage.getItem(storageKey(pr)) !== null;
-  } catch {
-    // Storage blocked (private window, site data off): treat every visit as the first.
-    return false;
-  }
-}
-
-function rememberAboutShown(pr: PrSummary): void {
-  try {
-    localStorage.setItem(storageKey(pr), '1');
-  } catch {
-    // Storage blocked: nothing to remember it in; the panel opens again next time.
-  }
-}
 
 /**
  * One line above the tour: back to the inbox, the PR, a short status, and "About this PR",
- * which shows the tour summary and check problems. It is open on the first visit to a tour.
+ * which shows the tour summary and check problems. A click outside the panel closes it.
  */
-export function TopBar({ pr, tour, isSeen }: Props) {
+export function TopBar({ pr, tour, isSeen, aboutOpen, onAboutChange }: Props) {
   const panelId = useId();
-  const [firstVisit] = useState(() => !aboutShownBefore(pr));
-  // `null` until the user toggles; until then the panel is open on the first visit only.
-  const [choice, setChoice] = useState<boolean | null>(null);
-  const open = tour !== null && (choice ?? firstVisit);
+  const open = tour !== null && aboutOpen;
+  const panel = useRef<HTMLElement>(null);
+  const button = useRef<HTMLButtonElement>(null);
 
-  const hasTour = tour !== null;
   useEffect(() => {
-    // Only a visit that showed a tour counts: a first build should still end with the summary.
-    if (hasTour) rememberAboutShown(pr);
-  }, [hasTour, pr]);
+    if (!open) return;
+    function onMouseDown(event: MouseEvent) {
+      const target = event.target as Node | null;
+      if (panel.current?.contains(target) || button.current?.contains(target)) return;
+      onAboutChange(false);
+    }
+    document.addEventListener('mousedown', onMouseDown);
+    return () => document.removeEventListener('mousedown', onMouseDown);
+  }, [open, onAboutChange]);
 
   const problems = tour?.check.problems ?? [];
 
@@ -65,9 +50,10 @@ export function TopBar({ pr, tour, isSeen }: Props) {
         <button
           type="button"
           className="about-button"
+          ref={button}
           aria-expanded={open}
-          aria-controls={panelId}
-          onClick={() => setChoice(!open)}
+          aria-controls={open ? panelId : undefined}
+          onClick={() => onAboutChange(!open)}
         >
           About this PR
           {problems.length > 0 && (
@@ -79,7 +65,7 @@ export function TopBar({ pr, tour, isSeen }: Props) {
         </button>
       )}
       {tour && open && (
-        <section id={panelId} className="about-panel" aria-label="About this PR">
+        <section ref={panel} id={panelId} className="about-panel" aria-label="About this PR">
           <p className="about-summary">{tour.summary}</p>
           {problems.length > 0 && (
             <div className="check-problems">
@@ -91,7 +77,7 @@ export function TopBar({ pr, tour, isSeen }: Props) {
               </ul>
             </div>
           )}
-          <button type="button" className="link-button" onClick={() => setChoice(false)}>
+          <button type="button" className="link-button" onClick={() => onAboutChange(false)}>
             Close
           </button>
         </section>

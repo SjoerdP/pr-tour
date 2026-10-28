@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { buildRows, changeBlocks, foldRows, type Row, type Segment } from '../shared/rows.js';
 import type { CallRef, Tour } from '../shared/tour.js';
 import {
@@ -95,6 +95,13 @@ function FileCode({ tour, file, tokens, focus, homeId, onJump, onOpenHome }: Fil
     [tour, rows, file.path, file.oldPath],
   );
   const calls = useMemo(() => stepCalls(tour, homeId, file.path), [tour, homeId, file.path]);
+  // An added file has no old side: no empty column for old line numbers.
+  const showOld = useMemo(() => rows.some((r) => r.oldNo !== undefined), [rows]);
+  // Line-number columns as wide as the longest number.
+  const gutter = useMemo(() => {
+    const widest = rows.reduce((n, r) => Math.max(n, r.oldNo ?? 0, r.newNo ?? 0), 0);
+    return { '--no-width': `${Math.max(2, String(widest).length)}ch` } as CSSProperties;
+  }, [rows]);
 
   const [opened, setOpened] = useState<Array<[number, number]>>([]);
   const [whole, setWhole] = useState(false);
@@ -180,7 +187,7 @@ function FileCode({ tour, file, tokens, focus, homeId, onJump, onOpenHome }: Fil
           Whole file
         </button>
       </div>
-      <div className="code" ref={container}>
+      <div className="code" ref={container} style={gutter}>
         {segments.map((seg) =>
           seg.kind === 'fold' ? (
             <button
@@ -206,6 +213,7 @@ function FileCode({ tour, file, tokens, focus, homeId, onJump, onOpenHome }: Fil
                   row={row}
                   tokens={rowTokens(row, tokens)}
                   inFocus={inFocus}
+                  showOld={showOld}
                   calls={inFocus && row.newNo !== undefined ? calls : NO_CALLS}
                   label={label}
                   onJump={onJump}
@@ -244,20 +252,32 @@ type CodeRowProps = {
   row: Row;
   tokens: HighlightedLine | undefined;
   inFocus: boolean;
+  /** False when the file has no old side (an added file). */
+  showOld: boolean;
   calls: CallRef[];
   label: Owner | null;
   onJump: (file: string, line: number) => void;
   onOpenHome: (homeId: string) => void;
 };
 
-function CodeRow({ index, row, tokens, inFocus, calls, label, onJump, onOpenHome }: CodeRowProps) {
+function CodeRow({
+  index,
+  row,
+  tokens,
+  inFocus,
+  showOld,
+  calls,
+  label,
+  onJump,
+  onOpenHome,
+}: CodeRowProps) {
   // Tokens that do not spell the row's text (a stale highlight) are not trusted.
   const parts =
     tokens && tokens.map((t) => t.content).join('') === row.text ? tokens : [{ content: row.text }];
   const matches = calls.length > 0 ? callMatches(row.text, calls) : [];
   return (
     <div className={`code-row code-${row.kind}${inFocus ? ' code-focus' : ''}`} data-row={index}>
-      <span className="code-no">{row.oldNo ?? ''}</span>
+      {showOld && <span className="code-no">{row.oldNo ?? ''}</span>}
       <span className="code-no">{row.newNo ?? ''}</span>
       <span className="code-marker">{MARKERS[row.kind]}</span>
       <code className="code-text">{lineContent(parts, row.text.length, matches, onJump)}</code>

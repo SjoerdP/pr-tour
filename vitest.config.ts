@@ -22,6 +22,8 @@ export default defineConfig({
           environment: 'jsdom',
           include: ['test/web/**/*.test.{ts,tsx}'],
           setupFiles: ['test/web/setup.ts'],
+          // Process the stylesheet so test/web/layout-css.test.ts can read it with `?raw`.
+          css: { include: [/styles\.css/] },
         },
       },
     ],

@@ -74,7 +74,9 @@ function facts(home: Home): Fact[] {
   switch (home.kind) {
     case 'step': {
       const { step } = home;
-      if (step.homes.length === 0) out.push({ text: 'Unchanged' }, { text: 'context' });
+      // "Changed" means the step owns changed lines, the same test as the outline's dots.
+      const changed = step.homes.length > 0;
+      if (!changed) out.push({ text: 'Unchanged' }, { text: 'context' });
       if (step.risk === 'read-closely') out.push({ text: 'Read closely', tone: 'risk' });
       const kinds = [...new Set(step.sideEffects.map((e) => e.kind))];
       for (const kind of kinds) {
@@ -83,7 +85,7 @@ function facts(home: Home): Fact[] {
       }
       if (step.tests.length > 0) {
         out.push({ text: `${step.tests.length} ${step.tests.length === 1 ? 'test' : 'tests'}` });
-      } else if (step.changed) {
+      } else if (changed) {
         out.push({ text: 'no tests cover this step', tone: 'warn' });
       }
       break;
@@ -318,7 +320,7 @@ function Extras({ home }: { home: Home }) {
             type="button"
             className="link-button extra-toggle"
             aria-expanded={open.has(extra.id)}
-            aria-controls={`${baseId}-${extra.id}`}
+            aria-controls={open.has(extra.id) ? `${baseId}-${extra.id}` : undefined}
             onClick={() => toggle(extra.id)}
           >
             {extra.label}

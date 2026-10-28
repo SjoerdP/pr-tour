@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Tour } from '../../src/shared/tour.js';
 import * as api from '../../src/web/api.js';
 import { TourView } from '../../src/web/TourView.js';
+import { outlineItem } from './outline-helpers.js';
 import { response, tour as baseTour } from './tour-fixture.js';
 
 // The main screen around the code: top bar, About panel, step header, extras, bottom bar.
@@ -19,11 +20,6 @@ vi.mock('../../src/web/CodeView.js', () => ({
 
 const getPr = vi.mocked(api.getPr);
 const markSeen = vi.mocked(api.markSeen);
-
-function outlineItem(title: string): HTMLElement {
-  const nav = screen.getByRole('navigation', { name: 'Tour outline' });
-  return within(nav).getByRole('button', { name: new RegExp(title) });
-}
 
 function facts(): string[] {
   return within(screen.getByRole('list', { name: 'Step facts' }))
@@ -101,6 +97,44 @@ describe('About this PR', () => {
     expect(screen.getByRole('region', { name: 'About this PR' })).toBeTruthy();
   });
 
+  it('closes when the reader moves to another step', async () => {
+    await open();
+    fireEvent.keyDown(window, { key: 'j' });
+    expect(screen.queryByRole('region', { name: 'About this PR' })).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: /About this PR/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Next step' }));
+    expect(screen.queryByRole('region', { name: 'About this PR' })).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: /About this PR/ }));
+    fireEvent.click(outlineItem('Create repayments table'));
+    expect(screen.queryByRole('region', { name: 'About this PR' })).toBeNull();
+  });
+
+  it('closes on a click outside it, not on a click inside it', async () => {
+    await open();
+    const about = screen.getByRole('region', { name: 'About this PR' });
+    fireEvent.mouseDown(within(about).getByText('Adds early repayment.'));
+    expect(screen.getByRole('region', { name: 'About this PR' })).toBeTruthy();
+
+    fireEvent.mouseDown(screen.getByTestId('code-view'));
+    expect(screen.queryByRole('region', { name: 'About this PR' })).toBeNull();
+  });
+
+  it('Close shuts it', async () => {
+    await open();
+    fireEvent.click(screen.getByRole('button', { name: 'Close' }));
+    expect(screen.queryByRole('region', { name: 'About this PR' })).toBeNull();
+  });
+
+  it('points aria-controls at the panel only while it is shown', async () => {
+    await open();
+    const button = screen.getByRole('button', { name: /About this PR/ });
+    expect(document.getElementById(button.getAttribute('aria-controls')!)).toBeTruthy();
+    fireEvent.click(button);
+    expect(button.hasAttribute('aria-controls')).toBe(false);
+  });
+
   it('lists check problems', async () => {
     await open({ ...baseTour, check: { problems: ['src/a.ts:3 has two homes'] } });
     const about = screen.getByRole('region', { name: 'About this PR' });
@@ -150,6 +184,15 @@ describe('step header', () => {
     fireEvent.keyDown(window, { key: ']' });
     fireEvent.keyDown(window, { key: ']' });
     expect(trail()).toBe('Flow 2 · step 1 of 2');
+    expect(facts()).toEqual(['Unchanged', 'context']);
+  });
+
+  it('a step without changed lines is context, never "no tests"', async () => {
+    const tour = structuredClone(baseTour);
+    tour.flows[0]!.steps[1]!.changed = true;
+    await open(tour);
+    fireEvent.keyDown(window, { key: ']' });
+    fireEvent.keyDown(window, { key: 'j' });
     expect(facts()).toEqual(['Unchanged', 'context']);
   });
 
@@ -227,6 +270,20 @@ describe('extras', () => {
     expect(screen.getByText(/Additive only\./).textContent).toBe('Compatible: Additive only.');
     fireEvent.click(screen.getByRole('button', { name: 'Schema after' }));
     expect(screen.getByText('repayments(id uuid pk)')).toBeTruthy();
+  });
+});
+
+describe('extras: aria-controls', () => {
+  it('points at the opened detail only while it is shown', async () => {
+    const tour = structuredClone(baseTour);
+    tour.foundations[0]!.schemaAfter = 'repayments(id uuid pk)';
+    await open(tour);
+    const link = screen.getByRole('button', { name: 'Schema after' });
+    expect(link.hasAttribute('aria-controls')).toBe(false);
+    fireEvent.click(link);
+    expect(document.getElementById(link.getAttribute('aria-controls')!)!.textContent).toBe(
+      'repayments(id uuid pk)',
+    );
   });
 });
 

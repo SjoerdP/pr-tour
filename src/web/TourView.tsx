@@ -4,6 +4,7 @@ import { homesInOrder, nextFlowStart, previousFlowStart } from './homes.js';
 import { Outline } from './Outline.js';
 import { StepPane } from './StepPane.js';
 import { TopBar } from './TopBar.js';
+import { useAboutPanel } from './useAboutPanel.js';
 import { useKeys } from './useKeys.js';
 import { useSeenMarks } from './useSeenMarks.js';
 import { useTourBuild } from './useTourBuild.js';
@@ -22,6 +23,7 @@ export function TourView({ repo, pr }: { repo: string; pr: number }) {
   } = useSeenMarks(repo, pr, tour, data?.seen ?? NO_MARKS);
   const [currentId, setCurrentId] = useState<string | null>(null);
   const [jump, setJump] = useState<{ file: string; line: number } | null>(null);
+  const about = useAboutPanel(repo, pr, tour !== null);
 
   // The outline's order is the reading order: j/k walk the same list.
   const homes = useMemo(() => (tour ? homesInOrder(tour) : []), [tour]);
@@ -35,6 +37,7 @@ export function TourView({ repo, pr }: { repo: string; pr: number }) {
     markLeft(current);
     setCurrentId(homeId);
     setJump(null);
+    about.setOpen(false);
   }
 
   const index = current === null ? -1 : ids.indexOf(current);
@@ -47,6 +50,7 @@ export function TourView({ repo, pr }: { repo: string; pr: number }) {
     if (next !== undefined) goTo(next);
     // On the last home there is nowhere to go; j still says "done with this one".
     else if (current !== null) markLeft(current);
+    about.setOpen(false);
   }
 
   // Keys and the step pane's buttons do the same moves; undefined means nowhere to go.
@@ -92,7 +96,13 @@ export function TourView({ repo, pr }: { repo: string; pr: number }) {
 
   return (
     <div className="tour-app">
-      <TopBar pr={summary} tour={tour} isSeen={isSeen} />
+      <TopBar
+        pr={summary}
+        tour={tour}
+        isSeen={isSeen}
+        aboutOpen={about.open}
+        onAboutChange={about.setOpen}
+      />
 
       {notices && (
         <div className="notices">

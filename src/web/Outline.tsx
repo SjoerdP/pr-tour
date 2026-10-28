@@ -164,7 +164,7 @@ function CardHead({
         type="button"
         className="card-toggle"
         aria-expanded={open}
-        aria-controls={controls}
+        aria-controls={open ? controls : undefined}
         onClick={onToggle}
       >
         <span className="chev" aria-hidden="true" />
@@ -289,7 +289,10 @@ function Group({ group, ...itemProps }: { group: OtherGroup } & ItemProps) {
   // `null` until the user toggles: then their choice wins, also over the current item.
   const [expanded, setExpanded] = useState<boolean | null>(null);
   // By default a group is shut, but never hides the item being read (j/k can land inside).
-  const open = expanded ?? group.items.some((item) => item.id === itemProps.currentId);
+  // Unexplained changes are a warning the reader must see: that group starts open.
+  const open =
+    expanded ??
+    (group.kind === 'unexplained' || group.items.some((item) => item.id === itemProps.currentId));
 
   return (
     <div className={`outline-group outline-group-${group.kind}`}>

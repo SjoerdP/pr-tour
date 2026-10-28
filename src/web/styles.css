@@ -9,6 +9,10 @@
   --font-size-small: 12px;
   --font-size-tiny: 11px;
   --font-size-code: 12.5px;
+  --font-size-outline: 13px;
+  --font-size-title: 20px;
+  /* One outline line: dots and markers centre on the first line of a wrapped title. */
+  --outline-line: 19px;
   --line-height: 1.5;
 
   --space-1: 4px;
@@ -19,6 +23,7 @@
   --space-6: 24px;
   --radius: 6px;
   --radius-small: 4px;
+  --shadow-popover: 0 8px 24px color-mix(in srgb, var(--fg) 18%, transparent);
 
   /* Layout: the outline is a fixed column at the left edge; the main area takes the rest. */
   --outline-width: 320px;
@@ -220,7 +225,7 @@ pre {
 
 .page-title {
   margin: 0 0 var(--space-5);
-  font-size: 20px;
+  font-size: var(--font-size-title);
   font-weight: 600;
 }
 
@@ -374,7 +379,7 @@ pre {
   border: 1px solid var(--border);
   border-radius: var(--radius);
   background: var(--bg);
-  box-shadow: 0 8px 24px color-mix(in srgb, #000 18%, transparent);
+  box-shadow: var(--shadow-popover);
 }
 
 .about-summary {
@@ -478,7 +483,7 @@ pre {
   padding: var(--space-1) var(--space-3) var(--space-6);
   border-right: 1px solid var(--border);
   background: var(--bg-subtle);
-  font-size: 13px;
+  font-size: var(--font-size-outline);
   line-height: 1.45;
 }
 
@@ -550,7 +555,7 @@ pre {
   border: none;
   border-radius: var(--radius);
   background: none;
-  font-size: 13px;
+  font-size: var(--font-size-outline);
   line-height: inherit;
   text-align: left;
   white-space: normal;
@@ -633,16 +638,17 @@ pre {
 
 .outline-item {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: var(--space-2);
   width: 100%;
   padding: 3px var(--space-2);
   border: none;
   border-radius: var(--radius-small);
   background: none;
-  font-size: 13px;
-  line-height: 1.45;
+  font-size: var(--font-size-outline);
+  line-height: var(--outline-line);
   text-align: left;
+  white-space: normal;
 }
 
 .outline-item[aria-current='step'] {
@@ -651,11 +657,15 @@ pre {
 }
 
 .outline-item-title {
+  /* Up to two lines, then an ellipsis; the full title is in the tooltip. */
+  display: -webkit-box;
   flex: 1 1 auto;
   min-width: 0;
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow-wrap: anywhere;
 }
 
 /* Seen: dimmed in place, nothing moves. */
@@ -667,6 +677,7 @@ pre {
   flex: none;
   width: 8px;
   height: 8px;
+  margin-top: calc((var(--outline-line) - 8px) / 2);
   border-radius: 50%;
   background: var(--accent);
 }
@@ -678,6 +689,7 @@ pre {
 
 .fx {
   flex: none;
+  line-height: var(--outline-line);
   color: var(--fg-faint);
   font-size: var(--font-size-tiny);
   font-weight: normal;
@@ -687,6 +699,7 @@ pre {
   display: inline-flex;
   flex: none;
   align-items: center;
+  height: var(--outline-line);
   gap: var(--space-1);
   color: var(--warn);
   font-size: var(--font-size-tiny);
@@ -745,7 +758,8 @@ pre {
 }
 
 .step-notes {
-  flex: 0 1 auto;
+  /* Natural height up to the cap: the title and facts are never squeezed; the code gives way. */
+  flex: none;
   max-height: 42vh;
   overflow-y: auto;
   padding: var(--space-4) var(--space-6) var(--space-2);
@@ -763,7 +777,7 @@ pre {
 
 .step-title {
   margin: 2px 0 var(--space-1);
-  font-size: 20px;
+  font-size: var(--font-size-title);
   font-weight: 600;
   line-height: 1.3;
 }
@@ -905,10 +919,10 @@ p.why {
 
 .code-view {
   display: flex;
-  flex: 1 1 auto;
+  flex: 1 1 0;
   flex-direction: column;
   min-width: 0;
-  min-height: 160px;
+  min-height: 120px;
   margin: var(--space-3) var(--space-6) 0;
   overflow: hidden;
   border: 1px solid var(--border);
@@ -978,8 +992,10 @@ p.why {
 }
 
 .code-no {
-  flex: 0 0 4.5em;
-  padding-right: var(--space-2);
+  /* As wide as the longest line number (set on .code), no wider. */
+  flex: none;
+  width: calc(var(--no-width, 4ch) + var(--space-2) + var(--space-1));
+  padding: 0 var(--space-2) 0 var(--space-1);
   color: var(--fg-faint);
   text-align: right;
   user-select: none;
@@ -1078,6 +1094,7 @@ p.why {
   }
 
   .code-view {
+    flex: none;
     height: 70vh;
     margin-inline: var(--space-3);
   }
