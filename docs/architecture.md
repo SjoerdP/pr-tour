@@ -199,7 +199,6 @@ type Runner = (
 | Prettier     | `.prettierrc` (single quotes, width 100), `.prettierignore`                                               |
 | Vitest 5     | `vitest.config.ts` (two projects)                                                                         |
 | Vite 8       | `vite.config.ts` (React plugin, `dist/web`, `/api` proxy)                                                 |
-| CI           | `.github/workflows/ci.yml`: typecheck, lint, format check, test, build                                    |
 | Node version | `.nvmrc` (22), `engines` in `package.json`                                                                |
 
 TypeScript is strict with `noUncheckedIndexedAccess` (line-number code indexes
@@ -216,7 +215,7 @@ npm test             all tests once;  npm run test:watch  for watch mode
 npx vitest run test/server/diff.test.ts      one file (works across projects)
 npm run typecheck    both tsconfigs
 npm run lint         eslint (type-aware; includes the boundary rules)
-npm run format       prettier --write;  npm run format:check  in CI
+npm run format       prettier --write;  npm run format:check  to verify
 npm run check        typecheck + lint + format:check + test (run before every commit)
 node dist/cli.js     the built binary; `npm i -g .` installs it as `pr-tour`
 ```
@@ -244,7 +243,7 @@ node dist/cli.js     the built binary; `npm i -g .` installs it as `pr-tour`
   zero extra dependencies, and the messages say what to do instead. The
   cost is that the rules match import text, so they assume the layout above.
 - **No path aliases.** See Dependency rules.
-- **`format:check` in `check` and CI.** Formatting drift otherwise lands in
+- **`format:check` in `check`.** Formatting drift otherwise lands in
   review diffs. `npm run format` fixes it in one command.
 - **`concurrently` for `npm run dev`.** One command that runs the API and
   Vite together is the expected developer experience; `PR_TOUR_NO_OPEN=1`
