@@ -134,6 +134,39 @@ describe('Thread: resolved', () => {
   });
 });
 
+describe('Thread: resolving collapses it', () => {
+  it('a thread resolved while open collapses once the resolve succeeds', async () => {
+    const props = {
+      drafts: [] as Draft[],
+      viewerIsAuthor: false,
+      onReply: vi.fn(),
+      onEditDraft: vi.fn(),
+      onDeleteDraft: vi.fn(),
+      onResolve: vi.fn(() => Promise.resolve()),
+      now: NOW,
+    };
+    const { rerender } = render(<Thread {...props} thread={thread()} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Resolve' }));
+    await vi.waitFor(() => expect(props.onResolve).toHaveBeenCalledWith(true));
+    // The review hook marks the thread resolved once GitHub has answered.
+    rerender(<Thread {...props} thread={thread({ resolved: true })} />);
+
+    await vi.waitFor(() =>
+      expect(screen.getByRole('button', { name: /Resolved ·/ }).getAttribute('aria-expanded')).toBe(
+        'false',
+      ),
+    );
+    expect(screen.queryAllByRole('article')).toHaveLength(0);
+  });
+
+  it('a failed resolve leaves it open', async () => {
+    renderThread({ onResolve: vi.fn(() => Promise.reject(new Error('No access'))) });
+    fireEvent.click(screen.getByRole('button', { name: 'Resolve' }));
+    await screen.findByRole('alert');
+    expect(screen.getAllByRole('article')).toHaveLength(2);
+  });
+});
+
 describe('Thread: actions', () => {
   it('Resolve calls onResolve(true)', () => {
     const { onResolve } = renderThread();

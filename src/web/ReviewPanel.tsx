@@ -86,6 +86,12 @@ export function ReviewPanel({
   const chosen: ReviewEvent = own ? 'COMMENT' : event;
   const unseen = chosen === 'APPROVE' ? unseenForReview(tour, isSeen) : [];
   const { drafts, submitError } = review;
+  // "Review sent" is about the last review: a new draft starts the next one.
+  const [draftCount, setDraftCount] = useState(drafts.length);
+  if (drafts.length !== draftCount) {
+    setDraftCount(drafts.length);
+    if (drafts.length > draftCount) setSent(null);
+  }
   const unresolved = review.threads.filter((t) => !t.resolved);
   // GitHub needs a body to request changes, and a body or a comment for a comment review.
   const blank = body.trim() === '';
@@ -255,7 +261,11 @@ export function ReviewPanel({
         id={`${groupName}-summary`}
         className="review-summary"
         value={body}
-        onChange={(e) => onTextChange({ event, body: e.target.value })}
+        onChange={(e) => {
+          // A new summary starts the next review: "Review sent" was about the last one.
+          setSent(null);
+          onTextChange({ event, body: e.target.value });
+        }}
       />
 
       <fieldset

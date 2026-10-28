@@ -58,8 +58,11 @@ export function Thread({
   async function resolve() {
     setBusy(true);
     setError(null);
+    const resolving = !thread.resolved;
     try {
-      await onResolve(!thread.resolved);
+      await onResolve(resolving);
+      // A thread just resolved folds up, like one that was resolved before.
+      if (resolving) setExpanded(false);
     } catch (err) {
       setError(errorText(err));
     } finally {

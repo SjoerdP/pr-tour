@@ -137,7 +137,12 @@ export function TourView({ repo, pr }: { repo: string; pr: number }) {
                 <button
                   type="button"
                   onClick={startBuild}
-                  disabled={build.state === 'starting' || build.state === 'running'}
+                  // While the replace confirm shows, its own Rebuild is the way on.
+                  disabled={
+                    build.state === 'starting' ||
+                    build.state === 'running' ||
+                    build.state === 'confirm'
+                  }
                 >
                   Rebuild tour
                 </button>

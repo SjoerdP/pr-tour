@@ -352,6 +352,23 @@ describe('TourView', () => {
     expect(confirm).not.toHaveBeenCalled();
   });
 
+  it('Rebuild tour is off while the replace confirm shows', async () => {
+    getPr.mockResolvedValue(response({ outdated: true }));
+    buildTour.mockRejectedValueOnce(
+      new api.ApiError(409, 'This PR has 1 unsent draft.', undefined, 1),
+    );
+    render(<TourView repo="acme/loans" pr={42} />);
+
+    await screen.findByText('New commits since this tour was built');
+    fireEvent.click(screen.getByRole('button', { name: 'Rebuild tour' }));
+    await screen.findByText('You have 1 unsent draft. Rebuild anyway?');
+
+    const rebuild = screen.getByRole<HTMLButtonElement>('button', { name: 'Rebuild tour' });
+    expect(rebuild.disabled).toBe(true);
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(rebuild.disabled).toBe(false);
+  });
+
   it('Cancel on the replace confirm builds nothing', async () => {
     getPr.mockResolvedValue(response({ outdated: true }));
     buildTour.mockRejectedValueOnce(

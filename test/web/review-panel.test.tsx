@@ -405,6 +405,42 @@ describe('ReviewPanel: submit', () => {
     expect((del as HTMLButtonElement).disabled).toBe(true);
   });
 
+  it('typing a new summary after "Review sent" clears it, and the hint is back', async () => {
+    const review = fakeReview();
+    vi.mocked(review.submit).mockResolvedValue({ url: 'https://github.com/r/1', sent: [] });
+    renderPanel(review);
+    const summary = () => screen.getByRole<HTMLTextAreaElement>('textbox', { name: 'Summary' });
+    fireEvent.change(summary(), { target: { value: 'Fine.' } });
+    fireEvent.click(submitButton());
+    await screen.findByText(/Review sent/);
+
+    fireEvent.change(summary(), { target: { value: 'More' } });
+    expect(screen.queryByText(/Review sent/)).toBeNull();
+    fireEvent.change(summary(), { target: { value: '' } });
+    expect(screen.getByText('Write a summary or add a comment first.')).toBeTruthy();
+  });
+
+  it('a new draft after "Review sent" clears it', async () => {
+    const review = fakeReview();
+    vi.mocked(review.submit).mockResolvedValue({ url: 'https://github.com/r/1', sent: [] });
+    const props = {
+      tour,
+      isSeen: () => true,
+      onOpenHome: vi.fn(),
+      onJump: vi.fn(),
+      onClose: vi.fn(),
+    };
+    const { rerender } = render(<Harness {...props} review={review} />);
+    fireEvent.change(screen.getByRole('textbox', { name: 'Summary' }), {
+      target: { value: 'Fine.' },
+    });
+    fireEvent.click(submitButton());
+    await screen.findByText(/Review sent/);
+
+    rerender(<Harness {...props} review={{ ...review, drafts: [comment()] }} />);
+    expect(screen.queryByText(/Review sent/)).toBeNull();
+  });
+
   it('Submit is disabled while sending', () => {
     renderPanel({ ...fakeReview({ drafts: [comment()] }), submitting: true });
     expect((submitButton() as HTMLButtonElement).disabled).toBe(true);
