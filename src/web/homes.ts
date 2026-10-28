@@ -58,3 +58,35 @@ export function homeRanges(home: Home): Range[] {
       return home.item.homes;
   }
 }
+
+/** True for the first step of a flow: where `[` and `]` land. */
+function isFlowStart(home: Home): boolean {
+  return home.kind === 'step' && home.flow.steps[0]?.id === home.id;
+}
+
+/**
+ * Where `]` goes from `currentId`: the first step of the next flow. After the last flow it
+ * is the first other-changes item; from a foundation, the first flow. Undefined from other
+ * changes, or when there is nothing further.
+ */
+export function nextFlowStart(homes: Home[], currentId: string): string | undefined {
+  const index = homes.findIndex((h) => h.id === currentId);
+  if (index === -1 || homes[index]!.kind === 'other') return undefined;
+  return homes.slice(index + 1).find((h) => isFlowStart(h) || h.kind === 'other')?.id;
+}
+
+/**
+ * Where `[` goes from `currentId`: the first step of the previous flow. From the first flow
+ * it is the last foundation; from other changes, the last flow. Undefined from a foundation.
+ */
+export function previousFlowStart(homes: Home[], currentId: string): string | undefined {
+  const current = homes.find((h) => h.id === currentId);
+  if (current === undefined || current.kind === 'foundation') return undefined;
+  // Where the current flow (or the other changes) begins: look back from there.
+  const sectionStart =
+    current.kind === 'step'
+      ? homes.findIndex((h) => h.id === current.flow.steps[0]?.id)
+      : homes.findIndex((h) => h.kind === 'other');
+  return homes.slice(0, sectionStart).findLast((h) => isFlowStart(h) || h.kind === 'foundation')
+    ?.id;
+}
