@@ -1,5 +1,13 @@
 import { execFileSync } from 'node:child_process';
-import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -118,6 +126,47 @@ describe('RepoManager', () => {
     expect(gitSubcommands(calls)).not.toContain('clone');
   });
 
+  it('ensureWorktree remakes a worktree directory left over from an interrupted add', async () => {
+    const path = join(home, 'worktrees', 'acme__widget', head);
+    mkdirSync(path, { recursive: true });
+    writeFileSync(join(path, 'greet.txt'), 'half written');
+    await manager().ensureWorktree(REPO, 7, base, head);
+    expect(readFileSync(join(path, 'greet.txt'), 'utf8')).toBe('hello\nworld\n');
+  });
+
+  it('ensureWorktree checks out two PRs of one repo at the same time', async () => {
+    git('checkout', '-q', '--detach', base);
+    const head8 = commit({ 'other.txt': 'pr 8\n' }, 'pr 8');
+    git('update-ref', 'refs/pull/8/head', head8);
+    git('checkout', '-q', 'main');
+
+    const m = manager();
+    const [path7, path8] = await Promise.all([
+      m.ensureWorktree(REPO, 7, base, head),
+      m.ensureWorktree(REPO, 8, base, head8),
+    ]);
+    expect(readFileSync(join(path7, 'greet.txt'), 'utf8')).toBe('hello\nworld\n');
+    expect(readFileSync(join(path8, 'other.txt'), 'utf8')).toBe('pr 8\n');
+  });
+
+  it('base and head survive git gc after their branches and worktree are gone', async () => {
+    const m = manager();
+    const mainTip = git('rev-parse', 'main');
+    const path = await m.ensureWorktree(REPO, 7, mainTip, head);
+    const clone = join(home, 'repos', 'acme__widget.git');
+    const inClone = (...args: string[]) => execFileSync('git', args, { cwd: clone });
+    inClone('worktree', 'remove', '--force', path);
+    inClone('update-ref', '-d', 'refs/heads/main');
+    inClone('update-ref', '-d', 'refs/pr/7');
+    inClone('reflog', 'expire', '--expire=now', '--all');
+    inClone('gc', '--quiet', '--prune=now');
+
+    expect(await m.fileAt(REPO, mainTip, 'base.txt')).toBe('one\ntwo\n');
+    expect(parseDiff(await m.diffText(REPO, mainTip, head)).map((f) => f.path)).toContain(
+      'greet.txt',
+    );
+  });
+
   it('ensureWorktree throws CommandError when the clone fails', async () => {
     const broken = new RepoManager(home, realRunner, () => join(tmp, 'nowhere'));
     await expect(broken.ensureWorktree(REPO, 7, base, head)).rejects.toThrow(CommandError);
@@ -142,7 +191,7 @@ describe('RepoManager', () => {
     ]);
   });
 
-  it('diffText ignores an external diff tool in git config', async () => {
+  it('diffText and fileAt ignore diff tools, textconv and output options in git config', async () => {
     const m = manager();
     await m.ensureWorktree(REPO, 7, base, head);
     const script = join(tmp, 'junk-diff.sh');
@@ -152,11 +201,16 @@ describe('RepoManager', () => {
     execFileSync('git', ['config', 'diff.external', script], { cwd: clone });
     execFileSync('git', ['config', 'color.diff', 'always'], { cwd: clone });
     execFileSync('git', ['config', 'diff.noprefix', 'true'], { cwd: clone });
+    const attributes = join(tmp, 'attributes');
+    writeFileSync(attributes, '*.txt diff=junk\n');
+    execFileSync('git', ['config', 'core.attributesFile', attributes], { cwd: clone });
+    execFileSync('git', ['config', 'diff.junk.textconv', script], { cwd: clone });
 
     const text = await m.diffText(REPO, base, head);
     expect(text).not.toContain('junk');
     expect(text).toContain('diff --git a/greet.txt b/greet.txt');
     expect(parseDiff(text).map((f) => f.path)).toContain('greet.txt');
+    expect(await m.fileAt(REPO, head, 'greet.txt')).toBe('hello\nworld\n');
   });
 
   it('fileAt returns the content of a path at a sha', async () => {

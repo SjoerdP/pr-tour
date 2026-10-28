@@ -1,9 +1,11 @@
-import { existsSync } from 'node:fs';
+import { existsSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { CommandError, runOk, type Runner } from './exec.js';
 
 const REPO = /^[\w.-]+\/[\w.-]+$/;
 const SHA = /^[0-9a-f]{40}([0-9a-f]{24})?$/;
+/** Refs that keep the base and head commits of every checked-out PR from being garbage-collected. */
+const KEEP_REFS = 'refs/pr-tour/';
 
 /**
  * Git options that keep the user's own git config from changing output we parse
@@ -14,12 +16,14 @@ const SHA = /^[0-9a-f]{40}([0-9a-f]{24})?$/;
 const GIT_CONFIG = ['-c', 'core.quotepath=off', '-c', 'core.hooksPath=/dev/null'];
 
 /**
- * Plain unified diff whatever the config says: no external diff tool, no colour,
+ * Plain unified diff whatever the config says: no external diff tool, no textconv
+ * filter (from diff.<driver>.textconv and an attributes file), no colour,
  * the standard a/ b/ prefixes (overrides diff.noprefix and diff.mnemonicPrefix),
  * and paths relative to the repo root (overrides diff.relative).
  */
 const PLAIN_DIFF = [
   '--no-ext-diff',
+  '--no-textconv',
   '--no-color',
   '--no-relative',
   '--src-prefix=a/',
@@ -32,6 +36,8 @@ const PLAIN_DIFF = [
  * and a worktree per head SHA at `<home>/worktrees/<owner>__<name>/<headSha>`.
  */
 export class RepoManager {
+  private readonly queues = new Map<string, Promise<unknown>>();
+
   constructor(
     private readonly home: string,
     private readonly run: Runner,
@@ -51,35 +57,48 @@ export class RepoManager {
     checkSha(headSha);
     if (!Number.isInteger(pr) || pr <= 0) throw new Error(`Not a PR number: ${pr}`);
     const path = join(this.home, 'worktrees', slug(repo), headSha);
-    if (existsSync(path)) return path;
+    // Builds of different PRs in one repo run at the same time; git commands on one
+    // bare clone must not overlap (half-written clone, lock files).
+    return this.locked(bare, async () => {
+      // A worktree has a `.git` file; a directory without one is left over from an
+      // interrupted `worktree add` and is made again.
+      if (existsSync(join(path, '.git'))) return path;
+      rmSync(path, { recursive: true, force: true });
 
-    if (!existsSync(bare)) {
-      // `--origin origin` so a user's clone.defaultRemoteName does not rename it.
-      await this.git(
-        undefined,
-        'clone',
-        '--bare',
-        '--quiet',
-        '--origin',
-        'origin',
-        this.cloneUrl(repo),
-        bare,
-      );
-    }
-    if (!((await this.has(bare, baseSha)) && (await this.has(bare, headSha)))) {
-      await this.git(
-        bare,
-        'fetch',
-        '--quiet',
-        'origin',
-        `+refs/pull/${pr}/head:refs/pr/${pr}`,
-        baseSha,
-      );
-    }
-    // Forget worktrees whose directory was deleted, so `add` does not refuse the path.
-    await this.git(bare, 'worktree', 'prune');
-    await this.git(bare, 'worktree', 'add', '--quiet', '--detach', path, headSha);
-    return path;
+      if (!existsSync(bare)) {
+        // `--origin origin` so a user's clone.defaultRemoteName does not rename it.
+        await this.git(
+          undefined,
+          'clone',
+          '--bare',
+          '--quiet',
+          '--origin',
+          'origin',
+          this.cloneUrl(repo),
+          bare,
+        );
+      }
+      if (!((await this.has(bare, baseSha)) && (await this.has(bare, headSha)))) {
+        await this.git(
+          bare,
+          'fetch',
+          '--quiet',
+          'origin',
+          `+refs/pull/${pr}/head:refs/pr/${pr}`,
+          baseSha,
+        );
+      }
+      // Give both commits a ref of their own: a base fetched by SHA has none, and
+      // `refs/pr/<pr>` moves when the PR is updated. Without a ref, git gc may delete
+      // them and an old tour could no longer show its diff.
+      for (const sha of [baseSha, headSha]) {
+        await this.git(bare, 'update-ref', `${KEEP_REFS}${sha}`, sha);
+      }
+      // Forget worktrees whose directory was deleted, so `add` does not refuse the path.
+      await this.git(bare, 'worktree', 'prune');
+      await this.git(bare, 'worktree', 'add', '--quiet', '--detach', path, headSha);
+      return path;
+    });
   }
 
   /** `git diff` of the PR as GitHub shows it: from the merge base of base and head to head. */
@@ -105,6 +124,20 @@ export class RepoManager {
     // A missing path is an answer; a missing commit (or anything else) is an error.
     if (await this.has(bare, `${sha}^{commit}`)) return null;
     throw new CommandError('git', ['show', `${sha}:${path}`], result);
+  }
+
+  /** Run `task` after every earlier task for the same key has settled. */
+  private locked<T>(key: string, task: () => Promise<T>): Promise<T> {
+    const previous = this.queues.get(key) ?? Promise.resolve();
+    // The earlier task's caller gets its error; here it only means "that one is done".
+    const next = previous.catch(() => undefined).then(task);
+    this.queues.set(key, next);
+    void next
+      .catch(() => undefined)
+      .then(() => {
+        if (this.queues.get(key) === next) this.queues.delete(key);
+      });
+    return next;
   }
 
   private barePath(repo: string): string {
