@@ -19,3 +19,13 @@ export type PrSummary = {
 
 /** The user's open PRs: those waiting for their review and their own. */
 export type Inbox = { reviewRequested: PrSummary[]; mine: PrSummary[] };
+
+/** Whether a PR has a stored tour, and its size if so. */
+export type TourStatus = {
+  exists: boolean;
+  source?: 'author' | 'inferred';
+  headSha?: string;
+  /** Number of homes (foundations, steps and other items). */
+  homes?: number;
+  flows?: number;
+};
