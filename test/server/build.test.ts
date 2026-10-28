@@ -266,15 +266,32 @@ function builder(...answers: ((call: RunCall) => RunResult)[]) {
     if (!answer) throw new Error('claude called too often');
     return answer(call);
   });
-  const github = { pr: () => Promise.resolve(pr) };
+  /** Every GitHub and git call the checkout made, by method name. */
+  const checkoutCalls: string[] = [];
+  const github = {
+    pr: () => {
+      checkoutCalls.push('pr');
+      return Promise.resolve(pr);
+    },
+  };
   const repos = {
-    ensureWorktree: () => Promise.resolve(WORKTREE),
-    diffText: () => Promise.resolve(DIFF),
-    mergeBase: (_repo: string, baseSha: string, headSha: string) =>
-      Promise.resolve(baseSha === pr.baseSha && headSha === pr.headSha ? MERGE_BASE : 'wrong'),
+    ensureWorktree: () => {
+      checkoutCalls.push('ensureWorktree');
+      return Promise.resolve(WORKTREE);
+    },
+    diffText: () => {
+      checkoutCalls.push('diffText');
+      return Promise.resolve(DIFF);
+    },
+    mergeBase: (_repo: string, baseSha: string, headSha: string) => {
+      checkoutCalls.push('mergeBase');
+      return Promise.resolve(
+        baseSha === pr.baseSha && headSha === pr.headSha ? MERGE_BASE : 'wrong',
+      );
+    },
   };
   const tours = new TourBuilder({ run, repos, github, store, home });
-  return { tours, calls };
+  return { tours, calls, checkoutCalls };
 }
 
 const answer = (result: string) => () => claudeAnswer(result);
@@ -380,6 +397,24 @@ describe('TourBuilder.build', () => {
     expect(calls).toHaveLength(1);
     expect(store.getTour('acme/greet', 7)).toBeNull();
   });
+
+  it('a failed claude run shows its first stderr line in the message', async () => {
+    const { tours } = builder(() => ({
+      stdout: '',
+      stderr: '\n  Invalid API key · Please run /login  \nmore detail\n',
+      code: 1,
+    }));
+
+    await expect(tours.build('acme/greet', 7)).rejects.toThrow(
+      'Claude failed to run: Invalid API key · Please run /login',
+    );
+  });
+
+  it('a failed claude run without stderr shows its exit code', async () => {
+    const { tours } = builder(() => ({ stdout: '', stderr: '', code: 3 }));
+
+    await expect(tours.build('acme/greet', 7)).rejects.toThrow('Claude failed to run: exit code 3');
+  });
 });
 
 describe('TourBuilder.importAuthorTour', () => {
@@ -403,5 +438,14 @@ describe('TourBuilder.importAuthorTour', () => {
       TourBuildError,
     );
     expect(store.getTour('acme/greet', 7)).toBeNull();
+  });
+
+  it('importAuthorTour checks the tour before fetching or checking out anything', async () => {
+    const { tours, checkoutCalls } = builder();
+
+    await expect(tours.importAuthorTour('acme/greet', 7, 'not json')).rejects.toThrow(
+      TourBuildError,
+    );
+    expect(checkoutCalls).toEqual([]);
   });
 });

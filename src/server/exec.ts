@@ -25,14 +25,20 @@ export class CommandError extends Error {
 
   /** `<cmd> failed: <first stderr line>`, without the arguments (they can hold a whole query). */
   get shortMessage(): string {
-    const line = this.result.stderr
-      .split('\n')
-      .map((l) => l.trim())
-      .find((l) => l !== '');
+    const line = firstLine(this.result.stderr);
     if (line === undefined) return `${this.cmd} failed with exit code ${this.result.code}`;
-    const cut = line.length > SHORT_LINE_CHARS ? `${line.slice(0, SHORT_LINE_CHARS)}...` : line;
-    return `${this.cmd} failed: ${cut}`;
+    return `${this.cmd} failed: ${line}`;
   }
+}
+
+/** The first non-empty line of `text`, trimmed and cut to a length fit for a message. */
+export function firstLine(text: string): string | undefined {
+  const line = text
+    .split('\n')
+    .map((l) => l.trim())
+    .find((l) => l !== '');
+  if (line === undefined) return undefined;
+  return line.length > SHORT_LINE_CHARS ? `${line.slice(0, SHORT_LINE_CHARS)}...` : line;
 }
 
 /** Run a command and throw `CommandError` unless it exits 0. */
@@ -59,7 +65,8 @@ const ENV = { ...process.env, GIT_TERMINAL_PROMPT: '0' };
 /**
  * `execFile` behind the `Runner` type. Never throws: a non-zero exit returns its code.
  * When the command does not exit normally (not found, killed by the timeout, output over
- * `maxBuffer`) the code is non-zero and the reason is appended to stderr.
+ * `maxBuffer`) the code is non-zero and the reason is the first line of stderr, so
+ * `CommandError.shortMessage` and other first-line messages show it.
  */
 export const realRunner: Runner = (cmd, args, opts = {}) =>
   new Promise((resolve) => {
@@ -75,9 +82,14 @@ export const realRunner: Runner = (cmd, args, opts = {}) =>
       },
       (error, stdout, stderr) => {
         if (!error) return resolve({ stdout, stderr, code: 0 });
+        if (error.killed && opts.timeoutMs !== undefined) {
+          const reason = `${cmd} timed out after ${opts.timeoutMs / 1000} s`;
+          return resolve({ stdout, stderr: `${reason}\n${stderr}`, code: 1 });
+        }
         const code = error.code;
         if (typeof code === 'number') return resolve({ stdout, stderr, code });
-        resolve({ stdout, stderr: `${stderr}${stderr ? '\n' : ''}${error.message}`, code: 1 });
+        const reason = code === 'ENOENT' ? `${cmd} not found` : error.message;
+        resolve({ stdout, stderr: `${reason}\n${stderr}`, code: 1 });
       },
     );
     // A command that exits before reading all input closes stdin early; that is not our error.

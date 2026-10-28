@@ -20,10 +20,21 @@ describe('realRunner', () => {
     });
   });
 
-  it('reports a missing command as a non-zero code', async () => {
+  it('reports a missing command as a non-zero code and "not found" first', async () => {
     const result = await realRunner('pr-tour-no-such-command', []);
     expect(result.code).not.toBe(0);
-    expect(result.stderr).toMatch(/ENOENT/);
+    expect(result.stderr.split('\n')[0]).toBe('pr-tour-no-such-command not found');
+  });
+
+  it('reports a command killed by the timeout as "timed out" first', async () => {
+    const result = await realRunner(
+      process.execPath,
+      ['-e', 'console.error("still working"); setTimeout(() => {}, 10000)'],
+      { timeoutMs: 300 },
+    );
+    expect(result.code).not.toBe(0);
+    expect(result.stderr.split('\n')[0]).toBe(`${process.execPath} timed out after 0.3 s`);
+    expect(new CommandError('node', [], result).shortMessage).toContain('timed out after 0.3 s');
   });
 });
 

@@ -14,7 +14,7 @@ import {
 import { z } from 'zod';
 import { checkTour, contains } from './check.js';
 import { lineChanges, parseDiff, type FileDiff, type LineChange } from './diff.js';
-import type { Runner } from './exec.js';
+import { firstLine, type Runner } from './exec.js';
 import type { GitHub, PrSummary } from './github.js';
 import { tourPrompt } from './prompt.js';
 import type { RepoManager } from './repo.js';
@@ -190,9 +190,10 @@ export class TourBuilder {
 
   /** Validate a tour written by the PR's author (the /tour skill), check it, and store it. */
   async importAuthorTour(repo: string, pr: number, bodyJson: string): Promise<Tour> {
-    const { summary, diff, mergeBase } = await this.checkout(repo, pr, () => {});
+    // Check the file first: a bad one fails at once, before any fetch or clone.
     const parsed = parseBody(bodyJson);
     if (!parsed.ok) throw new TourBuildError('The tour file is not a valid tour.', parsed.error);
+    const { summary, diff, mergeBase } = await this.checkout(repo, pr, () => {});
     return this.finishAndSave(parsed.body, summary, mergeBase, 'author', diff, () => {});
   }
 
@@ -271,8 +272,9 @@ export class TourBuilder {
       timeoutMs: CLAUDE_TIMEOUT_MS,
     });
     if (result.code !== 0) {
+      const reason = firstLine(result.stderr) ?? `exit code ${result.code}`;
       throw new TourBuildError(
-        'Claude failed to run.',
+        `Claude failed to run: ${reason}`,
         `claude exited with code ${result.code}\n${excerpt(result.stderr)}\n${excerpt(result.stdout)}`,
       );
     }
