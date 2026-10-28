@@ -5,6 +5,7 @@ import { CodeView } from './CodeView.js';
 import { FlowEndNote } from './FlowEndNote.js';
 import { homeTitle, type Home } from './homes.js';
 import { withKey } from './shortcuts.js';
+import type { ReviewState } from './useReview.js';
 
 type Focus = CodeFocus | null;
 
@@ -122,10 +123,23 @@ type Props = {
   onBack: () => void;
   onOpenHome: (homeId: string) => void;
   nav: PaneNav;
+  /** The PR's review, shown and added to in the code view. */
+  review: ReviewState;
 };
 
 /** The current home: its header and notes, then its code, then the step buttons. */
-export function StepPane({ repo, pr, tour, home, jump, onJump, onBack, onOpenHome, nav }: Props) {
+export function StepPane({
+  repo,
+  pr,
+  tour,
+  home,
+  jump,
+  onJump,
+  onBack,
+  onOpenHome,
+  nav,
+  review,
+}: Props) {
   const why =
     home.kind === 'foundation'
       ? home.foundation.why
@@ -200,6 +214,7 @@ export function StepPane({ repo, pr, tour, home, jump, onJump, onBack, onOpenHom
         plain={!jump && home.kind === 'other' && home.group.kind === 'generated'}
         onJump={onJump}
         onOpenHome={onOpenHome}
+        review={review}
       />
       <div className="step-nav">
         <button

@@ -6,6 +6,7 @@ import { StepPane } from './StepPane.js';
 import { TopBar } from './TopBar.js';
 import { useAboutPanel } from './useAboutPanel.js';
 import { useKeys } from './useKeys.js';
+import { useReview } from './useReview.js';
 import { useSeenMarks } from './useSeenMarks.js';
 import { useTourBuild } from './useTourBuild.js';
 
@@ -24,6 +25,8 @@ export function TourView({ repo, pr }: { repo: string; pr: number }) {
   const [currentId, setCurrentId] = useState<string | null>(null);
   const [jump, setJump] = useState<{ file: string; line: number } | null>(null);
   const about = useAboutPanel(repo, pr, tour !== null);
+  // One review for the PR, shared by everything that shows or adds comments.
+  const review = useReview(repo, pr);
 
   // The outline's order is the reading order: j/k walk the same list.
   const homes = useMemo(() => (tour ? homesInOrder(tour) : []), [tour]);
@@ -161,6 +164,7 @@ export function TourView({ repo, pr }: { repo: string; pr: number }) {
               onBack={() => setJump(null)}
               onOpenHome={goTo}
               nav={nav}
+              review={review}
             />
           </main>
         </div>

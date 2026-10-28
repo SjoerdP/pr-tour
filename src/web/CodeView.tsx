@@ -1,19 +1,42 @@
-import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
+import {
+  Fragment,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+  type MouseEvent,
+  type ReactNode,
+} from 'react';
+import type { FileDiff } from '../shared/diff.js';
+import {
+  commentTarget,
+  type DiffSide,
+  type Draft,
+  type DraftComment,
+  type ReviewThread,
+} from '../shared/review.js';
 import { buildRows, changeBlocks, foldRows, type Row, type Segment } from '../shared/rows.js';
 import type { CallRef, Tour } from '../shared/tour.js';
 import {
   callMatches,
+  draftRows,
   focusRows,
+  rowOf,
   rowOwners,
+  threadRows,
   type CallMatch,
   type Focus,
   type Owner,
 } from './code-lines.js';
+import { FileComments, ReviewRow } from './CodeReview.js';
+import { Composer } from './Composer.js';
 import type { HighlightedLine, Token } from './highlight.js';
 import { homesInOrder } from './homes.js';
 import { withKey } from './shortcuts.js';
 import { useCodeFile, type CodeFile, type Tokens } from './useCodeFile.js';
 import { useKeys } from './useKeys.js';
+import type { ReviewState } from './useReview.js';
 
 export type CodeViewProps = {
   repo: string;
@@ -28,6 +51,8 @@ export type CodeViewProps = {
   onJump: (file: string, line: number) => void;
   /** Open another home of the tour (from a "belongs to" label). */
   onOpenHome: (homeId: string) => void;
+  /** The PR's review: threads and drafts are shown in place, new comments go here. */
+  review: ReviewState;
 };
 
 /** The whole file of a home: changes and the focus open, unchanged code folded. */
@@ -41,6 +66,7 @@ export function CodeView({
   plain = false,
   onJump,
   onOpenHome,
+  review,
 }: CodeViewProps) {
   const { load, tokens } = useCodeFile(repo, pr, tour, file, plain);
 
@@ -52,8 +78,20 @@ export function CodeView({
         Could not load {file}: {load.message}
       </p>
     );
-  } else if (load.status === 'binary') body = <p className="muted">Binary file changed</p>;
-  else {
+  } else if (load.status === 'binary') {
+    // No lines to sit at: every thread and draft goes to the block above.
+    body = (
+      <>
+        <FileComments
+          path={file}
+          threads={threadsOn(review.threads, file)}
+          drafts={draftsOn(review.drafts, file)}
+          review={review}
+        />
+        <p className="muted">Binary file changed</p>
+      </>
+    );
+  } else {
     body = (
       <FileCode
         // New file or new focus: start over with folds closed and the first change.
@@ -65,6 +103,7 @@ export function CodeView({
         homeId={homeId}
         onJump={onJump}
         onOpenHome={onOpenHome}
+        review={review}
       />
     );
   }
@@ -84,9 +123,30 @@ type FileCodeProps = {
   homeId: string;
   onJump: (file: string, line: number) => void;
   onOpenHome: (homeId: string) => void;
+  review: ReviewState;
 };
 
-function FileCode({ tour, file, tokens, focus, homeId, onJump, onOpenHome }: FileCodeProps) {
+function threadsOn(threads: ReviewThread[], path: string): ReviewThread[] {
+  return threads.filter((t) => t.path === path);
+}
+
+function draftsOn(drafts: Draft[], path: string): DraftComment[] {
+  return drafts.filter((d): d is DraftComment => d.kind === 'comment' && d.path === path);
+}
+
+/** Lines picked for a comment: from the first one clicked to the last one (shift+)clicked. */
+type Selection = { side: DiffSide; anchor: number; line: number };
+
+function FileCode({
+  tour,
+  file,
+  tokens,
+  focus,
+  homeId,
+  onJump,
+  onOpenHome,
+  review,
+}: FileCodeProps) {
   const rows = useMemo(() => buildRows(file.newText, file.oldText, file.diff?.hunks ?? []), [file]);
   const blocks = useMemo(() => changeBlocks(rows), [rows]);
   const focusRange = useMemo(() => focusRows(rows, focus), [rows, focus]);
@@ -103,6 +163,37 @@ function FileCode({ tour, file, tokens, focus, homeId, onJump, onOpenHome }: Fil
     return { '--no-width': `${Math.max(2, String(widest).length)}ch` } as CSSProperties;
   }, [rows]);
 
+  const { threads, drafts } = review;
+  const threadsAt = useMemo(
+    () => threadRows(rows, threadsOn(threads, file.path)),
+    [rows, threads, file.path],
+  );
+  const draftsAt = useMemo(
+    () => draftRows(rows, draftsOn(drafts, file.path), tour.headSha),
+    [rows, drafts, file.path, tour.headSha],
+  );
+  // Rows with a thread or a draft stay open, like changes.
+  const reviewRows = useMemo(() => {
+    const at = new Set([...threadsAt.keys(), ...draftsAt.keys()]);
+    at.delete(-1);
+    return [...at].map((i): [number, number] => [i, i]);
+  }, [threadsAt, draftsAt]);
+
+  // GitHub takes comments only on files the PR changes.
+  const diff = file.diff;
+  const [selection, setSelection] = useState<Selection | null>(null);
+  const picked = selection && {
+    side: selection.side,
+    start: Math.min(selection.anchor, selection.line),
+    end: Math.max(selection.anchor, selection.line),
+  };
+
+  function pick(side: DiffSide, line: number, extend: boolean) {
+    setSelection((s) =>
+      extend && s?.side === side ? { ...s, line } : { side, anchor: line, line },
+    );
+  }
+
   const [opened, setOpened] = useState<Array<[number, number]>>([]);
   const [whole, setWhole] = useState(false);
   // Start on the first change at or after the focus (the last one if the focus is below all).
@@ -113,8 +204,9 @@ function FileCode({ tour, file, tokens, focus, homeId, onJump, onOpenHome }: Fil
   });
   const segments: Segment[] = useMemo(() => {
     if (whole) return rows.length === 0 ? [] : [{ kind: 'rows', from: 0, to: rows.length - 1 }];
-    return foldRows(rows, focusRange ? [focusRange, ...opened] : opened);
-  }, [rows, whole, focusRange, opened]);
+    const keep = [...opened, ...reviewRows];
+    return foldRows(rows, focusRange ? [focusRange, ...keep] : keep);
+  }, [rows, whole, focusRange, opened, reviewRows]);
 
   // The row to bring into view after the next render: the focus on mount, then each change
   // moved to.
@@ -142,6 +234,31 @@ function FileCode({ tour, file, tokens, focus, homeId, onJump, onOpenHome }: Fil
     p: () => goToChange(current - 1),
     f: () => setWhole((w) => !w),
   });
+
+  let composerRow = -1;
+  let composer: ReactNode = null;
+  if (diff && picked) {
+    composerRow = rowOf(rows, picked.side, picked.end);
+    composer = (
+      <PickedComposer
+        diff={diff}
+        rows={rows}
+        picked={picked}
+        onSubmit={async (body) => {
+          await review.add({
+            kind: 'comment',
+            path: file.path,
+            side: picked.side,
+            startLine: picked.start,
+            endLine: picked.end,
+            body,
+          });
+          setSelection(null);
+        }}
+        onCancel={() => setSelection(null)}
+      />
+    );
+  }
 
   const status = file.diff?.status;
   return (
@@ -188,6 +305,12 @@ function FileCode({ tour, file, tokens, focus, homeId, onJump, onOpenHome }: Fil
         </button>
       </div>
       <div className="code" ref={container} style={gutter}>
+        <FileComments
+          path={file.path}
+          threads={threadsAt.get(-1) ?? NO_THREADS}
+          drafts={draftsAt.get(-1) ?? NO_DRAFTS}
+          review={review}
+        />
         {segments.map((seg) =>
           seg.kind === 'fold' ? (
             <button
@@ -206,19 +329,36 @@ function FileCode({ tour, file, tokens, focus, homeId, onJump, onOpenHome }: Fil
               const label =
                 owner && owner.id !== homeId && owners[i - 1]?.id !== owner.id ? owner : null;
               const inFocus = focusRange !== null && i >= focusRange[0] && i <= focusRange[1];
+              const rowThreads = threadsAt.get(i);
+              const rowDrafts = draftsAt.get(i);
+              const no = picked?.side === 'new' ? row.newNo : row.oldNo;
+              const selected =
+                picked !== null && no !== undefined && no >= picked.start && no <= picked.end;
               return (
-                <CodeRow
-                  key={i}
-                  index={i}
-                  row={row}
-                  tokens={rowTokens(row, tokens)}
-                  inFocus={inFocus}
-                  showOld={showOld}
-                  calls={inFocus && row.newNo !== undefined ? calls : NO_CALLS}
-                  label={label}
-                  onJump={onJump}
-                  onOpenHome={onOpenHome}
-                />
+                <Fragment key={i}>
+                  <CodeRow
+                    index={i}
+                    row={row}
+                    tokens={rowTokens(row, tokens)}
+                    inFocus={inFocus}
+                    selected={selected}
+                    showOld={showOld}
+                    calls={inFocus && row.newNo !== undefined ? calls : NO_CALLS}
+                    label={label}
+                    onPick={diff ? pick : null}
+                    onJump={onJump}
+                    onOpenHome={onOpenHome}
+                  />
+                  {(rowThreads || rowDrafts || composerRow === i) && (
+                    <ReviewRow
+                      path={file.path}
+                      threads={rowThreads ?? NO_THREADS}
+                      drafts={rowDrafts ?? NO_DRAFTS}
+                      review={review}
+                      composer={composerRow === i ? composer : null}
+                    />
+                  )}
+                </Fragment>
               );
             })
           ),
@@ -229,6 +369,43 @@ function FileCode({ tour, file, tokens, focus, homeId, onJump, onOpenHome }: Fil
 }
 
 const NO_CALLS: CallRef[] = [];
+const NO_THREADS: ReviewThread[] = [];
+const NO_DRAFTS: DraftComment[] = [];
+
+type Picked = { side: DiffSide; start: number; end: number };
+
+/**
+ * The composer for the picked lines. It says before sending when they become a file-level
+ * comment (outside the diff, or across hunks); new-side lines can start a suggestion.
+ */
+function PickedComposer({
+  diff,
+  rows,
+  picked,
+  onSubmit,
+  onCancel,
+}: {
+  diff: FileDiff;
+  rows: Row[];
+  picked: Picked;
+  onSubmit: (body: string) => Promise<void>;
+  onCancel: () => void;
+}) {
+  const { side, start, end } = picked;
+  const lineText = (n: number) => rows[rowOf(rows, side, n)]?.text ?? '';
+  const target = commentTarget(diff, side, start, end, lineText);
+  const suggestFrom = side === 'new' ? rowRange(start, end).map(lineText) : null;
+  return (
+    <Composer
+      target={target}
+      path={diff.path}
+      suggestFrom={suggestFrom}
+      submitLabel="Add comment"
+      onSubmit={onSubmit}
+      onCancel={onCancel}
+    />
+  );
+}
 
 function rowRange(from: number, to: number): number[] {
   return Array.from({ length: to - from + 1 }, (_, k) => from + k);
@@ -252,22 +429,53 @@ type CodeRowProps = {
   row: Row;
   tokens: HighlightedLine | undefined;
   inFocus: boolean;
+  /** Picked for a comment. */
+  selected: boolean;
   /** False when the file has no old side (an added file). */
   showOld: boolean;
   calls: CallRef[];
   label: Owner | null;
+  /** Picks a line for a comment (`extend` on shift+click); null when comments are not possible. */
+  onPick: ((side: DiffSide, line: number, extend: boolean) => void) | null;
   onJump: (file: string, line: number) => void;
   onOpenHome: (homeId: string) => void;
 };
+
+/** A line number; a button that picks the line for a comment when `onPick` is given. */
+function LineNo({
+  no,
+  side,
+  onPick,
+}: {
+  no: number | undefined;
+  side: DiffSide;
+  onPick: CodeRowProps['onPick'];
+}) {
+  if (no === undefined || !onPick) return <span className="code-no">{no ?? ''}</span>;
+  const label = side === 'new' ? `Comment on line ${no}` : `Comment on old line ${no}`;
+  return (
+    <button
+      type="button"
+      className="code-no code-no-button"
+      aria-label={label}
+      title={`${label} (Shift+click to select a range)`}
+      onClick={(event: MouseEvent) => onPick(side, no, event.shiftKey)}
+    >
+      {no}
+    </button>
+  );
+}
 
 function CodeRow({
   index,
   row,
   tokens,
   inFocus,
+  selected,
   showOld,
   calls,
   label,
+  onPick,
   onJump,
   onOpenHome,
 }: CodeRowProps) {
@@ -276,9 +484,13 @@ function CodeRow({
     tokens && tokens.map((t) => t.content).join('') === row.text ? tokens : [{ content: row.text }];
   const matches = calls.length > 0 ? callMatches(row.text, calls) : [];
   return (
-    <div className={`code-row code-${row.kind}${inFocus ? ' code-focus' : ''}`} data-row={index}>
-      {showOld && <span className="code-no">{row.oldNo ?? ''}</span>}
-      <span className="code-no">{row.newNo ?? ''}</span>
+    <div
+      className={`code-row code-${row.kind}${inFocus ? ' code-focus' : ''}${selected ? ' code-selected' : ''}`}
+      data-row={index}
+    >
+      {/* Deleted lines are commented on the old side, all others on the new side. */}
+      {showOld && <LineNo no={row.oldNo} side="old" onPick={row.kind === 'del' ? onPick : null} />}
+      <LineNo no={row.newNo} side="new" onPick={onPick} />
       <span className="code-marker">{MARKERS[row.kind]}</span>
       <code className="code-text">{lineContent(parts, row.text.length, matches, onJump)}</code>
       {label && (

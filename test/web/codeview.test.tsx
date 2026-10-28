@@ -4,6 +4,7 @@ import type { FileDiff } from '../../src/shared/diff.js';
 import type { Tour } from '../../src/shared/tour.js';
 import * as api from '../../src/web/api.js';
 import { CodeView } from '../../src/web/CodeView.js';
+import { fakeReview } from './review-fake.js';
 
 vi.mock('../../src/web/api.js', async (importOriginal) => ({
   ...(await importOriginal<typeof api>()),
@@ -113,6 +114,7 @@ function renderView(props: Partial<Props> = {}) {
       homeId="F1.S1"
       onJump={onJump}
       onOpenHome={onOpenHome}
+      review={fakeReview()}
       {...props}
     />,
   );

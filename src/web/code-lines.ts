@@ -1,6 +1,12 @@
 // Pure helpers for the code view: which rows a focus covers, which home owns a changed
 // row, and where a traced call appears in a line.
 
+import {
+  isOlderDraft,
+  type DiffSide,
+  type DraftComment,
+  type ReviewThread,
+} from '../shared/review.js';
 import type { Row } from '../shared/rows.js';
 import type { CallRef, Tour } from '../shared/tour.js';
 import { homeRanges, homesInOrder, homeTitle } from './homes.js';
@@ -57,6 +63,46 @@ export function rowOwners(
 
 function within(no: number | undefined, range: { start: number; end: number }): boolean {
   return no !== undefined && no >= range.start && no <= range.end;
+}
+
+/** The row shown with `side`'s line number `line`, or -1 when no row has it. */
+export function rowOf(rows: Row[], side: DiffSide, line: number): number {
+  return rows.findIndex((r) => (side === 'new' ? r.newNo : r.oldNo) === line);
+}
+
+function push<T>(map: Map<number, T[]>, at: number, item: T) {
+  const list = map.get(at);
+  if (list) list.push(item);
+  else map.set(at, [item]);
+}
+
+/**
+ * The row index each thread is shown after: the row of its (last) line on its side. Threads
+ * that are outdated, file-level or on a line no row has go to -1, the block above the code.
+ */
+export function threadRows(rows: Row[], threads: ReviewThread[]): Map<number, ReviewThread[]> {
+  const placed = new Map<number, ReviewThread[]>();
+  for (const t of threads) {
+    const at = t.outdated || t.side === null || t.line === null ? -1 : rowOf(rows, t.side, t.line);
+    push(placed, at, t);
+  }
+  return placed;
+}
+
+/**
+ * The row index each comment draft is shown after: the row of its last line. Drafts made on
+ * another head than `headSha` (their lines may have moved) go to -1, as do lines no row has.
+ */
+export function draftRows(
+  rows: Row[],
+  drafts: DraftComment[],
+  headSha: string,
+): Map<number, DraftComment[]> {
+  const placed = new Map<number, DraftComment[]>();
+  for (const d of drafts) {
+    push(placed, isOlderDraft(d, headSha) ? -1 : rowOf(rows, d.side, d.endLine), d);
+  }
+  return placed;
 }
 
 export type CallMatch = { from: number; to: number; call: CallRef };

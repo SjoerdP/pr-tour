@@ -10,6 +10,8 @@ vi.mock('../../src/web/api.js', () => ({
   getPr: vi.fn(),
   buildTour: vi.fn(),
   markSeen: vi.fn(),
+  // The tour view loads the PR's review; these tests are not about it: it never arrives.
+  getReview: () => new Promise(() => {}),
 }));
 
 // The real code view loads files from the server; these tests are about the tour around it.
@@ -22,6 +24,7 @@ vi.mock('../../src/web/CodeView.js', () => ({
     plain,
     onJump,
     onOpenHome,
+    review,
   }: {
     file: string;
     focus: { start: number } | null;
@@ -29,9 +32,11 @@ vi.mock('../../src/web/CodeView.js', () => ({
     plain?: boolean;
     onJump: (file: string, line: number) => void;
     onOpenHome: (homeId: string) => void;
+    review?: { state: string };
   }) => (
     <div>
       <div data-testid="code-view" data-plain={plain ? 'yes' : 'no'}>{`${homeId} ${file}`}</div>
+      <div data-testid="code-review">{review?.state ?? 'none'}</div>
       <div data-testid="code-focus">{focus?.start}</div>
       <button type="button" onClick={() => onJump('src/fees.ts', 12)}>
         follow chargeFee
@@ -208,6 +213,14 @@ describe('TourView', () => {
     expect((await screen.findByRole('alert')).textContent).toContain('Claude returned no JSON');
     fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
     expect(buildTour).toHaveBeenCalledTimes(2);
+  });
+
+  it('passes the PR review down to the code view', async () => {
+    getPr.mockResolvedValue(response());
+    render(<TourView repo="acme/loans" pr={42} />);
+
+    // The review never arrives in these tests: the code view gets it while it loads.
+    expect((await screen.findByTestId('code-review')).textContent).toBe('loading');
   });
 
   it('outline order is foundations, flows, other', async () => {

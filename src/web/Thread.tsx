@@ -84,7 +84,7 @@ export function Thread({
             <Comment key={comment.id} comment={comment} now={now} />
           ))}
           {replies.map((draft) => (
-            <PendingReply
+            <PendingDraft
               key={draft.id}
               draft={draft}
               path={thread.path}
@@ -139,13 +139,14 @@ function Comment({ comment, now }: { comment: ThreadComment; now: Date | undefin
   );
 }
 
-function PendingReply({
+/** A draft (a reply or a new comment) not yet sent: its text, with Edit and Delete. */
+export function PendingDraft({
   draft,
   path,
   onEdit,
   onDelete,
 }: {
-  draft: DraftReply;
+  draft: Draft;
   path: string;
   onEdit: (body: string) => Promise<unknown> | void;
   onDelete: () => Promise<unknown> | void;
