@@ -115,6 +115,14 @@ export class RepoManager {
     return result.stdout;
   }
 
+  /** The commit where `headSha` branched from `baseSha`: the old side of `diffText`. */
+  async mergeBase(repo: string, baseSha: string, headSha: string): Promise<string> {
+    checkSha(baseSha);
+    checkSha(headSha);
+    const result = await this.git(this.barePath(repo), 'merge-base', baseSha, headSha);
+    return result.stdout.trim();
+  }
+
   /** The content of `path` at `sha`, or `null` if the file does not exist there. */
   async fileAt(repo: string, sha: string, path: string): Promise<string | null> {
     checkSha(sha);
@@ -154,12 +162,15 @@ export class RepoManager {
   }
 }
 
-/** `owner/name` -> `owner__name`, after checking it cannot escape the data dir. */
+/**
+ * `owner/name` -> `owner__name`, lowercased because GitHub repo names ignore case,
+ * after checking it cannot escape the data dir.
+ */
 function slug(repo: string): string {
   if (!REPO.test(repo) || repo.split('/').some((part) => /^\.+$/.test(part))) {
     throw new Error(`Not an owner/name repo: ${repo}`);
   }
-  return repo.replace('/', '__');
+  return repo.toLowerCase().replace('/', '__');
 }
 
 function checkSha(sha: string): void {

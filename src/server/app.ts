@@ -5,7 +5,7 @@ import { serveStatic } from '@hono/node-server/serve-static';
 import { Hono, type Context } from 'hono';
 import { z } from 'zod';
 import type { InboxResponse, PrResponse, PrSummary } from '../shared/api.js';
-import type { Tour } from '../shared/tour.js';
+import { homeIds, type Tour } from '../shared/tour.js';
 import { TourBuildError, type TourBuilder } from './build.js';
 import { parseDiff } from './diff.js';
 import { CommandError } from './exec.js';
@@ -37,6 +37,9 @@ export class HttpError extends Error {
   }
 }
 
+/** GitHub stores PR numbers as 32-bit signed ints. */
+const MAX_PR = 2147483647;
+
 const INTERNAL_ERROR = 'Internal error; see the pr-tour server log.';
 
 /** An owner or repo name: what GitHub allows, and never `.` or `..`. */
@@ -51,7 +54,8 @@ const PrParamsSchema = z.object({
   pr: z
     .string()
     .regex(/^[1-9]\d{0,9}$/)
-    .transform(Number),
+    .transform(Number)
+    .refine((pr) => pr <= MAX_PR),
 });
 
 /** A path inside the repo: relative, no empty, `.` or `..` segments. */
@@ -78,10 +82,13 @@ function parse<T>(schema: z.ZodType<T>, value: unknown, what: string): T {
   return result.data;
 }
 
-/** The `:owner/:name/:pr` params as `{ repo, pr, key }`; `key` names the PR's build job. */
+/**
+ * The `:owner/:name/:pr` params as `{ repo, pr, key }`; `key` names the PR's build job.
+ * `repo` is lowercased: GitHub names ignore case, so `Acme/Greet` is the same PR and tour.
+ */
 function prParams(c: Context) {
   const { owner, name, pr } = parse(PrParamsSchema, c.req.param(), 'PR in the URL');
-  const repo = `${owner}/${name}`;
+  const repo = `${owner}/${name}`.toLowerCase();
   return { repo, pr, key: `${repo}#${pr}` };
 }
 
@@ -157,7 +164,12 @@ export function createApp(deps: AppDeps): Hono {
   //   name as `Host`, so only our exact host and port are accepted.
   // - Cross-site writes: a page cannot set a custom header without a CORS preflight,
   //   which this server never approves, so every write must carry `X-PR-Tour: 1`.
+  //
+  // Every response, refusals included, also forbids framing, so no page can show the
+  // app in an iframe and trick the user into clicking it (clickjacking).
   app.use('*', async (c, next) => {
+    c.header('X-Frame-Options', 'DENY');
+    c.header('Content-Security-Policy', "frame-ancestors 'none'");
     const host = c.req.header('host');
     if (host !== `127.0.0.1:${port}` && host !== `localhost:${port}`) {
       return c.json({ error: 'Forbidden host' }, 403);
@@ -237,6 +249,9 @@ export function createApp(deps: AppDeps): Hono {
       throw new HttpError(400, 'Body must be JSON');
     }
     const { homeId, contentHash } = parse(SeenBodySchema, json, 'seen mark');
+    if (!homeIds(requireTour(repo, pr)).includes(homeId)) {
+      throw new HttpError(400, `${homeId} is not a step of this tour`);
+    }
     store.markSeen(repo, pr, homeId, contentHash);
     return c.body(null, 204);
   });

@@ -155,12 +155,12 @@ function excerpt(text: string): string {
 
 /** `owner/name` → `owner__name` for file names; repo names are checked by `RepoManager`. */
 function slug(repo: string): string {
-  return repo.replace('/', '__');
+  return repo.toLowerCase().replace('/', '__');
 }
 
 export type TourBuilderDeps = {
   run: Runner;
-  repos: Pick<RepoManager, 'ensureWorktree' | 'diffText'>;
+  repos: Pick<RepoManager, 'ensureWorktree' | 'diffText' | 'mergeBase'>;
   github: Pick<GitHub, 'pr'>;
   store: Store;
   /** The pr-tour data dir; temp diff files go to `<home>/tmp`. */
@@ -173,7 +173,7 @@ export class TourBuilder {
 
   /** Ask Claude for a tour of the PR, check it, and store it as an `inferred` tour. */
   async build(repo: string, pr: number, onLog: (line: string) => void = () => {}): Promise<Tour> {
-    const { summary, worktree, diff } = await this.checkout(repo, pr, onLog);
+    const { summary, worktree, diff, mergeBase } = await this.checkout(repo, pr, onLog);
 
     const diffPath = join(this.deps.home, 'tmp', `${slug(repo)}-${pr}-${summary.headSha}.diff`);
     mkdirSync(dirname(diffPath), { recursive: true });
@@ -185,15 +185,15 @@ export class TourBuilder {
       rmSync(diffPath, { force: true });
     }
 
-    return this.finishAndSave(body, summary, 'inferred', diff, onLog);
+    return this.finishAndSave(body, summary, mergeBase, 'inferred', diff, onLog);
   }
 
   /** Validate a tour written by the PR's author (the /tour skill), check it, and store it. */
   async importAuthorTour(repo: string, pr: number, bodyJson: string): Promise<Tour> {
-    const { summary, diff } = await this.checkout(repo, pr, () => {});
+    const { summary, diff, mergeBase } = await this.checkout(repo, pr, () => {});
     const parsed = parseBody(bodyJson);
     if (!parsed.ok) throw new TourBuildError('The tour file is not a valid tour.', parsed.error);
-    return this.finishAndSave(parsed.body, summary, 'author', diff, () => {});
+    return this.finishAndSave(parsed.body, summary, mergeBase, 'author', diff, () => {});
   }
 
   private async checkout(repo: string, pr: number, onLog: (line: string) => void) {
@@ -208,7 +208,8 @@ export class TourBuilder {
       summary.headSha,
     );
     const diff = await this.deps.repos.diffText(repo, summary.baseSha, summary.headSha);
-    return { summary, worktree, diff };
+    const mergeBase = await this.deps.repos.mergeBase(repo, summary.baseSha, summary.headSha);
+    return { summary, worktree, diff, mergeBase };
   }
 
   /** Run Claude, and once more with the error if the answer is not a valid tour body. */
@@ -291,6 +292,8 @@ export class TourBuilder {
   private finishAndSave(
     body: TourBodyInput,
     pr: PrSummary,
+    /** Stored as the tour's `baseSha`: the old side of the diff is this commit, not the base tip. */
+    mergeBase: string,
     source: TourMeta['source'],
     diff: string,
     onLog: (line: string) => void,
@@ -301,7 +304,7 @@ export class TourBuilder {
       {
         repo: pr.repo,
         pr: pr.number,
-        baseSha: pr.baseSha,
+        baseSha: mergeBase,
         headSha: pr.headSha,
         source,
         createdAt: new Date().toISOString(),

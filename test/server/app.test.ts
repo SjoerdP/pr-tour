@@ -156,13 +156,58 @@ describe('guard', () => {
     expect(res.status).toBe(403);
   });
 
-  it.each(['localhost', `localhost:${PORT + 1}`, `localhost:${PORT}.evil.example`])(
-    'Host %s (no port, other port, rebinding name) is rejected',
-    async (host) => {
-      const res = await app.request('/api/health', { headers: { Host: host } });
-      expect(res.status).toBe(403);
-    },
-  );
+  it.each([
+    'localhost',
+    `localhost:${PORT + 1}`,
+    `localhost:${PORT}.evil.example`,
+    `LOCALHOST:${PORT}`,
+    `localhost.:${PORT}`,
+  ])('Host %s (no port, other port, rebinding name, other spelling) is rejected', async (host) => {
+    const res = await app.request('/api/health', { headers: { Host: host } });
+    expect(res.status).toBe(403);
+  });
+
+  it('a write to 127.0.0.1 with the header is accepted', async () => {
+    fakes.store.saveTour(greetTour());
+
+    const res = await app.request('/api/pr/acme/greet/7/seen', {
+      method: 'POST',
+      headers: {
+        Host: `127.0.0.1:${PORT}`,
+        'X-PR-Tour': '1',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ homeId: 'o1.1', contentHash: 'd'.repeat(40) }),
+    });
+
+    expect(res.status).toBe(204);
+  });
+
+  it('a CORS preflight is refused and allows nothing', async () => {
+    const res = await app.request('/api/pr/acme/greet/7/tour', {
+      method: 'OPTIONS',
+      headers: {
+        Host: HOST,
+        Origin: 'https://evil.example',
+        'Access-Control-Request-Method': 'POST',
+        'Access-Control-Request-Headers': 'x-pr-tour',
+      },
+    });
+
+    expect(res.status).toBe(403);
+    const allow = [...res.headers.keys()].filter((h) => h.startsWith('access-control-allow-'));
+    expect(allow).toEqual([]);
+  });
+
+  it.each([
+    ['an API response', HOST],
+    ['a refused request', `evil.example:${PORT}`],
+  ])('%s cannot be framed', async (_, host) => {
+    const res = await app.request('/api/health', { headers: { Host: host } });
+
+    expect(res.headers.get('X-Frame-Options')).toBe('DENY');
+    expect(res.headers.get('Content-Security-Policy')).toBe("frame-ancestors 'none'");
+  });
 
   it('request without a Host is rejected', async () => {
     const res = await app.request('/api/health');
@@ -284,6 +329,15 @@ describe('GET /api/pr/:owner/:name/:pr', () => {
     expect(body).toMatchObject({ outdated: false, seen: { 'o1.1': 'h1' }, job: null });
   });
 
+  it('pr finds the tour whatever the case of owner and name', async () => {
+    fakes.store.saveTour(greetTour());
+
+    const body = await json<PrResponse>(await api('/api/pr/Acme/GREET/7'));
+
+    expect(body.tour?.headSha).toBe(HEAD);
+    expect(fakes.github.pr).toHaveBeenCalledWith('acme/greet', 7);
+  });
+
   it('pr without a tour has tour null and is not outdated', async () => {
     const body = await json<PrResponse>(await api('/api/pr/acme/greet/7'));
 
@@ -325,6 +379,7 @@ describe('GET /api/pr/:owner/:name/:pr', () => {
     ['pr not a number', '/api/pr/acme/greet/abc'],
     ['pr zero', '/api/pr/acme/greet/0'],
     ['pr with a sign', '/api/pr/acme/greet/-7'],
+    ['pr over 32 bits', '/api/pr/acme/greet/2147483648'],
   ])('bad params (%s) are 400', async (_, path) => {
     const res = await api(path);
 
@@ -343,6 +398,16 @@ describe('POST /api/pr/:owner/:name/:pr/tour', () => {
     expect(first.status).toBe(202);
     expect(await json<{ job: Job }>(first)).toEqual({ job: { state: 'running', log: [] } });
     expect(second.status).toBe(202);
+    expect(fakes.builder.build).toHaveBeenCalledTimes(1);
+    expect(fakes.builder.build).toHaveBeenCalledWith('acme/greet', 7, expect.any(Function));
+  });
+
+  it('the same PR spelled in another case is the same job', async () => {
+    fakes.builder.build.mockReturnValue(new Promise<Tour>(() => {}));
+
+    await api('/api/pr/Acme/Greet/7/tour', { method: 'POST' });
+    await api('/api/pr/acme/greet/7/tour', { method: 'POST' });
+
     expect(fakes.builder.build).toHaveBeenCalledTimes(1);
     expect(fakes.builder.build).toHaveBeenCalledWith('acme/greet', 7, expect.any(Function));
   });
@@ -471,22 +536,44 @@ describe('GET /api/pr/:owner/:name/:pr/diff', () => {
 });
 
 describe('POST /api/pr/:owner/:name/:pr/seen', () => {
+  beforeEach(() => fakes.store.saveTour(greetTour()));
+
   it('seen stores the mark', async () => {
     const hash = 'd'.repeat(40);
 
     const res = await api('/api/pr/acme/greet/7/seen', {
       method: 'POST',
-      body: { homeId: 'F1.S2', contentHash: hash },
+      body: { homeId: 'o1.1', contentHash: hash },
     });
 
     expect(res.status).toBe(204);
-    expect(fakes.store.seen('acme/greet', 7)).toEqual({ 'F1.S2': hash });
+    expect(fakes.store.seen('acme/greet', 7)).toEqual({ 'o1.1': hash });
+  });
+
+  it('seen of a home that is not in the tour is 400', async () => {
+    const res = await api('/api/pr/acme/greet/7/seen', {
+      method: 'POST',
+      body: { homeId: 'F9.S9', contentHash: 'd'.repeat(40) },
+    });
+
+    expect(res.status).toBe(400);
+    expect(fakes.store.seenCount('acme/greet', 7)).toBe(0);
+  });
+
+  it('seen of a PR without a tour is 404', async () => {
+    const res = await api('/api/pr/acme/greet/8/seen', {
+      method: 'POST',
+      body: { homeId: 'o1.1', contentHash: 'd'.repeat(40) },
+    });
+
+    expect(res.status).toBe(404);
+    expect(fakes.store.seenCount('acme/greet', 8)).toBe(0);
   });
 
   it.each([
-    ['missing contentHash', { homeId: 'F1.S2' }],
+    ['missing contentHash', { homeId: 'o1.1' }],
     ['empty homeId', { homeId: '', contentHash: 'd'.repeat(40) }],
-    ['contentHash not a sha1', { homeId: 'F1.S2', contentHash: 'nope' }],
+    ['contentHash not a sha1', { homeId: 'o1.1', contentHash: 'nope' }],
   ])('seen with %s is 400', async (_, body) => {
     const res = await api('/api/pr/acme/greet/7/seen', { method: 'POST', body });
 
@@ -537,6 +624,14 @@ describe('web app', () => {
 
     expect(res.status).toBe(404);
     expect(await res.json()).toEqual({ error: 'Not found' });
+  });
+
+  it('the app cannot be framed', async () => {
+    const res = await api('/');
+
+    expect(res.status).toBe(200);
+    expect(res.headers.get('X-Frame-Options')).toBe('DENY');
+    expect(res.headers.get('Content-Security-Policy')).toBe("frame-ancestors 'none'");
   });
 
   it('web files are guarded too', async () => {

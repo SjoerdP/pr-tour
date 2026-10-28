@@ -255,6 +255,8 @@ afterEach(() => {
 });
 
 const WORKTREE = '/worktrees/acme__greet/bbbb';
+/** Where the PR branched from its base; the base branch has moved on since. */
+const MERGE_BASE = 'e'.repeat(40);
 
 /** A builder whose claude runs answer with `answers` in turn. */
 function builder(...answers: ((call: RunCall) => RunResult)[]) {
@@ -268,6 +270,8 @@ function builder(...answers: ((call: RunCall) => RunResult)[]) {
   const repos = {
     ensureWorktree: () => Promise.resolve(WORKTREE),
     diffText: () => Promise.resolve(DIFF),
+    mergeBase: (_repo: string, baseSha: string, headSha: string) =>
+      Promise.resolve(baseSha === pr.baseSha && headSha === pr.headSha ? MERGE_BASE : 'wrong'),
   };
   const tours = new TourBuilder({ run, repos, github, store, home });
   return { tours, calls };
@@ -286,7 +290,8 @@ describe('TourBuilder.build', () => {
     expect(stored).toEqual(built);
     expect(stored?.source).toBe('inferred');
     expect(stored?.headSha).toBe(pr.headSha);
-    expect(stored?.baseSha).toBe(pr.baseSha);
+    // The merge base, so the old side of the diff matches the file at the tour's base.
+    expect(stored?.baseSha).toBe(MERGE_BASE);
     expect(stored?.summary).toBe(FULL_GREET.summary);
   });
 
@@ -386,6 +391,7 @@ describe('TourBuilder.importAuthorTour', () => {
     expect(calls).toHaveLength(0);
     expect(tour.source).toBe('author');
     expect(tour.headSha).toBe(pr.headSha);
+    expect(tour.baseSha).toBe(MERGE_BASE);
     expect(tour.check.problems).toEqual([]);
     expect(store.getTour('acme/greet', 7)).toEqual(tour);
   });

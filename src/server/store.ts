@@ -31,6 +31,11 @@ const MIGRATIONS = [
 
 const SCHEMA_VERSION = MIGRATIONS.length;
 
+/** Rows are keyed by the lowercased repo: GitHub repo names ignore case. */
+function repoKey(repo: string): string {
+  return repo.toLowerCase();
+}
+
 export class StoreError extends Error {
   constructor(message: string, options?: ErrorOptions) {
     super(message, options);
@@ -68,13 +73,20 @@ export class Store {
         `INSERT OR REPLACE INTO tours (repo, pr, head_sha, source, json, created_at)
          VALUES (?, ?, ?, ?, ?, ?)`,
       )
-      .run(tour.repo, tour.pr, tour.headSha, tour.source, JSON.stringify(tour), tour.createdAt);
+      .run(
+        repoKey(tour.repo),
+        tour.pr,
+        tour.headSha,
+        tour.source,
+        JSON.stringify(tour),
+        tour.createdAt,
+      );
   }
 
   getTour(repo: string, pr: number): Tour | null {
     const row = this.db
       .prepare(`SELECT json FROM tours WHERE repo = ? AND pr = ?`)
-      .get(repo, pr) as { json: string } | undefined;
+      .get(repoKey(repo), pr) as { json: string } | undefined;
     if (!row) return null;
     try {
       return TourSchema.parse(JSON.parse(row.json));
@@ -103,21 +115,21 @@ export class Store {
          ON CONFLICT (repo, pr, home_id)
          DO UPDATE SET content_hash = excluded.content_hash, seen_at = excluded.seen_at`,
       )
-      .run(repo, pr, homeId, contentHash, new Date().toISOString());
+      .run(repoKey(repo), pr, homeId, contentHash, new Date().toISOString());
   }
 
   /** `homeId → contentHash` of every seen home of the PR. */
   seen(repo: string, pr: number): Record<string, string> {
     const rows = this.db
       .prepare(`SELECT home_id, content_hash FROM seen WHERE repo = ? AND pr = ?`)
-      .all(repo, pr) as { home_id: string; content_hash: string }[];
+      .all(repoKey(repo), pr) as { home_id: string; content_hash: string }[];
     return Object.fromEntries(rows.map((r) => [r.home_id, r.content_hash]));
   }
 
   seenCount(repo: string, pr: number): number {
     const row = this.db
       .prepare(`SELECT COUNT(*) AS n FROM seen WHERE repo = ? AND pr = ?`)
-      .get(repo, pr) as { n: number };
+      .get(repoKey(repo), pr) as { n: number };
     return row.n;
   }
 

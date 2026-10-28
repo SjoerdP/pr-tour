@@ -145,6 +145,27 @@ describe('Store', () => {
   });
 });
 
+describe('Store repo keys', () => {
+  it('a tour saved as Acme/Loans is found as acme/loans', () => {
+    const store = new Store(':memory:');
+    const t = tour({ repo: 'Acme/Loans' });
+    store.saveTour(t);
+
+    expect(store.getTour('acme/loans', 7)).toEqual(t);
+    expect(store.tourStatus('ACME/LOANS', 7).exists).toBe(true);
+    store.close();
+  });
+
+  it('seen marks ignore the case of the repo', () => {
+    const store = new Store(':memory:');
+    store.markSeen('Acme/Loans', 7, 'f1', 'h1');
+
+    expect(store.seen('acme/loans', 7)).toEqual({ f1: 'h1' });
+    expect(store.seenCount('ACME/loans', 7)).toBe(1);
+    store.close();
+  });
+});
+
 describe('Store on disk', () => {
   let dir: string | undefined;
   afterEach(() => {

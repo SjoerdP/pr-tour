@@ -191,6 +191,31 @@ describe('RepoManager', () => {
     ]);
   });
 
+  it('mergeBase is where the PR branched, after the base branch moved on', async () => {
+    const m = manager();
+    await m.ensureWorktree(REPO, 7, base, head);
+    const mainTip = git('rev-parse', 'main');
+    expect(mainTip).not.toBe(base);
+
+    expect(await m.mergeBase(REPO, mainTip, head)).toBe(base);
+  });
+
+  it('mergeBase rejects a sha that is not a full sha', async () => {
+    await expect(manager().mergeBase(REPO, '--all', head)).rejects.toThrow(/sha/);
+  });
+
+  it('repo names that differ only in case share one clone and worktree', async () => {
+    const { run, calls } = recordingRunner();
+    const m = manager(run);
+    const first = await m.ensureWorktree('acme/widget', 7, base, head);
+    calls.length = 0;
+
+    const second = await m.ensureWorktree('Acme/Widget', 7, base, head);
+
+    expect(second).toBe(first);
+    expect(gitSubcommands(calls)).not.toContain('clone');
+  });
+
   it('diffText and fileAt ignore diff tools, textconv and output options in git config', async () => {
     const m = manager();
     await m.ensureWorktree(REPO, 7, base, head);

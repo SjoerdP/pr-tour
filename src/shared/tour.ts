@@ -100,6 +100,7 @@ export const TourBodySchema = bodySchema(z.string());
 export const TourMetaSchema = z.object({
   repo: z.string(),
   pr: z.number().int(),
+  /** Where the PR branched from its base (the merge base): the old side of the tour's diff. */
   baseSha: z.string(),
   headSha: z.string(),
   source: z.enum(['author', 'inferred']),
