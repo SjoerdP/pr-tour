@@ -6,7 +6,7 @@ import { z } from 'zod';
 /** A request the API refuses, with the status to answer. The message is shown to the user. */
 export class HttpError extends Error {
   constructor(
-    readonly status: 400 | 403 | 404,
+    readonly status: 400 | 403 | 404 | 409,
     message: string,
   ) {
     super(message);

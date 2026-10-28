@@ -391,6 +391,19 @@ describe('PATCH and DELETE /drafts/:id', () => {
     expect(res.status).toBe(400);
   });
 
+  it("DELETE of another PR's draft leaves it", async () => {
+    const other = fakes.store.addDraft('acme/greet', 8, {
+      kind: 'reply',
+      threadId: 'T',
+      body: 'a',
+    });
+
+    const res = await api(`/drafts/${other.id}`, { method: 'DELETE' });
+
+    expect(res.status).toBe(204);
+    expect(fakes.store.drafts('acme/greet', 8)).toEqual([other]);
+  });
+
   it('DELETE removes the draft', async () => {
     const draft = addReply();
 
@@ -501,6 +514,72 @@ describe('POST /review/submit', () => {
     expect(fakes.store.drafts('acme/greet', 7)).toEqual([draft]);
   });
 
+  it('a second submit while one is being sent is 409, and the lock is released after', async () => {
+    addReply();
+    let release!: () => void;
+    fakes.review.submitReview.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          release = () => resolve({ url: 'https://github.com/acme/greet/pull/7#review-1' });
+        }),
+    );
+    const submit = () =>
+      api('/review/submit', { method: 'POST', body: { event: 'COMMENT', body: 'x' } });
+
+    const first = submit();
+    await vi.waitFor(() => expect(fakes.review.submitReview).toHaveBeenCalledTimes(1));
+    const second = await submit();
+    expect(second.status).toBe(409);
+    expect(await second.json()).toEqual({ error: 'A review is already being sent.' });
+
+    release();
+    expect((await first).status).toBe(200);
+    expect((await submit()).status).toBe(200);
+    expect(fakes.review.submitReview).toHaveBeenCalledTimes(2);
+  });
+
+  it('the submit lock is released after a ReviewSubmitError', async () => {
+    captureErrorLog();
+    const draft = addReply();
+    fakes.review.submitReview.mockRejectedValueOnce(new ReviewSubmitError('refused', draft.id));
+    const submit = () =>
+      api('/review/submit', { method: 'POST', body: { event: 'COMMENT', body: '' } });
+
+    expect((await submit()).status).toBe(502);
+    expect((await submit()).status).toBe(200);
+  });
+
+  it('a submit of the same PR spelled in another case is locked too', async () => {
+    let release!: () => void;
+    fakes.review.submitReview.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          release = () => resolve({ url: 'u' });
+        }),
+    );
+    const first = api('/review/submit', { method: 'POST', body: { event: 'COMMENT', body: 'x' } });
+    await vi.waitFor(() => expect(fakes.review.submitReview).toHaveBeenCalledTimes(1));
+
+    const second = await app.request('/api/pr/Acme/Greet/7/review/submit', {
+      method: 'POST',
+      headers: { Host: HOST, 'X-PR-Tour': '1', 'Content-Type': 'application/json' },
+      body: JSON.stringify({ event: 'COMMENT', body: 'x' }),
+    });
+    expect(second.status).toBe(409);
+    release();
+    await first;
+  });
+
+  it('a submit failing before GitHub is reached also releases the lock', async () => {
+    captureErrorLog();
+    fakes.review.reviewState.mockRejectedValueOnce(new GraphqlError('down'));
+    const submit = () =>
+      api('/review/submit', { method: 'POST', body: { event: 'COMMENT', body: 'x' } });
+
+    expect((await submit()).status).toBe(502);
+    expect((await submit()).status).toBe(200);
+  });
+
   it('submit without a tour is 404', async () => {
     fakes.store.close();
     fakes.store = new Store(':memory:');
@@ -554,6 +633,20 @@ describe('POST /threads/:threadId/resolve', () => {
   it('unresolve', async () => {
     await api('/threads/T1/resolve', { method: 'POST', body: { resolved: false } });
     expect(fakes.review.setResolved).toHaveBeenCalledWith('T1', false);
+  });
+
+  it.each(['a'.repeat(101), 'T1.x', 'T%201'])('a thread id %s is 400', async (id) => {
+    const res = await api(`/threads/${id}/resolve`, { method: 'POST', body: { resolved: true } });
+    expect(res.status).toBe(400);
+    expect(fakes.review.setResolved).not.toHaveBeenCalled();
+  });
+
+  it('a GitHub-style thread id is accepted', async () => {
+    const res = await api('/threads/PRRT_kwDOA-b_12/resolve', {
+      method: 'POST',
+      body: { resolved: true },
+    });
+    expect(res.status).toBe(204);
   });
 
   it('a body without resolved is 400', async () => {

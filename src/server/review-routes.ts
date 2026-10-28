@@ -39,6 +39,8 @@ const DraftIdSchema = z.object({
     .transform(Number),
 });
 
+const ThreadIdSchema = z.object({ threadId: z.string().regex(/^[\w-]{1,100}$/) });
+
 const ResolveBodySchema = z.object({ resolved: z.boolean() });
 
 const PR = '/api/pr/:owner/:name/:pr';
@@ -46,6 +48,11 @@ const PR = '/api/pr/:owner/:name/:pr';
 /** Mount the review routes under `/api/pr/:owner/:name/:pr`. */
 export function registerReviewRoutes(app: Hono, deps: ReviewRouteDeps): void {
   const { review, store, repos, readTour, requireTour } = deps;
+  /**
+   * PRs (`repo#pr` keys) with a review being sent. A second submit (a double click) would
+   * send the same drafts again, and a review on GitHub cannot be taken back.
+   */
+  const submitting = new Set<string>();
 
   /** A new comment with its placement, quote and head worked out from the tour's diff. */
   async function placeComment(
@@ -130,41 +137,48 @@ export function registerReviewRoutes(app: Hono, deps: ReviewRouteDeps): void {
   });
 
   app.post(`${PR}/review/submit`, async (c) => {
-    const { repo, pr } = prParams(c);
+    const { repo, pr, key } = prParams(c);
     const { event, body } = await jsonBody(c, SubmitBodySchema, 'review');
     const tour = requireTour(repo, pr);
-    // Exactly these drafts are sent, and only these are cleared afterwards.
-    const drafts = store.drafts(repo, pr);
-    if (event === 'COMMENT' && body.trim() === '' && drafts.length === 0) {
-      throw new HttpError(400, 'Nothing to send.');
-    }
-    const { prId, viewerIsAuthor } = await review.reviewState(repo, pr);
-    if (viewerIsAuthor && event !== 'COMMENT') throw new HttpError(400, OWN_PR);
-
+    if (submitting.has(key)) throw new HttpError(409, 'A review is already being sent.');
+    submitting.add(key);
     try {
-      const { url } = await review.submitReview({
-        prId,
-        commitOid: tour.headSha,
-        event,
-        body,
-        drafts,
-      });
+      // Exactly these drafts are sent, and only these are cleared afterwards.
+      const drafts = store.drafts(repo, pr);
+      if (event === 'COMMENT' && body.trim() === '' && drafts.length === 0) {
+        throw new HttpError(400, 'Nothing to send.');
+      }
+      const { prId, viewerIsAuthor } = await review.reviewState(repo, pr);
+      if (viewerIsAuthor && event !== 'COMMENT') throw new HttpError(400, OWN_PR);
+
+      let url: string;
+      try {
+        ({ url } = await review.submitReview({
+          prId,
+          commitOid: tour.headSha,
+          event,
+          body,
+          drafts,
+        }));
+      } catch (err) {
+        if (!(err instanceof ReviewSubmitError)) throw err;
+        console.error(`Submitting the review of ${key} failed:\n${err.stack ?? err.message}`);
+        return c.json({ error: err.message, failedDraftId: err.failedDraftId }, 502);
+      }
       store.clearDrafts(
         repo,
         pr,
         drafts.map((d) => d.id),
       );
       return c.json({ url });
-    } catch (err) {
-      if (!(err instanceof ReviewSubmitError)) throw err;
-      console.error(`Submitting the review of ${repo}#${pr} failed:\n${err.stack ?? err.message}`);
-      return c.json({ error: err.message, failedDraftId: err.failedDraftId }, 502);
+    } finally {
+      submitting.delete(key);
     }
   });
 
   app.post(`${PR}/threads/:threadId/resolve`, async (c) => {
     prParams(c);
-    const threadId = c.req.param('threadId');
+    const { threadId } = parse(ThreadIdSchema, { threadId: c.req.param('threadId') }, 'thread id');
     const { resolved } = await jsonBody(c, ResolveBodySchema, 'resolve');
     await review.setResolved(threadId, resolved);
     return c.body(null, 204);

@@ -73,7 +73,7 @@ function userMessage(err: unknown): string | null {
   return null;
 }
 
-function errorStatus(err: unknown): 400 | 403 | 404 | 500 | 502 {
+function errorStatus(err: unknown): 400 | 403 | 404 | 409 | 500 | 502 {
   if (err instanceof HttpError) return err.status;
   if (err instanceof InvalidRepoError) return 400;
   if (err instanceof PrNotFoundError) return 404;
