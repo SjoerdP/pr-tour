@@ -12,13 +12,17 @@ import { TourBuilder, TourBuildError } from './server/build.js';
 import { CommandError, realRunner } from './server/exec.js';
 import { GitHub, InvalidRepoError, PrNotFoundError } from './server/github.js';
 import { Jobs } from './server/jobs.js';
+import { tourRules } from './server/prompt.js';
 import { RepoManager } from './server/repo.js';
 import { Store } from './server/store.js';
+import { tourBodyJsonSchema, type Tour } from './shared/tour.js';
 
 export const USAGE = `Usage:
   pr-tour                                                   start pr-tour and open it in the browser
   pr-tour open <owner/name>#<pr>                            open the tour of a PR
   pr-tour import --repo <owner/name> --pr <n> --file <path> store a tour written by the PR's author
+  pr-tour schema                                            print the JSON Schema of a tour file
+  pr-tour rules                                             print the rules for writing a tour file
 
 Environment:
   PR_TOUR_PORT     port to listen on (default 4317)
@@ -36,7 +40,9 @@ export class UsageError extends Error {
 export type Command =
   | { cmd: 'serve' }
   | { cmd: 'import'; repo: string; pr: number; file: string }
-  | { cmd: 'open'; repo: string; pr: number };
+  | { cmd: 'open'; repo: string; pr: number }
+  | { cmd: 'schema' }
+  | { cmd: 'rules' };
 
 /** The only address the server listens on: this machine, never the network. */
 const HOST = '127.0.0.1';
@@ -96,6 +102,10 @@ export function parseArgs(argv: string[]): Command {
     const hash = ref.lastIndexOf('#');
     if (hash < 0) throw new UsageError(`Not a PR: ${ref} (expected owner/name#<pr>).`);
     return { cmd: 'open', repo: parseRepo(ref.slice(0, hash)), pr: parsePr(ref.slice(hash + 1)) };
+  }
+  if (cmd === 'schema' || cmd === 'rules') {
+    if (hasOptions || rest.length > 0) throw new UsageError(`${cmd} takes no arguments.`);
+    return { cmd };
   }
   throw new UsageError(`Unknown command: ${cmd}`);
 }
@@ -210,6 +220,18 @@ async function serve(config: Config, url: string): Promise<void> {
   }
 }
 
+/**
+ * What `pr-tour import` tells the author to fix: each check problem, and each run of
+ * changed lines that no home covers (those land in the Unexplained group, not in problems).
+ */
+export function importReport(tour: Tour): string[] {
+  const unexplained = tour.other.filter((g) => g.kind === 'unexplained').flatMap((g) => g.items);
+  return [
+    ...tour.check.problems.map((problem) => `problem: ${problem}`),
+    ...unexplained.map((item) => `unexplained: ${item.title}`),
+  ];
+}
+
 /** `pr-tour import`: check and store an author-made tour. */
 async function importTour(config: Config, repo: string, pr: number, file: string): Promise<void> {
   let bodyJson: string;
@@ -223,7 +245,7 @@ async function importTour(config: Config, repo: string, pr: number, file: string
   const { store, builder } = wire(config.home);
   try {
     const tour = await builder.importAuthorTour(repo, pr, bodyJson);
-    for (const problem of tour.check.problems) console.log(`problem: ${problem}`);
+    for (const line of importReport(tour)) console.log(line);
     console.log(tourUrl(config.port, repo, pr));
   } finally {
     store.close();
@@ -243,6 +265,14 @@ function errorMessage(err: unknown): string {
 async function main(argv: string[]): Promise<void> {
   try {
     const command = parseArgs(argv);
+    if (command.cmd === 'schema') {
+      console.log(JSON.stringify(tourBodyJsonSchema(), null, 2));
+      return;
+    }
+    if (command.cmd === 'rules') {
+      console.log(tourRules());
+      return;
+    }
     const config = readConfig(process.env, homedir());
     if (command.cmd === 'import') {
       await importTour(config, command.repo, command.pr, command.file);

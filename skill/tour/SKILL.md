@@ -1,0 +1,36 @@
+---
+name: tour
+description: Build a pr-tour review tour for the PR you just pushed, using what you know about why each change was made. Use when the user says /tour or asks to open the PR in pr-tour.
+---
+
+# /tour
+
+You wrote this change, so you know why each part of it exists. Write that down
+as a pr-tour tour: the reviewer reads it next to the code, in the order the code runs.
+
+1. **Find the PR.** In the current repo run `gh pr view --json number,url,headRefOid`.
+   The repo is `<owner>/<name>` from the URL. If there is no PR, stop and say so.
+   Make sure your working tree is at `headRefOid` (pushed, nothing uncommitted on top):
+   line numbers in the tour are head line numbers.
+2. **Read the rules and the format.** Run `pr-tour rules` and `pr-tour schema`.
+   Follow the rules exactly. They are the same rules pr-tour gives Claude when it
+   builds a tour itself, so do not work from memory of an older version.
+3. **Read the diff.** `gh pr diff <number>` (merge base to head). Every added and
+   deleted line in it needs exactly one home.
+4. **Write the tour body** as one JSON object that matches the schema.
+   - For every `why`, use your memory of why you made that change: the reason, the
+     trade-off, what the reviewer should check. That is what makes an author tour
+     better than an inferred one.
+   - Never invent intent you do not have. If you do not remember why something
+     changed, say only what it does.
+5. **Save and import.** Write the JSON to a temp file (`mktemp --suffix .json`), then run
+   `pr-tour import --repo <owner/name> --pr <number> --file <path>`.
+   - A zod error means the JSON does not match the schema: fix it and import again.
+   - Each `problem: ...` line is a home that is wrong (it overlaps another home, covers
+     no changed line, or points at a file outside the PR). Each `unexplained: ...` line
+     is a run of changed lines that no home covers. Fix those homes and import again.
+   - Retry at most 2 times. If problems remain, keep the last import and tell the
+     user which problems are left.
+6. **Open it.** Run `pr-tour open <owner/name>#<number>` and give the user the URL.
+
+Never comment on, approve or push to the PR from this skill.

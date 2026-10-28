@@ -1,8 +1,19 @@
+import { execFileSync } from 'node:child_process';
 import { createServer } from 'node:http';
 import type { AddressInfo, Server } from 'node:net';
+import { fileURLToPath } from 'node:url';
 import { Hono } from 'hono';
 import { afterEach, describe, expect, it } from 'vitest';
-import { listen, parseArgs, readConfig, serverStatus, UsageError } from '../src/cli.js';
+import {
+  importReport,
+  listen,
+  parseArgs,
+  readConfig,
+  serverStatus,
+  UsageError,
+} from '../src/cli.js';
+import { tourRules } from '../src/server/prompt.js';
+import type { Tour } from '../src/shared/tour.js';
 
 describe('parseArgs', () => {
   it('no args → serve', () => {
@@ -33,6 +44,13 @@ describe('parseArgs', () => {
     expect(() => parseArgs(['open', 'acme/api'])).toThrow(UsageError);
     expect(() => parseArgs(['open', 'acme#12'])).toThrow(UsageError);
     expect(() => parseArgs(['open', '../x#12'])).toThrow(UsageError);
+  });
+
+  it('schema and rules take no arguments', () => {
+    expect(parseArgs(['schema'])).toEqual({ cmd: 'schema' });
+    expect(parseArgs(['rules'])).toEqual({ cmd: 'rules' });
+    expect(() => parseArgs(['schema', 'x'])).toThrow(UsageError);
+    expect(() => parseArgs(['rules', '--pr', '1'])).toThrow(UsageError);
   });
 
   it('an unknown command or option throws a usage error', () => {
@@ -107,5 +125,55 @@ describe('listen and serverStatus', () => {
   it('listen on a taken port rejects', async () => {
     const port = await healthyApp();
     await expect(listen(new Hono(), port)).rejects.toThrow();
+  });
+});
+
+describe('pr-tour schema and rules', () => {
+  const cli = fileURLToPath(new URL('../src/cli.ts', import.meta.url));
+  const run = (cmd: string) =>
+    execFileSync(process.execPath, ['--import', 'tsx', cli, cmd], { encoding: 'utf8' });
+
+  it('schema prints JSON with a flows property', () => {
+    const schema = JSON.parse(run('schema')) as { properties?: Record<string, unknown> };
+    expect(schema.properties).toHaveProperty('flows');
+  });
+
+  it('rules prints the same rules the build prompt embeds', () => {
+    expect(run('rules')).toBe(`${tourRules()}\n`);
+  });
+});
+
+describe('importReport', () => {
+  const tour = {
+    check: { problems: ['f1 home a.ts:1-3 covers no changed lines'] },
+    other: [
+      {
+        kind: 'tests',
+        title: 'Tests',
+        summary: '',
+        items: [{ id: 'o1.1', file: 't.ts', title: 'x', homes: [] }],
+      },
+      {
+        kind: 'unexplained',
+        title: 'Unexplained',
+        summary: '',
+        items: [
+          { id: 'u1', file: 'b.ts', title: 'b.ts: added lines 4-5', homes: [] },
+          { id: 'u2', file: 'c.ts', title: 'c.ts: deleted line 9', homes: [] },
+        ],
+      },
+    ],
+  } as unknown as Tour;
+
+  it('lists every problem and every unexplained range, so the author can fix the homes', () => {
+    expect(importReport(tour)).toEqual([
+      'problem: f1 home a.ts:1-3 covers no changed lines',
+      'unexplained: b.ts: added lines 4-5',
+      'unexplained: c.ts: deleted line 9',
+    ]);
+  });
+
+  it('is empty for a tour where every changed line has one home', () => {
+    expect(importReport({ check: { problems: [] }, other: [] } as unknown as Tour)).toEqual([]);
   });
 });
