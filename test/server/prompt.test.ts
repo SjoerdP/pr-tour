@@ -41,3 +41,19 @@ describe('tourRules', () => {
     expect(rules).toMatch(/"external-call" side effect only for services outside\s+this repo/);
   });
 });
+
+describe('tourRules: flow ends', () => {
+  it('follows each flow to its end: a returned response, a DB write or an outside call', () => {
+    const rules = tourRules();
+    expect(rules).toMatch(/follow each flow until it ends/i);
+    expect(rules).toMatch(/response is returned/);
+    expect(rules).toMatch(/written to the database/);
+    expect(rules).toMatch(/call to a service outside this repo/);
+  });
+
+  it('keeps unchanged steps that do real work and skips small helpers', () => {
+    const rules = tourRules();
+    expect(rules).toMatch(/unchanged steps that do real work/i);
+    expect(rules).toMatch(/skip small helpers \(formatting, logging, getters\)/i);
+  });
+});
