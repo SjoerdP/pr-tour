@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Draft, ReviewResponse, ReviewThread } from '../../src/shared/review.js';
 import type { Tour } from '../../src/shared/tour.js';
 import * as api from '../../src/web/api.js';
+import { REVIEW_COLUMN_QUERY } from '../../src/web/review-column.js';
 import { TourView } from '../../src/web/TourView.js';
 import { outlineItem } from './outline-helpers.js';
 import { response, tour as baseTour } from './tour-fixture.js';
@@ -48,6 +49,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  delete (window as Partial<Window>).matchMedia;
   vi.useRealTimers();
   vi.resetAllMocks();
 });
@@ -354,6 +356,16 @@ function serveReview(overrides: Partial<ReviewResponse> = {}) {
 }
 
 const reviewButton = () => screen.getByRole('button', { name: /^Review/ });
+
+/** jsdom has no matchMedia: answer the column query as a wide or a narrow window would. */
+function windowIsWide(wide: boolean) {
+  const media = vi.fn((query: string) => ({
+    matches: query === REVIEW_COLUMN_QUERY && wide,
+    media: query,
+  }));
+  window.matchMedia = media as unknown as typeof window.matchMedia;
+  return media;
+}
 const reviewPanel = () => screen.queryByRole('region', { name: 'Review' });
 
 describe('Review in the top bar', () => {
@@ -424,12 +436,44 @@ describe('Review in the top bar', () => {
     expect(app.classList.contains('review-open')).toBe(false);
   });
 
-  it('a mousedown in the code area takes the column away too', async () => {
+  it('narrow window (overlay): a mousedown in the code area closes it', async () => {
+    const media = windowIsWide(false);
     serveReview();
     const { container } = await open();
     fireEvent.click(reviewButton());
     fireEvent.mouseDown(screen.getByTestId('code-view'));
+    expect(reviewPanel()).toBeNull();
     expect(container.querySelector('.tour-app')!.classList.contains('review-open')).toBe(false);
+    expect(media).toHaveBeenCalledWith(REVIEW_COLUMN_QUERY);
+  });
+
+  it('wide window (column): a mousedown in the code area leaves it open', async () => {
+    const media = windowIsWide(true);
+    serveReview();
+    const { container } = await open();
+    fireEvent.click(reviewButton());
+    fireEvent.mouseDown(screen.getByTestId('code-view'));
+    expect(reviewPanel()).toBeTruthy();
+    expect(container.querySelector('.tour-app')!.classList.contains('review-open')).toBe(true);
+    expect(media).toHaveBeenCalledWith(REVIEW_COLUMN_QUERY);
+  });
+
+  it('wide window (column): Close, Esc inside and the Review button still close it', async () => {
+    windowIsWide(true);
+    serveReview();
+    await open();
+    fireEvent.click(reviewButton());
+    fireEvent.click(within(reviewPanel()!).getByRole('button', { name: 'Close' }));
+    expect(reviewPanel()).toBeNull();
+
+    fireEvent.click(reviewButton());
+    fireEvent.keyDown(screen.getByRole('textbox', { name: 'Summary' }), { key: 'Escape' });
+    expect(reviewPanel()).toBeNull();
+
+    fireEvent.click(reviewButton());
+    fireEvent.mouseDown(reviewButton());
+    fireEvent.click(reviewButton());
+    expect(reviewPanel()).toBeNull();
   });
 
   it('closes on a mousedown in the code area', async () => {

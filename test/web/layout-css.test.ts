@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { REVIEW_COLUMN_QUERY } from '../../src/web/review-column.js';
 import css from '../../src/web/styles.css?raw';
 
 // jsdom does no layout, so these check the stylesheet's contract for the tour screen:
@@ -56,8 +57,12 @@ describe('tour layout CSS', () => {
   });
 
   it('on a wide window the open review panel is a column: the main area makes room', () => {
-    const wide = '(min-width: 1100px)';
+    // The stylesheet and the code that asks for column mode use the same query.
+    const wide = REVIEW_COLUMN_QUERY;
+    expect(wide).toBe('(min-width: 1300px)');
     expect(rule('.review-panel-box').width).toBe('min(var(--review-width), 100vw)');
+    // At 1300px: 26vw = 338px, so the main area keeps 1300 - 320 - 338 = 642px.
+    expect(rule(':root')['--review-width']).toBe('clamp(320px, 26vw, 400px)');
     // The notices and the outline | main grid stop short of the panel.
     const body = mediaRule(wide, '.review-open .tour-body');
     expect(body['margin-right']).toBe('var(--review-width)');
@@ -70,7 +75,9 @@ describe('tour layout CSS', () => {
   });
 
   it('on a narrow window the review panel stays an overlay', () => {
-    expect(() => mediaRule('(max-width: 1099px)', '.review-open .tour-body')).toThrow();
+    expect(() => mediaRule('(max-width: 1299px)', '.review-open .tour-body')).toThrow();
+    // No other query gives the panel a column (one breakpoint, in one place).
+    expect(css.match(/\.review-open \.tour-body/g)).toHaveLength(1);
     const box = rule('.review-panel-box');
     expect(box.position).toBe('absolute');
     expect(box['box-shadow']).toBe('var(--shadow-popover)');

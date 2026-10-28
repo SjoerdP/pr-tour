@@ -28,7 +28,7 @@
   /* Layout: the outline is a fixed column at the left edge; the main area takes the rest. */
   --outline-width: 320px;
   /* The review panel: a column at the right edge on wide windows, an overlay on narrow ones. */
-  --review-width: 400px;
+  --review-width: clamp(320px, 26vw, 400px);
   --prose-width: 72ch;
   --inbox-width: 1200px;
 
@@ -1496,10 +1496,11 @@ p.why {
 
 /*
  * Wide enough for code next to the panel: the notices and the outline | main grid stop
- * where the panel starts, so it covers nothing. Below this, the code would get too narrow
- * and the panel lies over it instead.
+ * where the panel starts, so it covers nothing (the main area keeps about 640px or more).
+ * Below this, the code would get too narrow and the panel lies over it instead. The query
+ * is REVIEW_COLUMN_QUERY in review-column.ts: change both together.
  */
-@media (min-width: 1100px) {
+@media (min-width: 1300px) {
   .review-open .notices,
   .review-open .tour-body {
     margin-right: var(--review-width);

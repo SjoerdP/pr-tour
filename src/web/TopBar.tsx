@@ -3,6 +3,7 @@ import type { PrSummary } from '../shared/api.js';
 import { reviewableHomeIds, type Tour } from '../shared/tour.js';
 import type { RevealPlace } from './code-lines.js';
 import { inKeepOpenArea, keepsReviewOpen } from './keep-review-open.js';
+import { isReviewColumn } from './review-column.js';
 import { ReviewPanel, type ReviewDraftText } from './ReviewPanel.js';
 import type { ReviewState } from './useReview.js';
 
@@ -31,7 +32,7 @@ type Props = {
 /**
  * One line above the tour: back to the inbox, the PR, a short status, "About this PR",
  * which shows the tour summary and check problems, and "Review", which opens the review
- * panel. A click outside a panel closes it.
+ * panel. A click outside a panel closes it (not the review panel when it has a column).
  */
 export function TopBar({
   pr,
@@ -63,8 +64,11 @@ export function TopBar({
 
   useEffect(() => {
     if (!reviewOpen) return;
-    // Clicks on navigation (outline, step bar, this bar) keep it open; others close it.
+    // Over the code (narrow window): clicks on navigation (outline, step bar, this bar) keep
+    // it open; others close it. As a column (wide window) it covers nothing, so no outside
+    // click closes it: closing would move the code under a press (a drag over line numbers).
     function onMouseDown(event: MouseEvent) {
+      if (isReviewColumn()) return;
       const target = event.target as Node | null;
       if (reviewBox.current?.contains(target) || reviewButton.current?.contains(target)) return;
       if (inKeepOpenArea(target)) return;
