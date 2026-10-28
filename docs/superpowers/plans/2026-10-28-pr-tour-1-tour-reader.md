@@ -10,6 +10,8 @@
 
 **Spec:** `docs/superpowers/specs/2026-10-28-pr-tour-design.md`
 
+**Architecture:** `docs/architecture.md` — layers, dependency rules (web imports only shared; shared imports no server/web/Node), where tests live, naming, how to run. Read it before your task. The rules are enforced by `npm run lint` and `npm run typecheck`; `npm run check` runs everything.
+
 This is plan 1 of 3. Plan 2 = review actions (threads, comments, submit review, approve reminder, CI status). Plan 3 = new commits (out-of-date tours, keeping notes and seen marks across rebuilds). Plan 1 stores what plans 2 and 3 need (head SHA per tour, content hash per seen mark) but does not use it.
 
 ## Global Constraints
@@ -36,9 +38,14 @@ This is plan 1 of 3. Plan 2 = review actions (threads, comments, submit review, 
 ## File Structure
 
 ```
-package.json, tsconfig.json, vite.config.ts, vitest.config.ts, index.html
+package.json, index.html, vite.config.ts, vitest.config.ts       (Task 0, done)
+tsconfig.json, tsconfig.server.json, tsconfig.web.json, tsconfig.build.json
+eslint.config.js, .prettierrc, .editorconfig, .nvmrc, .github/workflows/ci.yml
+docs/architecture.md      Layers, dependency rules, testing strategy, naming
 src/shared/tour.ts        Tour zod schemas + types (shared by server and web)
+src/shared/diff.ts        DiffLine / Hunk / FileDiff types (diff model; also a wire type)
 src/shared/rows.ts        buildRows / foldRows / changeBlocks (pure, used by web)
+src/shared/api.ts         HTTP wire types: PrSummary, Inbox, TourStatus, Job, PrResponse, ...
 src/server/exec.ts        Runner type + real runner (execFile)
 src/server/diff.ts        Unified diff -> FileDiff[]; changedLines()
 src/server/check.ts       Check pass: homes vs diff -> unexplained + problems
@@ -55,15 +62,25 @@ src/web/Inbox.tsx
 src/web/TourView.tsx, Outline.tsx, StepPane.tsx
 src/web/CodeView.tsx, highlight.ts, useKeys.ts
 skill/tour/SKILL.md       Claude Code skill `/tour`
-test/**                   Vitest tests mirroring src/
+test/**                   Vitest tests mirroring src/ (test/server, test/shared, test/cli.test.ts: Node)
+test/web/**               React tests: run under jsdom automatically; test/web/setup.ts cleans up
+test/fixtures/**          Real diffs and canned JSON (read with readFileSync + import.meta.url)
 ```
+
+Dependency rules (enforced by ESLint): `src/web` imports only `src/shared` and packages; `src/shared` imports no server, web or Node built-ins; `src/server` never imports `src/web`. Every type an `/api` route returns lives in `src/shared` (`api.ts`, `diff.ts`, `tour.ts`). Relative imports end in `.js`.
+
+---
+
+### Task 0: Architecture and tooling (done)
+
+Not part of the original plan; done before Task 1. Created the files listed under "(Task 0, done)" above plus `docs/architecture.md` and two smoke tests (`test/smoke.test.ts`, `test/web/smoke.test.tsx`) that may be deleted once real tests exist in each project. Source directories (`src/shared`, `src/server`, `src/web`, `test/server`, `test/fixtures`, ...) are created by the first task that writes into them; the tool configs already point at them. Scripts: `dev`, `build`, `test`, `test:watch`, `lint`, `format`, `format:check`, `typecheck`, `check`. `package.json` already has `"type": "module"`, `bin`, `engines`, `files: ["dist", "skill"]`.
 
 ---
 
 ### Task 1: Scaffold and tour schema
 
 **Files:**
-- Create: `package.json`, `tsconfig.json`, `vitest.config.ts`, `src/shared/tour.ts`
+- Create: `src/shared/tour.ts`
 - Test: `test/shared/tour.test.ts`, `test/fixtures/tour-body.json`
 
 **Interfaces:**
@@ -85,9 +102,9 @@ test/**                   Vitest tests mirroring src/
   - zod: `TourBodyInputSchema`, `TourBodySchema`, `TourSchema`; `tourBodyJsonSchema(): object` = `z.toJSONSchema(TourBodyInputSchema)`
   - `homeIds(tour: Tour): string[]` — ids of every foundation, step and other item, in tour order.
 
-- [ ] **Step 1: Scaffold.** `npm init`, `"type": "module"`, `"bin": { "pr-tour": "dist/cli.js" }`, scripts `test` (`vitest run`), `build` (`tsc -p . && vite build`), `dev`. Install the stack above. `tsconfig` strict, `module`/`moduleResolution` `NodeNext`, `jsx: react-jsx`.
+- [x] **Step 1: Scaffold.** Done by Task 0 (see `docs/architecture.md`): `package.json`, tsconfigs, Vitest projects, ESLint, Prettier, CI. Nothing to do here.
 
-- [ ] **Step 2: Write the failing tests** in `test/shared/tour.test.ts`, using a fixture `test/fixtures/tour-body.json` with 1 migration foundation, 1 flow (`POST /loans/{id}/repay`, 2 steps: one changed `read-closely`, one unchanged), and 1 `tests` other group:
+- [ ] **Step 2: Write the failing tests** in `test/shared/tour.test.ts`, using a fixture `test/fixtures/tour-body.json` (read it with `JSON.parse(readFileSync(new URL('../fixtures/tour-body.json', import.meta.url), 'utf8'))`) with 1 migration foundation, 1 flow (`POST /loans/{id}/repay`, 2 steps: one changed `read-closely`, one unchanged), and 1 `tests` other group:
   - `parses a valid body` — `TourBodyInputSchema.parse(fixture)` does not throw.
   - `rejects a step without why` — delete `flows[0].steps[0].why` → `safeParse(...).success === false`.
   - `rejects an unknown risk` — `risk: 'maybe'` → fails.
@@ -108,14 +125,15 @@ test/**                   Vitest tests mirroring src/
 ### Task 2: Diff parsing
 
 **Files:**
-- Create: `src/server/diff.ts`
+- Create: `src/shared/diff.ts` (types only), `src/server/diff.ts`
 - Test: `test/server/diff.test.ts`, `test/fixtures/*.diff`
 
 **Interfaces:**
-- Produces:
+- Produces in `src/shared/diff.ts` (the web renders these, so they live in shared; `src/server/diff.ts` imports and re-exports them):
   - `DiffLine = { kind: 'add' | 'del' | 'ctx'; oldNo?: number; newNo?: number; text: string }`
   - `Hunk = { oldStart: number; oldLines: number; newStart: number; newLines: number; lines: DiffLine[] }`
   - `FileDiff = { path: string; oldPath: string; status: 'added' | 'deleted' | 'modified' | 'renamed'; binary: boolean; hunks: Hunk[] }` (`path` = new path; for deleted files `path === oldPath`)
+- Produces in `src/server/diff.ts`:
   - `parseDiff(text: string): FileDiff[]`
   - `ChangedLine = { file: string; side: 'new' | 'old'; line: number }` (`file` is `path` for `new`, `oldPath` for `old`)
   - `changedLines(files: FileDiff[]): ChangedLine[]` — adds → `new`, dels → `old`. A binary file yields one entry `{ file: path, side: 'new', line: 0 }`.
@@ -184,10 +202,10 @@ Rules (deterministic, no Claude):
 - Test: `test/shared/rows.test.ts`
 
 **Interfaces:**
-- Consumes: `Hunk` shape (re-declare a structural `HunkLike` in shared to avoid importing server code).
+- Consumes: `Hunk` from `src/shared/diff.ts` (Task 2).
 - Produces:
   - `Row = { kind: 'ctx' | 'add' | 'del'; newNo?: number; oldNo?: number; text: string }`
-  - `buildRows(newText: string | null, oldText: string | null, hunks: HunkLike[]): Row[]` — the whole file in display order: every line of `newText`, with deleted lines inserted where the hunks put them. `newText === null` (deleted file) → every line of `oldText` as `del`.
+  - `buildRows(newText: string | null, oldText: string | null, hunks: Hunk[]): Row[]` — the whole file in display order: every line of `newText`, with deleted lines inserted where the hunks put them. `newText === null` (deleted file) → every line of `oldText` as `del`.
   - `Fold = { kind: 'fold'; from: number; to: number; count: number }` (row indexes, inclusive)
   - `Segment = { kind: 'rows'; from: number; to: number } | Fold`
   - `foldRows(rows: Row[], keepOpen: Array<[number, number]>, context = 3): Segment[]` — keep changed rows, `context` rows around them, and the `keepOpen` row ranges (used for the step's `startLine..endLine`) visible; fold the rest. Folds of fewer than 4 rows are shown, not folded.
@@ -249,12 +267,12 @@ Layout: bare clone at `<home>/repos/<owner>__<name>.git`, worktrees at `<home>/w
 ### Task 6: GitHub client
 
 **Files:**
-- Create: `src/server/github.ts`
+- Create: `src/server/github.ts`, `src/shared/api.ts`
 - Test: `test/server/github.test.ts`
 
 **Interfaces:**
 - Consumes: `Runner`, `CommandError` (Task 5).
-- Produces:
+- Produces (the two types in `src/shared/api.ts`, since the web renders them; `github.ts` imports and re-exports them):
   - `PrSummary = { repo: string; number: number; title: string; author: string; url: string; additions: number; deletions: number; isDraft: boolean; updatedAt: string; baseSha: string; headSha: string }`
   - `Inbox = { reviewRequested: PrSummary[]; mine: PrSummary[] }`
   - `class GitHub { constructor(run: Runner) }`
@@ -281,15 +299,17 @@ Layout: bare clone at `<home>/repos/<owner>__<name>.git`, worktrees at `<home>/w
 
 **Files:**
 - Create: `src/server/store.ts`
+- Modify: `src/shared/api.ts` (add `TourStatus`)
 - Test: `test/server/store.test.ts`
 
 **Interfaces:**
 - Consumes: `Tour`, `homeIds` (Task 1).
 - Produces:
+  - `TourStatus = { exists: boolean; source?: 'author' | 'inferred'; headSha?: string; homes?: number; flows?: number }` in `src/shared/api.ts`.
   - `class Store { constructor(dbPath: string) }` (creates tables if missing; `':memory:'` allowed)
     - `saveTour(tour: Tour): void` — replaces the previous tour for `(repo, pr)`.
     - `getTour(repo: string, pr: number): Tour | null`
-    - `tourStatus(repo: string, pr: number): { exists: boolean; source?: 'author' | 'inferred'; headSha?: string; homes?: number; flows?: number }`
+    - `tourStatus(repo: string, pr: number): TourStatus`
     - `markSeen(repo: string, pr: number, homeId: string, contentHash: string): void`
     - `seen(repo: string, pr: number): Record<string, string>` — `homeId → contentHash`.
     - `seenCount(repo: string, pr: number): number`
@@ -358,22 +378,26 @@ Layout: bare clone at `<home>/repos/<owner>__<name>.git`, worktrees at `<home>/w
 
 **Files:**
 - Create: `src/server/jobs.ts`, `src/server/app.ts`
+- Modify: `src/shared/api.ts` (add `Job`, `InboxPr`, `InboxResponse`, `PrResponse`)
 - Test: `test/server/app.test.ts`
 
 **Interfaces:**
 - Consumes: Tasks 5–8.
-- Produces:
-  - `class Jobs { start(key: string, fn: (log: (l: string) => void) => Promise<unknown>): void; get(key: string): { state: 'running' | 'done' | 'failed'; error?: string; log: string[] } | null }` — starting a key that is `running` is a no-op. The log keeps the last 50 lines.
+- Produces (wire types in `src/shared/api.ts`; the web client in Task 11 uses them):
+  - `Job = { state: 'running' | 'done' | 'failed'; error?: string; log: string[] }`
+  - `InboxPr = PrSummary & { tour: TourStatus; seenCount: number }`; `InboxResponse = { reviewRequested: InboxPr[]; mine: InboxPr[] }`
+  - `PrResponse = { pr: PrSummary; tour: Tour | null; seen: Record<string, string>; outdated: boolean; job: Job | null }`
+  - `class Jobs { start(key: string, fn: (log: (l: string) => void) => Promise<unknown>): void; get(key: string): Job | null }` — starting a key that is `running` is a no-op. The log keeps the last 50 lines.
   - `createApp(deps: { github: GitHub; repos: RepoManager; store: Store; builder: TourBuilder; jobs: Jobs; port: number }): Hono`
   - Routes (`:owner/:name/:pr`):
     - `GET /api/health` → `{ ok: true }`
-    - `GET /api/inbox` → `Inbox` with each PR extended by `tour: tourStatus(...)` and `seenCount`.
-    - `GET /api/pr/:owner/:name/:pr` → `{ pr: PrSummary; tour: Tour | null; seen: Record<string,string>; outdated: boolean; job: Job | null }` — `outdated` = `tour.headSha !== pr.headSha`.
+    - `GET /api/inbox` → `InboxResponse`: the `Inbox` with each PR extended by `tour: tourStatus(...)` and `seenCount`.
+    - `GET /api/pr/:owner/:name/:pr` → `PrResponse` — `outdated` = `tour.headSha !== pr.headSha`.
     - `POST /api/pr/:owner/:name/:pr/tour` → starts `builder.build` in `jobs`, returns `202 { job }`.
     - `GET /api/pr/:owner/:name/:pr/file?sha=&path=` → `{ text: string | null }`.
     - `GET /api/pr/:owner/:name/:pr/diff?file=` → `FileDiff` for that file at the tour's base/head SHAs.
     - `POST /api/pr/:owner/:name/:pr/seen` body `{ homeId, contentHash }` → `204`.
-    - Everything else under `/` serves the built web app from `dist/web` (SPA fallback to `index.html`).
+    - Everything else under `/` serves the built web app from `dist/web` (SPA fallback to `index.html`). The built server runs as `dist/server/app.js`, so that directory is `new URL('../web/', import.meta.url)`.
   - Guard middleware: reject (`403`) any request whose `Host` is not `127.0.0.1:<port>` or `localhost:<port>`; reject non-GET requests without header `X-PR-Tour: 1`.
 
 - [ ] **Step 1: Write the failing tests** with `app.request(...)` and fake deps:
@@ -405,7 +429,7 @@ Layout: bare clone at `<home>/repos/<owner>__<name>.git`, worktrees at `<home>/w
 **Interfaces:**
 - Consumes: Tasks 5–9.
 - Produces:
-  - `pr-tour` → start server on `PR_TOUR_PORT` (default 4317), print the URL, open the browser (`xdg-open` / `open` / `start`). If a server already answers `/api/health`, just open the browser.
+  - `pr-tour` → start server on `PR_TOUR_PORT` (default 4317), print the URL, open the browser (`xdg-open` / `open` / `start`). If a server already answers `/api/health`, just open the browser. `PR_TOUR_NO_OPEN=1` skips opening the browser (`npm run dev` sets it, because Vite's URL is the one to use in dev). The file starts with `#!/usr/bin/env node` (tsc keeps it; `bin` points at `dist/cli.js`).
   - `pr-tour import --repo <owner/name> --pr <n> --file <tour-body.json>` → `builder.importAuthorTour`; prints `problems` (if any) and the tour URL `http://127.0.0.1:<port>/pr/<owner>/<name>/<pr>`; exit 1 with the zod error on invalid JSON.
   - `pr-tour open <owner/name>#<n>` → like `pr-tour`, but opens the tour URL.
   - `parseArgs(argv: string[]): { cmd: 'serve' } | { cmd: 'import'; repo: string; pr: number; file: string } | { cmd: 'open'; repo: string; pr: number }` (exported for tests; uses `node:util` `parseArgs`).
@@ -430,15 +454,16 @@ Layout: bare clone at `<home>/repos/<owner>__<name>.git`, worktrees at `<home>/w
 ### Task 11: Web shell and inbox
 
 **Files:**
-- Create: `index.html`, `vite.config.ts`, `src/web/main.tsx`, `src/web/App.tsx`, `src/web/api.ts`, `src/web/Inbox.tsx`
-- Test: `test/web/inbox.test.tsx`
+- Create: `src/web/main.tsx`, `src/web/App.tsx`, `src/web/api.ts`, `src/web/Inbox.tsx`, `src/web/styles.css`
+- Modify: `index.html` (add `<script type="module" src="/src/web/main.tsx"></script>` to `<body>`; the `<div id="root">` is already there)
+- Test: `test/web/inbox.test.tsx` (runs under jsdom automatically; `test/web/setup.ts` already calls `cleanup` after each test)
 
 **Interfaces:**
-- Consumes: API from Task 9.
+- Consumes: API from Task 9; wire types `InboxResponse`, `PrResponse`, `FileDiff` from `src/shared/api.ts` and `src/shared/diff.ts` (never import `src/server` from the web; lint rejects it).
 - Produces:
-  - `api.ts`: `getInbox()`, `getPr(repo, pr)`, `buildTour(repo, pr)`, `getFile(repo, pr, sha, path)`, `getDiff(repo, pr, file)`, `markSeen(repo, pr, homeId, contentHash)` — all non-GET calls send `X-PR-Tour: 1`.
+  - `api.ts`: `getInbox(): Promise<InboxResponse>`, `getPr(repo, pr): Promise<PrResponse>`, `buildTour(repo, pr)`, `getFile(repo, pr, sha, path)`, `getDiff(repo, pr, file): Promise<FileDiff>`, `markSeen(repo, pr, homeId, contentHash)` — all non-GET calls send `X-PR-Tour: 1`.
   - Routes (simple `location.pathname` switch, no router library): `/` → `Inbox`, `/pr/:owner/:name/:pr` → `TourView` (Task 12).
-  - Vite builds to `dist/web`; dev server proxies `/api` to `127.0.0.1:4317`.
+  - `vite.config.ts` exists (Task 0): builds to `dist/web`; dev server proxies `/api` to `127.0.0.1:4317`. `npm run dev` runs the server and Vite together.
 
 `Inbox` shows two tables, "Waiting for my review" and "My open PRs". Columns: PR (number + title, links to the tour route), author, size `+a / −d`, tour (`no tour yet` / `N flows · author` / `N flows · inferred`), progress (`seen of homes`). Draft PRs are shown with a "draft" tag.
 
@@ -497,7 +522,7 @@ Layout: bare clone at `<home>/repos/<owner>__<name>.git`, worktrees at `<home>/w
 - Test: `test/web/codeview.test.tsx`
 
 **Interfaces:**
-- Consumes: `buildRows`, `foldRows`, `changeBlocks` (Task 4); `getFile`, `getDiff` (Task 11); `Tour`, `Range`, `CallRef` (Task 1).
+- Consumes: `buildRows`, `foldRows`, `changeBlocks` (Task 4); `getFile`, `getDiff` (Task 11); `Tour`, `Range`, `CallRef` (Task 1); `FileDiff` from `src/shared/diff.ts` (Task 2).
 - Produces:
   - `CodeView({ repo, pr, tour, file, focus: { start: number; end: number } | null, homeId: string, onJump: (file: string, line: number) => void })`
   - `highlight(text: string, path: string, theme: 'light' | 'dark'): Promise<HighlightedLine[]>` — Shiki, language from file extension, plain text fallback for unknown extensions. Lazy-load Shiki languages.
@@ -532,14 +557,14 @@ Behavior:
 
 **Files:**
 - Create: `skill/tour/SKILL.md`, `README.md`
-- Modify: `package.json` (add `"files": ["dist", "skill"]`)
+- Modify: `src/cli.ts`, `test/cli.test.ts` (`package.json` already has `"files": ["dist", "skill"]`, done by Task 0)
 
 **Interfaces:**
 - Consumes: `pr-tour import`, `pr-tour open` (Task 10); `tourBodyJsonSchema` (Task 1) — add a `pr-tour schema` command to `src/cli.ts` that prints it, with a test in `test/cli.test.ts`: `schema prints JSON with a flows property`.
 
 `SKILL.md` frontmatter: `name: tour`, `description: Build a pr-tour review tour for the PR you just pushed, using what you know about why each change was made. Use when the user says /tour or asks to open the PR in pr-tour.` Body tells Claude to: find the PR (`gh pr view --json number,url` in the current repo), run `pr-tour schema`, write a tour body following the same rules as `tourPrompt` in `src/server/prompt.ts` (copy those rules into the skill text), using its own memory of why each change was made for the "why" notes; save it to a temp file; run `pr-tour import --repo … --pr … --file …`; if `problems` are printed, fix the homes and import again (max 2 times); then run `pr-tour open <repo>#<pr>`.
 
-README: install (`npm i -g` from the repo), requirements (`gh` logged in, `claude` CLI), install the skill (`cp -r skill/tour ~/.claude/skills/`), usage.
+README: install (`npm i -g` from the repo), requirements (`gh` logged in, `claude` CLI), install the skill (`cp -r skill/tour ~/.claude/skills/`), usage, and a "Development" section that points at `docs/architecture.md` and `npm run check`.
 
 - [ ] **Step 1: Write the failing test** `schema prints JSON with a flows property`.
 - [ ] **Step 2: Run** `npx vitest run test/cli.test.ts` — Expected: FAIL.
