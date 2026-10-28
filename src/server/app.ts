@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { serveStatic } from '@hono/node-server/serve-static';
 import { Hono, type Context } from 'hono';
 import { z } from 'zod';
-import type { InboxResponse, PrResponse, PrSummary } from '../shared/api.js';
+import type { InboxPr, InboxResponse, InboxSummary, PrResponse } from '../shared/api.js';
 import { homeIds, type Tour } from '../shared/tour.js';
 import { TourBuildError, type TourBuilder } from './build.js';
 import { parseDiff } from './diff.js';
@@ -146,14 +146,15 @@ export function createApp(deps: AppDeps): Hono {
     return tour;
   }
 
-  function inboxPr(pr: PrSummary) {
+  function inboxPr(pr: InboxSummary): InboxPr {
+    const drafts = store.draftCount(pr.repo, pr.number);
     try {
-      return { ...pr, ...store.progress(pr.repo, pr.number) };
+      return { ...pr, ...store.progress(pr.repo, pr.number), drafts };
     } catch (err) {
       // One unreadable tour must not hide the whole inbox; show it as missing.
       if (!(err instanceof StoreError)) throw err;
       console.error(logDetail(err));
-      return { ...pr, tour: { exists: false }, seenCount: 0 };
+      return { ...pr, tour: { exists: false }, seenCount: 0, drafts };
     }
   }
 

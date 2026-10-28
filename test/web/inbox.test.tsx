@@ -16,8 +16,11 @@ function pr(overrides: Partial<InboxPr>): InboxPr {
     updatedAt: '2026-10-27T12:00:00Z',
     baseSha: 'a'.repeat(40),
     headSha: 'b'.repeat(40),
+    viewerIsAuthor: false,
+    ci: { state: 'none', failing: null },
     tour: { exists: false },
     seenCount: 0,
+    drafts: 0,
     ...overrides,
   };
 }

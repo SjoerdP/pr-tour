@@ -102,6 +102,7 @@ export const summary: PrSummary = {
   updatedAt: '2026-10-27T12:00:00Z',
   baseSha: 'a'.repeat(40),
   headSha: 'b'.repeat(40),
+  viewerIsAuthor: false,
 };
 
 export function response(overrides: Partial<PrResponse> = {}): PrResponse {

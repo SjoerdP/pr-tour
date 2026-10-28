@@ -42,6 +42,8 @@ src/server/      Everything that runs under Node, flat, one module per concern.
   exec.ts        Runner type, realRunner (execFile), CommandError
   repo.ts        RepoManager: bare-clone cache, worktrees, diff text, file at sha (git)
   github.ts      GitHub: inbox + PR meta (gh api graphql)
+  graphql.ts     ghGraphql (gh api graphql), PR query helper, InvalidRepoError/PrNotFoundError/GraphqlError
+  review-github.ts ReviewGitHub: review threads, CI status, authorship (read-only)
   diff.ts        parseDiff, changedLines (parse-diff)
   check.ts       checkTour: every changed line has exactly one home
   prompt.ts      tourPrompt text

@@ -1,40 +1,23 @@
-import type { Inbox, PrSummary } from '../shared/api.js';
-import { CommandError, runOk, type Runner } from './exec.js';
+import type { Inbox, InboxSummary, PrSummary } from '../shared/api.js';
+import type { Runner } from './exec.js';
+import { ghGraphql, prGraphql, PrNotFoundError } from './graphql.js';
+import { CI_FIELDS, ciStatus, commitsRollup, type CommitsWithRollup } from './review-github.js';
 
-export type { Inbox, PrSummary } from '../shared/api.js';
-
-const REPO = /^([\w.-]+)\/([\w.-]+)$/;
-/** What `gh api graphql` prints when the repo or PR does not exist (or the user cannot see it). */
-const NOT_RESOLVED = /Could not resolve to a (Repository|PullRequest)/;
-
-/** A repo argument that is not `owner/name`. */
-export class InvalidRepoError extends Error {
-  constructor(repo: string) {
-    super(`repo must be owner/name, got "${repo}"`);
-    this.name = 'InvalidRepoError';
-  }
-}
-
-/** The PR (or its repo) does not exist, or the user's gh login cannot see it. */
-export class PrNotFoundError extends Error {
-  constructor(repo: string, number: number) {
-    super(`pull request ${repo}#${number} not found`);
-    this.name = 'PrNotFoundError';
-  }
-}
+export type { Inbox, InboxSummary, PrSummary } from '../shared/api.js';
+export { InvalidRepoError, PrNotFoundError } from './graphql.js';
 
 const PR_FIELDS = `
-  number title url additions deletions isDraft updatedAt baseRefOid headRefOid
+  number title url additions deletions isDraft updatedAt baseRefOid headRefOid viewerDidAuthor
   repository { nameWithOwner }
   author { login }
 `;
 
 const INBOX_QUERY = `query {
   reviewRequested: search(query: "is:pr is:open review-requested:@me", type: ISSUE, first: 50) {
-    nodes { ... on PullRequest { ${PR_FIELDS} } }
+    nodes { ... on PullRequest { ${PR_FIELDS} ${CI_FIELDS} } }
   }
   mine: search(query: "is:pr is:open author:@me", type: ISSUE, first: 50) {
-    nodes { ... on PullRequest { ${PR_FIELDS} } }
+    nodes { ... on PullRequest { ${PR_FIELDS} ${CI_FIELDS} } }
   }
 }`;
 
@@ -55,13 +38,17 @@ type PrNode = {
   updatedAt: string;
   baseRefOid: string;
   headRefOid: string;
+  viewerDidAuthor: boolean;
   repository: { nameWithOwner: string };
   /** Null when the author's account was deleted. */
   author: { login: string } | null;
 };
 
+/** An inbox node: `PR_FIELDS` plus `CI_FIELDS`. */
+type InboxNode = PrNode & { commits: CommitsWithRollup };
+
 /** Search results can hold issues too; the `... on PullRequest` fragment leaves those as `{}`. */
-type SearchResult = { nodes: (PrNode | Record<string, never>)[] };
+type SearchResult = { nodes: (InboxNode | Record<string, never>)[] };
 
 type InboxData = { reviewRequested: SearchResult; mine: SearchResult };
 type PrData = { repository: { pullRequest: PrNode | null } | null };
@@ -80,13 +67,14 @@ function toSummary(node: PrNode): PrSummary {
     updatedAt: node.updatedAt,
     baseSha: node.baseRefOid,
     headSha: node.headRefOid,
+    viewerIsAuthor: node.viewerDidAuthor,
   };
 }
 
-function summaries(result: SearchResult): PrSummary[] {
+function summaries(result: SearchResult): InboxSummary[] {
   return result.nodes
-    .filter((node): node is PrNode => 'number' in node)
-    .map(toSummary)
+    .filter((node): node is InboxNode => 'number' in node)
+    .map((node) => ({ ...toSummary(node), ci: ciStatus(commitsRollup(node.commits)) }))
     .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
 }
 
@@ -96,46 +84,15 @@ export class GitHub {
 
   /** Open PRs waiting for the user's review and the user's own open PRs, newest first. */
   async inbox(): Promise<Inbox> {
-    const data = await this.graphql<InboxData>(INBOX_QUERY, []);
+    const data = await ghGraphql<InboxData>(this.run, INBOX_QUERY, []);
     return { reviewRequested: summaries(data.reviewRequested), mine: summaries(data.mine) };
   }
 
   /** One PR of `repo` (`owner/name`). */
   async pr(repo: string, number: number): Promise<PrSummary> {
-    const match = REPO.exec(repo);
-    if (!match) throw new InvalidRepoError(repo);
-    const [, owner = '', name = ''] = match;
-    // `-f` passes strings as-is; `-F` would read a value starting with "@" as a file.
-    let data: PrData;
-    try {
-      data = await this.graphql<PrData>(PR_QUERY, [
-        '-f',
-        `owner=${owner}`,
-        '-f',
-        `name=${name}`,
-        '-F',
-        `number=${number}`,
-      ]);
-    } catch (err) {
-      if (err instanceof CommandError && NOT_RESOLVED.test(err.result.stderr)) {
-        throw new PrNotFoundError(repo, number);
-      }
-      throw err;
-    }
+    const data = await prGraphql<PrData>(this.run, repo, number, PR_QUERY);
     const node = data.repository?.pullRequest;
     if (!node) throw new PrNotFoundError(repo, number);
     return toSummary(node);
-  }
-
-  /** Run a GraphQL query with variables as `gh api` field flags; values never go into the query text. */
-  private async graphql<T>(query: string, fields: string[]): Promise<T> {
-    const { stdout } = await runOk(this.run, 'gh', [
-      'api',
-      'graphql',
-      '-f',
-      `query=${query}`,
-      ...fields,
-    ]);
-    return (JSON.parse(stdout) as { data: T }).data;
   }
 }

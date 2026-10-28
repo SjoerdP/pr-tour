@@ -14,6 +14,7 @@ const pr: PrSummary = {
   updatedAt: '2026-10-28T10:00:00Z',
   baseSha: 'b'.repeat(40),
   headSha: 'a'.repeat(40),
+  viewerIsAuthor: false,
 };
 
 describe('tourPrompt', () => {

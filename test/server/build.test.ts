@@ -234,6 +234,7 @@ const pr: PrSummary = {
   updatedAt: '2026-10-27T00:00:00Z',
   baseSha: 'a'.repeat(40),
   headSha: 'b'.repeat(40),
+  viewerIsAuthor: false,
 };
 
 /** What `claude -p --output-format json` prints for a final answer `result`. */

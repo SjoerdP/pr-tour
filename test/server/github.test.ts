@@ -6,6 +6,7 @@ import {
   PrNotFoundError,
   type PrSummary,
 } from '../../src/server/github.js';
+import type { CiStatus } from '../../src/shared/review.js';
 import { fakeRunner } from '../helpers/fake-runner.js';
 
 /** A GraphQL pull request node as `gh api graphql` returns it. */
@@ -22,6 +23,8 @@ function prNode(repo: string, number: number, updatedAt: string, extra: object =
     headRefOid: 'b'.repeat(40),
     repository: { nameWithOwner: repo },
     author: { login: 'alice' },
+    viewerDidAuthor: false,
+    commits: { nodes: [{ commit: { statusCheckRollup: null } }] },
     ...extra,
   };
 }
@@ -39,8 +42,16 @@ function summary(repo: string, number: number, updatedAt: string): PrSummary {
     updatedAt,
     baseSha: 'a'.repeat(40),
     headSha: 'b'.repeat(40),
+    viewerIsAuthor: false,
   };
 }
+
+/** An inbox row: a summary with its CI status. */
+function inboxRow(repo: string, number: number, updatedAt: string, extra: object = {}) {
+  return { ...summary(repo, number, updatedAt), ci: NO_CI, ...extra };
+}
+
+const NO_CI: CiStatus = { state: 'none', failing: null };
 
 function answering(data: unknown): ReturnType<typeof fakeRunner> {
   return fakeRunner({ stdout: JSON.stringify({ data }), stderr: '', code: 0 });
@@ -71,10 +82,10 @@ describe('GitHub.inbox', () => {
 
     expect(inbox).toEqual({
       reviewRequested: [
-        summary('acme/web', 2, '2026-10-03T00:00:00Z'),
-        summary('acme/api', 1, '2026-10-01T00:00:00Z'),
+        inboxRow('acme/web', 2, '2026-10-03T00:00:00Z'),
+        inboxRow('acme/api', 1, '2026-10-01T00:00:00Z'),
       ],
-      mine: [{ ...summary('acme/api', 3, '2026-10-02T00:00:00Z'), isDraft: true, author: 'me' }],
+      mine: [inboxRow('acme/api', 3, '2026-10-02T00:00:00Z', { isDraft: true, author: 'me' })],
     });
     expect(calls).toHaveLength(1);
     expect(calls[0]?.cmd).toBe('gh');
@@ -92,7 +103,7 @@ describe('GitHub.inbox', () => {
     const inbox = await new GitHub(run).inbox();
 
     expect(inbox).toEqual({
-      reviewRequested: [summary('acme/api', 1, '2026-10-01T00:00:00Z')],
+      reviewRequested: [inboxRow('acme/api', 1, '2026-10-01T00:00:00Z')],
       mine: [],
     });
   });
@@ -106,6 +117,36 @@ describe('GitHub.inbox', () => {
     const inbox = await new GitHub(run).inbox();
 
     expect(inbox.reviewRequested[0]?.author).toBe('ghost');
+  });
+
+  it('inbox includes ci and viewerIsAuthor', async () => {
+    const rollup = {
+      state: 'FAILURE',
+      contexts: {
+        nodes: [{ __typename: 'CheckRun', name: 'test', conclusion: 'FAILURE', detailsUrl: 'u1' }],
+      },
+    };
+    const { run, calls } = answering({
+      reviewRequested: { nodes: [] },
+      mine: {
+        nodes: [
+          prNode('acme/api', 3, '2026-10-02T00:00:00Z', {
+            viewerDidAuthor: true,
+            commits: { nodes: [{ commit: { statusCheckRollup: rollup } }] },
+          }),
+        ],
+      },
+    });
+
+    const inbox = await new GitHub(run).inbox();
+
+    expect(inbox.mine[0]).toMatchObject({
+      viewerIsAuthor: true,
+      ci: { state: 'failure', failing: { name: 'test', url: 'u1' } },
+    });
+    const query = fieldValue(calls[0]?.args ?? [], 'query') ?? '';
+    expect(query).toContain('viewerDidAuthor');
+    expect(query).toContain('statusCheckRollup');
   });
 });
 
@@ -123,6 +164,7 @@ describe('GitHub.pr', () => {
     expect(fieldValue(args, 'name')).toBe('api');
     expect(fieldValue(args, 'number')).toBe('42');
     expect(fieldValue(args, 'query')).not.toContain('acme');
+    expect(fieldValue(args, 'query')).toContain('viewerDidAuthor');
   });
 
   it('pr rejects a repo that is not owner/name', async () => {

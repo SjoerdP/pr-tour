@@ -6,12 +6,18 @@ import { createApp, type AppDeps } from '../../src/server/app.js';
 import { TourBuildError, finishTour, type TourBuilder } from '../../src/server/build.js';
 import { parseDiff } from '../../src/server/diff.js';
 import { CommandError } from '../../src/server/exec.js';
-import { PrNotFoundError, type GitHub, type PrSummary } from '../../src/server/github.js';
+import {
+  PrNotFoundError,
+  type GitHub,
+  type InboxSummary,
+  type PrSummary,
+} from '../../src/server/github.js';
 import { Jobs } from '../../src/server/jobs.js';
 import type { RepoManager } from '../../src/server/repo.js';
 import { Store, StoreError } from '../../src/server/store.js';
 import type { InboxResponse, Job, PrResponse } from '../../src/shared/api.js';
 import type { FileDiff } from '../../src/shared/diff.js';
+import type { CiStatus } from '../../src/shared/review.js';
 import type { Tour } from '../../src/shared/tour.js';
 
 const PORT = 4317;
@@ -36,8 +42,16 @@ function summary(repo: string, number: number, extra: Partial<PrSummary> = {}): 
     updatedAt: '2026-10-28T12:00:00Z',
     baseSha: BASE,
     headSha: HEAD,
+    viewerIsAuthor: false,
     ...extra,
   };
+}
+
+const NO_CI: CiStatus = { state: 'none', failing: null };
+
+/** A PR as `GitHub.inbox` lists it. */
+function inboxSummary(repo: string, number: number, extra: Partial<InboxSummary> = {}) {
+  return { ...summary(repo, number), ci: NO_CI, ...extra };
 }
 
 /** A checked tour of modified.diff for `acme/greet#7` at `headSha`. */
@@ -235,8 +249,8 @@ describe('guard', () => {
 describe('GET /api/inbox', () => {
   it('inbox includes tour status and seen count', async () => {
     fakes.github.inbox.mockResolvedValue({
-      reviewRequested: [summary('acme/greet', 7)],
-      mine: [summary('acme/other', 3)],
+      reviewRequested: [inboxSummary('acme/greet', 7)],
+      mine: [inboxSummary('acme/other', 3)],
     });
     const tour = greetTour();
     fakes.store.saveTour(tour);
@@ -246,20 +260,34 @@ describe('GET /api/inbox', () => {
 
     expect(body.reviewRequested).toEqual([
       {
-        ...summary('acme/greet', 7),
+        ...inboxSummary('acme/greet', 7),
         tour: { exists: true, source: 'inferred', headSha: HEAD, homes: 1, flows: 0 },
         seenCount: 1,
+        drafts: 0,
       },
     ]);
     expect(body.mine).toEqual([
-      { ...summary('acme/other', 3), tour: { exists: false }, seenCount: 0 },
+      { ...inboxSummary('acme/other', 3), tour: { exists: false }, seenCount: 0, drafts: 0 },
     ]);
+  });
+
+  it('inbox includes ci and the draft count', async () => {
+    const ci: CiStatus = { state: 'failure', failing: { name: 'test', url: 'https://ci/1' } };
+    fakes.github.inbox.mockResolvedValue({
+      reviewRequested: [inboxSummary('acme/greet', 7, { ci })],
+      mine: [],
+    });
+    fakes.store.addDraft('acme/greet', 7, { kind: 'reply', threadId: 'T1', body: 'ok' });
+
+    const body = await json<InboxResponse>(await api('/api/inbox'));
+
+    expect(body.reviewRequested[0]).toMatchObject({ ci, drafts: 1 });
   });
 
   it('inbox shows a corrupt stored tour as missing instead of failing', async () => {
     const log = captureErrorLog();
     fakes.github.inbox.mockResolvedValue({
-      reviewRequested: [summary('acme/greet', 7), summary('acme/other', 3)],
+      reviewRequested: [inboxSummary('acme/greet', 7), inboxSummary('acme/other', 3)],
       mine: [],
     });
     fakes.store.saveTour(greetTour());
@@ -279,7 +307,10 @@ describe('GET /api/inbox', () => {
 
   it('inbox counts a corrupt stored tour as 0 seen instead of failing', async () => {
     const log = captureErrorLog();
-    fakes.github.inbox.mockResolvedValue({ reviewRequested: [summary('acme/other', 3)], mine: [] });
+    fakes.github.inbox.mockResolvedValue({
+      reviewRequested: [inboxSummary('acme/other', 3)],
+      mine: [],
+    });
     vi.spyOn(fakes.store, 'getTour').mockImplementation(() => {
       throw new StoreError('Stored tour for acme/other#3 is invalid');
     });
