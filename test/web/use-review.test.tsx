@@ -129,6 +129,7 @@ describe('useReview', () => {
         side: 'new',
         startLine: 1,
         endLine: 1,
+        headSha: 'h1',
         body: 'Typed',
       }),
     );
@@ -169,14 +170,18 @@ describe('useReview', () => {
 
     let out: { url: string } | null = null;
     await act(async () => {
-      out = await result.current.submit('APPROVE', 'LGTM');
+      out = await result.current.submit('APPROVE', 'LGTM', 'h1');
     });
 
     expect(out).toEqual({ url: 'https://gh/r/1' });
     await waitFor(() => expect(result.current.drafts).toEqual([]));
     expect(result.current.submitError).toBeNull();
     const submitCall = fetchMock.mock.calls.find(([url]) => url.endsWith('/review/submit'));
-    expect(JSON.parse(submitCall![1].body as string)).toEqual({ event: 'APPROVE', body: 'LGTM' });
+    expect(JSON.parse(submitCall![1].body as string)).toEqual({
+      event: 'APPROVE',
+      body: 'LGTM',
+      headSha: 'h1',
+    });
   });
 
   it('submit failure keeps the drafts and exposes the error and failed draft', async () => {
@@ -191,7 +196,7 @@ describe('useReview', () => {
 
     let out: { url: string } | null = { url: 'unset' };
     await act(async () => {
-      out = await result.current.submit('COMMENT', '');
+      out = await result.current.submit('COMMENT', '', 'h1');
     });
 
     expect(out).toBeNull();
@@ -210,13 +215,13 @@ describe('useReview', () => {
 
     let first: Promise<{ url: string } | null> = Promise.resolve(null);
     act(() => {
-      first = result.current.submit('COMMENT', 'a');
+      first = result.current.submit('COMMENT', 'a', 'h1');
     });
     await waitFor(() => expect(result.current.submitting).toBe(true));
 
     let second: { url: string } | null = { url: 'unset' };
     await act(async () => {
-      second = await result.current.submit('COMMENT', 'b');
+      second = await result.current.submit('COMMENT', 'b', 'h1');
     });
     expect(second).toBeNull();
     const submits = fetchMock.mock.calls.filter(([url]) => url.endsWith('/review/submit'));
@@ -279,7 +284,7 @@ describe('useReview', () => {
 
     let submitted: Promise<{ url: string } | null> = Promise.resolve(null);
     act(() => {
-      submitted = hook.result.current.submit('COMMENT', 'a');
+      submitted = hook.result.current.submit('COMMENT', 'a', 'h1');
     });
     await waitFor(() => expect(hook.result.current.submitting).toBe(true));
 
@@ -319,7 +324,7 @@ describe('useReview', () => {
     });
     await waitFor(() => expect(hook.result.current.state).toBe('ready'));
     await act(async () => {
-      await hook.result.current.submit('COMMENT', '');
+      await hook.result.current.submit('COMMENT', '', 'h1');
     });
     expect(hook.result.current.submitError).not.toBeNull();
 
@@ -393,7 +398,7 @@ describe('useReview', () => {
 
     let out: { url: string } | null = null;
     await act(async () => {
-      out = await result.current.submit('COMMENT', 'ok');
+      out = await result.current.submit('COMMENT', 'ok', 'h1');
     });
 
     expect(out).toEqual({ url: 'https://gh/r/4' });

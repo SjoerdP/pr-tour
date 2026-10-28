@@ -137,7 +137,8 @@ export function ReviewPanel({
   }
 
   async function submit() {
-    const result = await review.submit(chosen, body);
+    // The review is of the tour shown here; the server refuses it if the tour has changed.
+    const result = await review.submit(chosen, body, tour.headSha);
     if (result) {
       setSent(result.url);
       onTextChange({ event: 'COMMENT', body: '' });

@@ -266,6 +266,8 @@ function FileCode({
             side: picked.side,
             startLine: picked.start,
             endLine: picked.end,
+            // The lines were picked on this tour; the server refuses them on another one.
+            headSha: tour.headSha,
             body,
           });
           clearSelection();

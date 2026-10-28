@@ -146,7 +146,7 @@ describe('api client review', () => {
   it('submitReview posts the event and body and returns the url', async () => {
     const fetchMock = serve(200, { url: 'https://github.com/r' });
 
-    expect(await submitReview('acme/loans', 42, 'APPROVE', 'LGTM')).toEqual({
+    expect(await submitReview('acme/loans', 42, 'APPROVE', 'LGTM', 'h1')).toEqual({
       url: 'https://github.com/r',
     });
 
@@ -154,13 +154,17 @@ describe('api client review', () => {
     expect(url).toBe('/api/pr/acme/loans/42/review/submit');
     expect(init.method).toBe('POST');
     expect(headers.get('X-PR-Tour')).toBe('1');
-    expect(JSON.parse(init.body as string)).toEqual({ event: 'APPROVE', body: 'LGTM' });
+    expect(JSON.parse(init.body as string)).toEqual({
+      event: 'APPROVE',
+      body: 'LGTM',
+      headSha: 'h1',
+    });
   });
 
   it('a failed submit carries the failed draft id', async () => {
     serve(502, { error: 'GitHub said no', failedDraftId: 7 });
 
-    const err = await submitReview('acme/loans', 42, 'COMMENT', '').catch((e: unknown) => e);
+    const err = await submitReview('acme/loans', 42, 'COMMENT', '', 'h1').catch((e: unknown) => e);
 
     expect(err).toBeInstanceOf(ApiError);
     expect(err).toMatchObject({ status: 502, message: 'GitHub said no', failedDraftId: 7 });
@@ -169,7 +173,7 @@ describe('api client review', () => {
   it('an error without a failed draft has no failedDraftId', async () => {
     serve(409, { error: 'A review is already being sent.' });
 
-    const err = await submitReview('acme/loans', 42, 'COMMENT', '').catch((e: unknown) => e);
+    const err = await submitReview('acme/loans', 42, 'COMMENT', '', 'h1').catch((e: unknown) => e);
 
     expect(err).toMatchObject({ status: 409, failedDraftId: undefined });
   });

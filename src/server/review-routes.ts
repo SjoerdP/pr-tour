@@ -31,6 +31,15 @@ export type ReviewRouteDeps = {
 };
 
 const OWN_PR = "You can't approve or request changes on your own PR.";
+const TOUR_CHANGED = 'The tour changed. Reload the page.';
+
+/**
+ * Line numbers and a review are only right for the head the user read. When the page still
+ * shows an older tour than the stored one, refuse before anything is stored or sent.
+ */
+function requireSameHead(tour: Tour, headSha: string): void {
+  if (headSha !== tour.headSha) throw new HttpError(409, TOUR_CHANGED);
+}
 
 const DraftIdSchema = z.object({
   id: z
@@ -61,6 +70,7 @@ export function registerReviewRoutes(app: Hono, deps: ReviewRouteDeps): void {
     draft: Extract<NewDraft, { kind: 'comment' }>,
   ): Promise<StoredNewDraft> {
     const tour = requireTour(repo, pr);
+    requireSameHead(tour, draft.headSha);
     const files = parseDiff(await repos.diffText(repo, tour.baseSha, tour.headSha));
     const file = findFileDiff(files, draft.path);
     if (!file) throw new HttpError(404, `${draft.path} is not changed in this tour`);
@@ -138,8 +148,9 @@ export function registerReviewRoutes(app: Hono, deps: ReviewRouteDeps): void {
 
   app.post(`${PR}/review/submit`, async (c) => {
     const { repo, pr, key } = prParams(c);
-    const { event, body } = await jsonBody(c, SubmitBodySchema, 'review');
+    const { event, body, headSha } = await jsonBody(c, SubmitBodySchema, 'review');
     const tour = requireTour(repo, pr);
+    requireSameHead(tour, headSha);
     if (submitting.has(key)) throw new HttpError(409, 'A review is already being sent.');
     submitting.add(key);
     try {

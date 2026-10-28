@@ -43,10 +43,11 @@ export type ReviewState = {
   update: (id: number, body: string) => Promise<void>;
   remove: (id: number) => Promise<void>;
   /**
-   * Sends the review. Returns its URL and reloads, or returns null and sets `submitError`.
-   * Also returns null, without a request, while a submit is already in flight.
+   * Sends the review, made on the tour with `headSha`. Returns its URL and reloads, or returns
+   * null and sets `submitError`. Also returns null, without a request, while a submit is
+   * already in flight.
    */
-  submit: (event: ReviewEvent, body: string) => Promise<{ url: string } | null>;
+  submit: (event: ReviewEvent, body: string, headSha: string) => Promise<{ url: string } | null>;
   submitting: boolean;
   submitError: SubmitError | null;
   /** Resolves or unresolves a thread on GitHub; rejects with the server's error. */
@@ -140,14 +141,14 @@ export function useReview(repo: string, pr: number): ReviewState {
     patch((d) => ({ ...d, drafts: d.drafts.filter((x) => x.id !== id) }));
   }
 
-  async function submit(event: ReviewEvent, body: string) {
+  async function submit(event: ReviewEvent, body: string, headSha: string) {
     const k = key;
     if (inFlight.current.has(k)) return null;
     inFlight.current.add(k);
     setSending((prev) => [...prev, k]);
     setFailed((prev) => (prev?.key === k ? null : prev));
     try {
-      const result = await submitReview(repo, pr, event, body);
+      const result = await submitReview(repo, pr, event, body, headSha);
       // After a switch to another PR, reloading this one would cancel that PR's load.
       if (currentKey.current === k) await reload();
       return result;

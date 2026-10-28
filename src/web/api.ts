@@ -136,14 +136,18 @@ export function deleteDraft(repo: string, pr: number, id: number): Promise<void>
   return request(`${prPath(repo, pr)}/drafts/${id}`, { method: 'DELETE' });
 }
 
-/** Sends the review with all drafts to GitHub; returns the review's URL. */
+/**
+ * Sends the review with all drafts to GitHub; returns the review's URL. `headSha` is the head
+ * of the tour the page shows: the server answers 409 when its tour has changed since.
+ */
 export function submitReview(
   repo: string,
   pr: number,
   event: ReviewEvent,
   body: string,
+  headSha: string,
 ): Promise<{ url: string }> {
-  return request(`${prPath(repo, pr)}/review/submit`, withJson('POST', { event, body }));
+  return request(`${prPath(repo, pr)}/review/submit`, withJson('POST', { event, body, headSha }));
 }
 
 /** Resolves or unresolves a thread on GitHub. */

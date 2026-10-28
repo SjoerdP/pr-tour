@@ -54,9 +54,12 @@ export type DraftReply = {
 
 export type Draft = DraftComment | DraftReply;
 
-/** What the client sends; the server adds placement, quote and headSha. */
+/**
+ * What the client sends; the server adds placement and quote. A comment's `headSha` is the
+ * head of the tour the client shows; the server refuses it when the tour has changed since.
+ */
 export type NewDraft =
-  | Omit<DraftComment, 'id' | 'createdAt' | 'placement' | 'quote' | 'headSha'>
+  | Omit<DraftComment, 'id' | 'createdAt' | 'placement' | 'quote'>
   | Omit<DraftReply, 'id' | 'createdAt'>;
 
 /** What the store saves: a comment with placement, quote and headSha filled in, or a reply. */
@@ -95,15 +98,18 @@ export const NewDraftSchema: z.ZodType<NewDraft> = z.discriminatedUnion('kind', 
       side: z.enum(['new', 'old']),
       startLine: line,
       endLine: line,
+      headSha: z.string().min(1),
       body,
     })
     .refine((d) => d.endLine >= d.startLine, { message: 'endLine must not be before startLine' }),
   z.object({ kind: z.literal('reply'), threadId: z.string().min(1), body }),
 ]);
 
+/** `headSha` is the head of the tour the client shows; the server refuses another one. */
 export const SubmitBodySchema = z.object({
   event: z.enum(['COMMENT', 'APPROVE', 'REQUEST_CHANGES']),
   body: z.string().max(65536),
+  headSha: z.string().min(1),
 });
 
 export const DraftPatchSchema = z.object({ body });

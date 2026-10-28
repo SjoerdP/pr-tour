@@ -123,8 +123,14 @@ describe('NewDraftSchema', () => {
     side: 'new',
     startLine: 3,
     endLine: 4,
+    headSha: 'h1',
     body: 'Nice',
   };
+
+  it('a comment needs the head it was made on', () => {
+    expect(NewDraftSchema.safeParse({ ...comment, headSha: undefined }).success).toBe(false);
+    expect(NewDraftSchema.safeParse({ ...comment, headSha: '' }).success).toBe(false);
+  });
 
   it('rejects endLine < startLine and empty body', () => {
     expect(NewDraftSchema.safeParse(comment).success).toBe(true);

@@ -217,6 +217,7 @@ describe('POST /drafts', () => {
         side: 'new',
         startLine: 2,
         endLine: 4,
+        headSha: HEAD,
         body: 'hi',
       },
     });
@@ -247,6 +248,7 @@ describe('POST /drafts', () => {
         side: 'new',
         startLine: 3,
         endLine: 14,
+        headSha: HEAD,
         body: 'x',
       },
     });
@@ -259,7 +261,15 @@ describe('POST /drafts', () => {
   it('an old-side comment reads the base file', async () => {
     const res = await api('/drafts', {
       method: 'POST',
-      body: { kind: 'comment', path: 'greet.js', side: 'old', startLine: 2, endLine: 3, body: 'x' },
+      body: {
+        kind: 'comment',
+        path: 'greet.js',
+        side: 'old',
+        startLine: 2,
+        endLine: 3,
+        headSha: HEAD,
+        body: 'x',
+      },
     });
 
     expect(await json<Draft>(res)).toMatchObject({
@@ -278,7 +288,15 @@ describe('POST /drafts', () => {
 
     const res = await api('/drafts', {
       method: 'POST',
-      body: { kind: 'comment', path: file.path, side: 'old', startLine: 1, endLine: 1, body: 'x' },
+      body: {
+        kind: 'comment',
+        path: file.path,
+        side: 'old',
+        startLine: 1,
+        endLine: 1,
+        headSha: HEAD,
+        body: 'x',
+      },
     });
 
     expect(res.status).toBe(201);
@@ -297,7 +315,15 @@ describe('POST /drafts', () => {
 
     const res = await api('/drafts', {
       method: 'POST',
-      body: { kind: 'comment', path: file.path, side, startLine: 1, endLine: 1, body: 'x' },
+      body: {
+        kind: 'comment',
+        path: file.path,
+        side,
+        startLine: 1,
+        endLine: 1,
+        headSha: HEAD,
+        body: 'x',
+      },
     });
 
     expect(res.status).toBe(400);
@@ -307,7 +333,15 @@ describe('POST /drafts', () => {
   it('a comment on a file not in the tour is 404', async () => {
     const res = await api('/drafts', {
       method: 'POST',
-      body: { kind: 'comment', path: 'other.js', side: 'new', startLine: 1, endLine: 1, body: 'x' },
+      body: {
+        kind: 'comment',
+        path: 'other.js',
+        side: 'new',
+        startLine: 1,
+        endLine: 1,
+        headSha: HEAD,
+        body: 'x',
+      },
     });
     expect(res.status).toBe(404);
   });
@@ -321,6 +355,7 @@ describe('POST /drafts', () => {
         side: 'new',
         startLine: 15,
         endLine: 16,
+        headSha: HEAD,
         body: 'x',
       },
     });
@@ -334,7 +369,15 @@ describe('POST /drafts', () => {
 
     const res = await api('/drafts', {
       method: 'POST',
-      body: { kind: 'comment', path: 'greet.js', side: 'new', startLine: 2, endLine: 2, body: 'x' },
+      body: {
+        kind: 'comment',
+        path: 'greet.js',
+        side: 'new',
+        startLine: 2,
+        endLine: 2,
+        headSha: HEAD,
+        body: 'x',
+      },
     });
     expect(res.status).toBe(404);
   });
@@ -357,6 +400,39 @@ describe('POST /drafts', () => {
     { kind: 'other' },
   ])('an invalid draft %j is 400', async (body) => {
     const res = await api('/drafts', { method: 'POST', body });
+    expect(res.status).toBe(400);
+  });
+});
+
+describe('POST /drafts on a replaced tour', () => {
+  beforeEach(() => fakes.store.saveTour(greetTour()));
+
+  it('a comment made on another head than the stored tour is 409, nothing stored or read', async () => {
+    const res = await api('/drafts', {
+      method: 'POST',
+      body: {
+        kind: 'comment',
+        path: 'greet.js',
+        side: 'new',
+        startLine: 2,
+        endLine: 2,
+        headSha: OLD_HEAD,
+        body: 'x',
+      },
+    });
+
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual({ error: 'The tour changed. Reload the page.' });
+    expect(fakes.store.draftCount('acme/greet', 7)).toBe(0);
+    expect(fakes.repos.diffText).not.toHaveBeenCalled();
+    expect(fakes.review.reviewState).not.toHaveBeenCalled();
+  });
+
+  it('a comment without headSha is 400', async () => {
+    const res = await api('/drafts', {
+      method: 'POST',
+      body: { kind: 'comment', path: 'greet.js', side: 'new', startLine: 2, endLine: 2, body: 'x' },
+    });
     expect(res.status).toBe(400);
   });
 });
@@ -428,7 +504,7 @@ describe('POST /review/submit', () => {
 
     const res = await api('/review/submit', {
       method: 'POST',
-      body: { event: 'APPROVE', body: 'lgtm' },
+      body: { event: 'APPROVE', body: 'lgtm', headSha: HEAD },
     });
 
     expect(res.status).toBe(400);
@@ -443,7 +519,7 @@ describe('POST /review/submit', () => {
 
     const res = await api('/review/submit', {
       method: 'POST',
-      body: { event: 'COMMENT', body: 'note' },
+      body: { event: 'COMMENT', body: 'note', headSha: HEAD },
     });
 
     expect(res.status).toBe(200);
@@ -452,7 +528,7 @@ describe('POST /review/submit', () => {
   it('submit with nothing → 400', async () => {
     const res = await api('/review/submit', {
       method: 'POST',
-      body: { event: 'COMMENT', body: '' },
+      body: { event: 'COMMENT', body: '', headSha: HEAD },
     });
 
     expect(res.status).toBe(400);
@@ -463,7 +539,7 @@ describe('POST /review/submit', () => {
   it('an APPROVE with no body and no drafts is sent', async () => {
     const res = await api('/review/submit', {
       method: 'POST',
-      body: { event: 'APPROVE', body: '' },
+      body: { event: 'APPROVE', body: '', headSha: HEAD },
     });
     expect(res.status).toBe(200);
   });
@@ -479,7 +555,7 @@ describe('POST /review/submit', () => {
 
     const res = await api('/review/submit', {
       method: 'POST',
-      body: { event: 'REQUEST_CHANGES', body: 'please fix' },
+      body: { event: 'REQUEST_CHANGES', body: 'please fix', headSha: HEAD },
     });
 
     expect(res.status).toBe(200);
@@ -503,7 +579,7 @@ describe('POST /review/submit', () => {
 
     const res = await api('/review/submit', {
       method: 'POST',
-      body: { event: 'COMMENT', body: '' },
+      body: { event: 'COMMENT', body: '', headSha: HEAD },
     });
 
     expect(res.status).toBe(502);
@@ -524,7 +600,10 @@ describe('POST /review/submit', () => {
         }),
     );
     const submit = () =>
-      api('/review/submit', { method: 'POST', body: { event: 'COMMENT', body: 'x' } });
+      api('/review/submit', {
+        method: 'POST',
+        body: { event: 'COMMENT', body: 'x', headSha: HEAD },
+      });
 
     const first = submit();
     await vi.waitFor(() => expect(fakes.review.submitReview).toHaveBeenCalledTimes(1));
@@ -543,7 +622,10 @@ describe('POST /review/submit', () => {
     const draft = addReply();
     fakes.review.submitReview.mockRejectedValueOnce(new ReviewSubmitError('refused', draft.id));
     const submit = () =>
-      api('/review/submit', { method: 'POST', body: { event: 'COMMENT', body: '' } });
+      api('/review/submit', {
+        method: 'POST',
+        body: { event: 'COMMENT', body: '', headSha: HEAD },
+      });
 
     expect((await submit()).status).toBe(502);
     expect((await submit()).status).toBe(200);
@@ -557,13 +639,16 @@ describe('POST /review/submit', () => {
           release = () => resolve({ url: 'u' });
         }),
     );
-    const first = api('/review/submit', { method: 'POST', body: { event: 'COMMENT', body: 'x' } });
+    const first = api('/review/submit', {
+      method: 'POST',
+      body: { event: 'COMMENT', body: 'x', headSha: HEAD },
+    });
     await vi.waitFor(() => expect(fakes.review.submitReview).toHaveBeenCalledTimes(1));
 
     const second = await app.request('/api/pr/Acme/Greet/7/review/submit', {
       method: 'POST',
       headers: { Host: HOST, 'X-PR-Tour': '1', 'Content-Type': 'application/json' },
-      body: JSON.stringify({ event: 'COMMENT', body: 'x' }),
+      body: JSON.stringify({ event: 'COMMENT', body: 'x', headSha: HEAD }),
     });
     expect(second.status).toBe(409);
     release();
@@ -574,7 +659,10 @@ describe('POST /review/submit', () => {
     captureErrorLog();
     fakes.review.reviewState.mockRejectedValueOnce(new GraphqlError('down'));
     const submit = () =>
-      api('/review/submit', { method: 'POST', body: { event: 'COMMENT', body: 'x' } });
+      api('/review/submit', {
+        method: 'POST',
+        body: { event: 'COMMENT', body: 'x', headSha: HEAD },
+      });
 
     expect((await submit()).status).toBe(502);
     expect((await submit()).status).toBe(200);
@@ -587,7 +675,7 @@ describe('POST /review/submit', () => {
 
     const res = await api('/review/submit', {
       method: 'POST',
-      body: { event: 'COMMENT', body: 'x' },
+      body: { event: 'COMMENT', body: 'x', headSha: HEAD },
     });
 
     expect(res.status).toBe(404);
@@ -596,7 +684,7 @@ describe('POST /review/submit', () => {
   it('submit with an unknown event is 400', async () => {
     const res = await api('/review/submit', {
       method: 'POST',
-      body: { event: 'MERGE', body: 'x' },
+      body: { event: 'MERGE', body: 'x', headSha: HEAD },
     });
     expect(res.status).toBe(400);
   });
@@ -614,11 +702,42 @@ describe('POST /review/submit', () => {
       body: 'b',
     });
 
-    await api('/review/submit', { method: 'POST', body: { event: 'COMMENT', body: '' } });
+    await api('/review/submit', {
+      method: 'POST',
+      body: { event: 'COMMENT', body: '', headSha: HEAD },
+    });
 
     expect(fakes.review.submitReview).toHaveBeenCalledWith(
       expect.objectContaining({ commitOid: HEAD, drafts: [draft] }),
     );
+  });
+});
+
+describe('POST /review/submit on a replaced tour', () => {
+  beforeEach(() => fakes.store.saveTour(greetTour()));
+
+  it('a submit made on another head than the stored tour is 409, before GitHub', async () => {
+    const draft = addReply();
+
+    const res = await api('/review/submit', {
+      method: 'POST',
+      body: { event: 'COMMENT', body: 'x', headSha: OLD_HEAD },
+    });
+
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual({ error: 'The tour changed. Reload the page.' });
+    expect(fakes.review.reviewState).not.toHaveBeenCalled();
+    expect(fakes.review.submitReview).not.toHaveBeenCalled();
+    expect(fakes.store.drafts('acme/greet', 7)).toEqual([draft]);
+  });
+
+  it('a submit without headSha is 400', async () => {
+    const res = await api('/review/submit', {
+      method: 'POST',
+      body: { event: 'COMMENT', body: 'x' },
+    });
+    expect(res.status).toBe(400);
+    expect(fakes.review.submitReview).not.toHaveBeenCalled();
   });
 });
 

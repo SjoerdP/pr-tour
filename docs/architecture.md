@@ -91,7 +91,10 @@ Plan 2 lets the user do the GitHub review inside a tour. The pieces:
   `/api/pr/:owner/:name/:pr`: `GET review`, `POST/PATCH/DELETE drafts`,
   `POST review/submit` and `POST threads/:threadId/resolve`. A new comment draft is
   placed on the server against the tour's diff, with its quote and the tour's
-  `headSha` stored next to it.
+  `headSha` stored next to it. The client sends the `headSha` of the tour it shows
+  with a new comment and with a submit; when the stored tour has another head, the
+  route answers 409 ("The tour changed. Reload the page.") before it stores or sends
+  anything.
 - **Drafts table.** Migration 2 adds `drafts` to the store: one row per unsent
   comment (`kind = 'comment'`: path, side, start/end line, placement, quote,
   head_sha) or reply (`kind = 'reply'`: thread_id), with its body. Drafts stay
@@ -103,9 +106,9 @@ Plan 2 lets the user do the GitHub review inside a tour. The pieces:
 
 ### Submit flow
 
-`POST review/submit` with `{ event, body }`:
+`POST review/submit` with `{ event, body, headSha }`:
 
-1. A per-PR lock (`submitting` set) answers 409 to a second submit while one runs.
+1. A `headSha` other than the stored tour's is refused with 409. A per-PR lock (`submitting` set) answers 409 to a second submit while one runs.
 2. Takes the current drafts. These, and only these, are cleared on success.
 3. Reads `viewerIsAuthor`; on the user's own PR only `COMMENT` is allowed (400).
 4. `ReviewGitHub.submitReview` runs `addPullRequestReview` on the tour's `headSha`

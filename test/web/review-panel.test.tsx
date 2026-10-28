@@ -284,7 +284,7 @@ describe('ReviewPanel: submit', () => {
     });
     fireEvent.click(submitButton());
     await vi.waitFor(() =>
-      expect(review.submit).toHaveBeenCalledWith('REQUEST_CHANGES', 'Needs a test.'),
+      expect(review.submit).toHaveBeenCalledWith('REQUEST_CHANGES', 'Needs a test.', tour.headSha),
     );
   });
 
@@ -322,6 +322,35 @@ describe('ReviewPanel: submit', () => {
     expect(items[0]!.classList.contains('failed')).toBe(false);
     expect(items[1]!.classList.contains('failed')).toBe(true);
     expect(within(items[1]!).getByText('Not sent')).toBeTruthy();
+  });
+
+  it('a submit refused because the tour changed shows why and keeps the summary', async () => {
+    const review = fakeReview({ drafts: [comment()] });
+    const failed = { message: 'The tour changed. Reload the page.', failedDraftId: null };
+    let current: ReviewState = review;
+    vi.mocked(review.submit).mockImplementation(() => {
+      current = { ...review, submitError: failed };
+      return Promise.resolve(null);
+    });
+    const props = {
+      tour,
+      isSeen: () => true,
+      onOpenHome: vi.fn(),
+      onJump: vi.fn(),
+      onClose: vi.fn(),
+    };
+    const { rerender } = render(<Harness {...props} review={current} />);
+    fireEvent.change(screen.getByRole('textbox', { name: 'Summary' }), {
+      target: { value: 'Looks fine.' },
+    });
+    fireEvent.click(submitButton());
+    await vi.waitFor(() => expect(review.submit).toHaveBeenCalled());
+    rerender(<Harness {...props} review={current} />);
+
+    expect(screen.getByRole('alert').textContent).toBe('The tour changed. Reload the page.');
+    expect(screen.getByRole<HTMLTextAreaElement>('textbox', { name: 'Summary' }).value).toBe(
+      'Looks fine.',
+    );
   });
 
   it('Request changes needs a summary, even with pending comments', () => {

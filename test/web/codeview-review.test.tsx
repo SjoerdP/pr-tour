@@ -202,9 +202,29 @@ describe('CodeView: commenting on lines', () => {
       side: 'new',
       startLine: 5,
       endLine: 6,
+      headSha: HEAD,
       body: 'Looks off',
     });
     expect(document.querySelector('.code-selected')).toBeNull();
+  });
+
+  it('a comment refused because the tour changed shows why and keeps the text', async () => {
+    serve();
+    const review = fakeReview();
+    vi.mocked(review.add).mockRejectedValue(
+      new api.ApiError(409, 'The tour changed. Reload the page.'),
+    );
+    renderView(review);
+    await screen.findByText('new five');
+
+    fireEvent.click(lineButton(5));
+    fireEvent.change(field(), { target: { value: 'Looks off' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Add comment' }));
+
+    expect((await screen.findByRole('alert')).textContent).toBe(
+      'Not saved: The tour changed. Reload the page.',
+    );
+    expect((field() as HTMLTextAreaElement).value).toBe('Looks off');
   });
 
   it('a deleted line is commented on the old side', async () => {
@@ -226,6 +246,7 @@ describe('CodeView: commenting on lines', () => {
         side: 'old',
         startLine: 5,
         endLine: 5,
+        headSha: HEAD,
         body: 'Was this used?',
       }),
     );
