@@ -1,8 +1,9 @@
 import { fireEvent, render, screen, within } from '@testing-library/react';
+import { useState } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 import type { Draft, DraftComment, ReviewThread } from '../../src/shared/review.js';
 import type { Tour } from '../../src/shared/tour.js';
-import { ReviewPanel } from '../../src/web/ReviewPanel.js';
+import { ReviewPanel, type ReviewDraftText } from '../../src/web/ReviewPanel.js';
 import type { ReviewState } from '../../src/web/useReview.js';
 import { fakeReview } from './review-fake.js';
 import { tour as baseTour } from './tour-fixture.js';
@@ -71,8 +72,14 @@ function renderPanel(
     onJump: vi.fn(),
     onClose: vi.fn(),
   };
-  render(<ReviewPanel {...props} />);
+  render(<Harness {...props} />);
   return props;
+}
+
+/** The panel with its summary and event kept the way the top bar keeps them. */
+function Harness(props: Omit<Parameters<typeof ReviewPanel>[0], 'text' | 'onTextChange'>) {
+  const [text, setText] = useState<ReviewDraftText>({ event: 'COMMENT', body: '' });
+  return <ReviewPanel {...props} text={text} onTextChange={setText} />;
 }
 
 const panel = () => screen.getByRole('region', { name: 'Review' });
@@ -146,6 +153,27 @@ describe('ReviewPanel: drafts and threads', () => {
     expect(props.onJump).toHaveBeenCalledWith('lib/x.ts', 12);
     fireEvent.click(screen.getByRole('button', { name: 'reply in lib/x.ts' }));
     expect(props.onJump).toHaveBeenCalledTimes(2);
+  });
+
+  it('a thread without a line is file-level: it opens the file at the top', () => {
+    const props = renderPanel(
+      fakeReview({ threads: [thread({ path: 'lib/x.ts', line: null, side: null })] }),
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'lib/x.ts' }));
+    expect(props.onJump).toHaveBeenCalledWith('lib/x.ts', 1);
+  });
+
+  it('a thread with a line but no side is file-level too', () => {
+    const props = renderPanel(fakeReview({ threads: [thread({ path: 'src/a.ts', line: null })] }));
+    fireEvent.click(screen.getByRole('button', { name: 'src/a.ts' }));
+    // src/a.ts line 1 belongs to a step, but a file-level thread has no line to open.
+    expect(props.onOpenHome).not.toHaveBeenCalled();
+    expect(props.onJump).toHaveBeenCalledWith('src/a.ts', 1);
+  });
+
+  it('moves focus to its heading when it opens', () => {
+    renderPanel();
+    expect(document.activeElement).toBe(screen.getByRole('heading', { name: 'Review' }));
   });
 
   it('a draft can be deleted', async () => {
@@ -294,6 +322,35 @@ describe('ReviewPanel: submit', () => {
     expect(items[0]!.classList.contains('failed')).toBe(false);
     expect(items[1]!.classList.contains('failed')).toBe(true);
     expect(within(items[1]!).getByText('Not sent')).toBeTruthy();
+  });
+
+  it('Request changes needs a summary, even with pending comments', () => {
+    renderPanel(fakeReview({ drafts: [comment()] }));
+    fireEvent.click(screen.getByRole('radio', { name: 'Request changes' }));
+    expect((submitButton() as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.getByText('Request changes needs a summary.')).toBeTruthy();
+    fireEvent.change(screen.getByRole('textbox', { name: 'Summary' }), {
+      target: { value: '   ' },
+    });
+    expect((submitButton() as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.change(screen.getByRole('textbox', { name: 'Summary' }), {
+      target: { value: 'Needs a test.' },
+    });
+    expect((submitButton() as HTMLButtonElement).disabled).toBe(false);
+    expect(screen.queryByText('Request changes needs a summary.')).toBeNull();
+  });
+
+  it('after "Review sent" there is no hint about an empty review', async () => {
+    const review = fakeReview();
+    vi.mocked(review.submit).mockResolvedValue({ url: 'https://github.com/r/1' });
+    renderPanel(review);
+    fireEvent.change(screen.getByRole('textbox', { name: 'Summary' }), {
+      target: { value: 'Fine.' },
+    });
+    fireEvent.click(submitButton());
+    await screen.findByText(/Review sent/);
+    expect(screen.queryByText('Write a summary or add a comment first.')).toBeNull();
+    expect(screen.getByRole<HTMLTextAreaElement>('textbox', { name: 'Summary' }).value).toBe('');
   });
 
   it('Submit is disabled while sending', () => {

@@ -1,8 +1,11 @@
 import { useEffect, useId, useRef, useState, type KeyboardEvent } from 'react';
 import type { PrSummary } from '../shared/api.js';
 import { reviewableHomeIds, type Tour } from '../shared/tour.js';
-import { ReviewPanel } from './ReviewPanel.js';
+import { inKeepOpenArea, keepsReviewOpen } from './keep-review-open.js';
+import { ReviewPanel, type ReviewDraftText } from './ReviewPanel.js';
 import type { ReviewState } from './useReview.js';
+
+const EMPTY_REVIEW_TEXT: ReviewDraftText = { event: 'COMMENT', body: '' };
 
 type Props = {
   pr: PrSummary;
@@ -43,12 +46,20 @@ export function TopBar({
   const reviewOpen = tour !== null && reviewChoice;
   const reviewBox = useRef<HTMLDivElement>(null);
   const reviewButton = useRef<HTMLButtonElement>(null);
+  // The summary and event outlive the panel: closing it must not lose what was typed.
+  // Kept per PR, so another PR in the same view starts empty.
+  const prKey = `${pr.repo}#${pr.number}`;
+  const [storedText, setStoredText] = useState<{ key: string; text: ReviewDraftText } | null>(null);
+  const reviewText = storedText?.key === prKey ? storedText.text : EMPTY_REVIEW_TEXT;
+  const setReviewText = (text: ReviewDraftText) => setStoredText({ key: prKey, text });
 
   useEffect(() => {
     if (!reviewOpen) return;
+    // Clicks on navigation (outline, step bar, this bar) keep it open; others close it.
     function onMouseDown(event: MouseEvent) {
       const target = event.target as Node | null;
       if (reviewBox.current?.contains(target) || reviewButton.current?.contains(target)) return;
+      if (inKeepOpenArea(target)) return;
       setReviewOpen(false);
     }
     document.addEventListener('mousedown', onMouseDown);
@@ -88,7 +99,7 @@ export function TopBar({
   const drafts = review.drafts.length;
 
   return (
-    <header className="topbar">
+    <header className="topbar" {...keepsReviewOpen}>
       <a className="button-link" href="/">
         ← Inbox
       </a>
@@ -138,6 +149,8 @@ export function TopBar({
         >
           <ReviewPanel
             review={review}
+            text={reviewText}
+            onTextChange={setReviewText}
             tour={tour}
             isSeen={isSeen}
             onOpenHome={onOpenHome}

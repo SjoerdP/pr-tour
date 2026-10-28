@@ -4,6 +4,7 @@ import type { Focus as CodeFocus } from './code-lines.js';
 import { CodeView } from './CodeView.js';
 import { FlowEndNote } from './FlowEndNote.js';
 import { homeTouches, homeTitle, type Home } from './homes.js';
+import { keepsReviewOpen } from './keep-review-open.js';
 import { withKey } from './shortcuts.js';
 import type { ReviewState } from './useReview.js';
 
@@ -107,7 +108,10 @@ function facts(home: Home): Fact[] {
 /** "N comments" (threads on the home's lines) and "N pending" (drafts there), when non-zero. */
 function reviewFacts(home: Home, review: ReviewState): Fact[] {
   const touching = review.threads.filter((t) =>
-    homeTouches(home, t.path, t.side, t.startLine ?? t.line ?? 1, t.line ?? 1),
+    // A thread without a line is file-level: only a whole-file home owns it.
+    t.line === null
+      ? homeTouches(home, t.path, null, 1, 1)
+      : homeTouches(home, t.path, t.side, t.startLine ?? t.line, t.line),
   );
   const ids = new Set(touching.map((t) => t.id));
   const pending = review.drafts.filter((d) =>
@@ -234,7 +238,7 @@ export function StepPane({
         onOpenHome={onOpenHome}
         review={review}
       />
-      <div className="step-nav">
+      <div className="step-nav" {...keepsReviewOpen}>
         <button
           type="button"
           onClick={nav.previousStep}

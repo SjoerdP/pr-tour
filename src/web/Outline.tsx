@@ -9,6 +9,7 @@ import {
   type Tour,
 } from '../shared/tour.js';
 import { otherGroupsInOrder } from './homes.js';
+import { keepsReviewOpen } from './keep-review-open.js';
 import { withKey } from './shortcuts.js';
 
 type Props = {
@@ -72,7 +73,7 @@ export function Outline({ tour, currentId, isSeen, onSelect, previousFlow, nextF
   );
 
   return (
-    <nav className="outline" aria-label="Tour outline">
+    <nav className="outline" aria-label="Tour outline" {...keepsReviewOpen}>
       {tour.foundations.length > 0 && (
         <section className="outline-section">
           <SectionHead title="Foundations" {...progress(tour.foundations, isSeen)} />

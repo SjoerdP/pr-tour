@@ -1,4 +1,4 @@
-import { useId, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { isOlderDraft, type Draft, type ReviewEvent, type ReviewThread } from '../shared/review.js';
 import type { Tour } from '../shared/tour.js';
 import { errorText } from './errors.js';
@@ -6,8 +6,13 @@ import { homeAt, homeFile, homeTitle, unseenForReview } from './homes.js';
 import { OLDER_DRAFT_NOTICE } from './Thread.js';
 import type { ReviewState } from './useReview.js';
 
+/** What the reviewer typed and picked; kept by the caller so closing the panel keeps it. */
+export type ReviewDraftText = { event: ReviewEvent; body: string };
+
 type Props = {
   review: ReviewState;
+  text: ReviewDraftText;
+  onTextChange: (text: ReviewDraftText) => void;
   tour: Tour;
   isSeen: (homeId: string) => boolean;
   /** Opens a home of the tour. */
@@ -28,8 +33,12 @@ const OWN_PR_REASON = "You can't approve your own PR on GitHub.";
 /** A place in the code: what the panel shows and where a click goes. */
 type Place = { path: string; side: 'new' | 'old' | null; start: number; end: number };
 
+/** A thread without a line (or a side) is file-level: it has no line to open. */
 function threadPlace(thread: ReviewThread): Place {
-  const end = thread.line ?? 1;
+  if (thread.line === null || thread.side === null) {
+    return { path: thread.path, side: null, start: 1, end: 1 };
+  }
+  const end = thread.line;
   return { path: thread.path, side: thread.side, start: thread.startLine ?? end, end };
 }
 
@@ -55,11 +64,20 @@ function preview(text: string): string {
  * event, and Submit. Approving with unseen items first lists them. Nothing reaches GitHub
  * before Submit.
  */
-export function ReviewPanel({ review, tour, isSeen, onOpenHome, onJump, onClose }: Props) {
+export function ReviewPanel({
+  review,
+  text,
+  onTextChange,
+  tour,
+  isSeen,
+  onOpenHome,
+  onJump,
+  onClose,
+}: Props) {
   const reasonId = useId();
   const groupName = useId();
-  const [event, setEvent] = useState<ReviewEvent>('COMMENT');
-  const [body, setBody] = useState('');
+  const { event, body } = text;
+  const heading = useRef<HTMLHeadingElement>(null);
   const [sent, setSent] = useState<string | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
 
@@ -69,14 +87,28 @@ export function ReviewPanel({ review, tour, isSeen, onOpenHome, onJump, onClose 
   const unseen = chosen === 'APPROVE' ? unseenForReview(tour, isSeen) : [];
   const { drafts, submitError } = review;
   const unresolved = review.threads.filter((t) => !t.resolved);
-  // GitHub refuses a comment or request-changes review with nothing in it.
-  const empty = chosen !== 'APPROVE' && body.trim() === '' && drafts.length === 0;
+  // GitHub needs a body to request changes, and a body or a comment for a comment review.
+  const blank = body.trim() === '';
+  const missing =
+    chosen === 'REQUEST_CHANGES' && blank
+      ? 'Request changes needs a summary.'
+      : chosen === 'COMMENT' && blank && drafts.length === 0
+        ? 'Write a summary or add a comment first.'
+        : null;
 
-  /** Opens the home that owns the place and shows its file, else the file at the line. */
+  // Opening the panel takes focus there, so Tab and Esc work in it right away.
+  useEffect(() => {
+    heading.current?.focus();
+  }, []);
+
+  /**
+   * Opens the home that owns the place and shows its file, else the file at the line. A
+   * file-level place is owned only by a whole-file home; without one it opens at the top.
+   */
   function go(place: Place) {
     const home = homeAt(tour, place.path, place.side, place.start, place.end);
     if (home && homeFile(home) === place.path) onOpenHome(home.id);
-    else onJump(place.path, place.end);
+    else onJump(place.path, place.side === null ? 1 : place.end);
   }
 
   function draftPlace(draft: Draft): { text: string; place: Place | null } {
@@ -108,15 +140,16 @@ export function ReviewPanel({ review, tour, isSeen, onOpenHome, onJump, onClose 
     const result = await review.submit(chosen, body);
     if (result) {
       setSent(result.url);
-      setBody('');
-      setEvent('COMMENT');
+      onTextChange({ event: 'COMMENT', body: '' });
     }
   }
 
   return (
     <section className="review-panel" aria-label="Review">
       <div className="review-panel-head">
-        <h2>Review</h2>
+        <h2 ref={heading} tabIndex={-1}>
+          Review
+        </h2>
         <button type="button" className="link-button" onClick={onClose}>
           Close
         </button>
@@ -217,7 +250,7 @@ export function ReviewPanel({ review, tour, isSeen, onOpenHome, onJump, onClose 
         id={`${groupName}-summary`}
         className="review-summary"
         value={body}
-        onChange={(e) => setBody(e.target.value)}
+        onChange={(e) => onTextChange({ event, body: e.target.value })}
       />
 
       <fieldset
@@ -234,7 +267,7 @@ export function ReviewPanel({ review, tour, isSeen, onOpenHome, onJump, onClose 
               value={value}
               checked={chosen === value}
               disabled={own && value !== 'COMMENT'}
-              onChange={() => setEvent(value)}
+              onChange={() => onTextChange({ event: value, body })}
             />
             {label}
           </label>
@@ -273,12 +306,12 @@ export function ReviewPanel({ review, tour, isSeen, onOpenHome, onJump, onClose 
         <button
           type="button"
           className="primary"
-          disabled={review.submitting || empty}
+          disabled={review.submitting || missing !== null}
           onClick={() => void submit()}
         >
           {unseen.length > 0 ? 'Approve anyway' : 'Submit review'}
         </button>
-        {empty && <span className="muted">Write a summary or add a comment first.</span>}
+        {missing !== null && sent === null && <span className="muted">{missing}</span>}
       </div>
     </section>
   );

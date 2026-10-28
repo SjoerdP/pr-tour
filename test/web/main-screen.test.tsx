@@ -388,8 +388,54 @@ describe('Review in the top bar', () => {
     fireEvent.keyDown(window, { key: 'j' });
     expect(trail()).toBe('Flow 1 · step 1 of 5');
     expect(reviewPanel()).toBeTruthy();
-    fireEvent.click(screen.getByRole('button', { name: 'Next step' }));
     expect(reviewPanel()).toBeTruthy();
+  });
+
+  it('stays open on clicks in the outline, the step bar and the top bar', async () => {
+    serveReview();
+    await open();
+    fireEvent.click(reviewButton());
+
+    const next = screen.getByRole('button', { name: 'Next step' });
+    fireEvent.mouseDown(next);
+    fireEvent.click(next);
+    expect(trail()).toBe('Flow 1 · step 1 of 5');
+    expect(reviewPanel()).toBeTruthy();
+
+    const item = outlineItem('Create repayments table');
+    fireEvent.mouseDown(item);
+    fireEvent.click(item);
+    expect(trail()).toBe('Foundation · migration');
+    expect(reviewPanel()).toBeTruthy();
+
+    fireEvent.mouseDown(screen.getByRole('heading', { level: 1 }));
+    expect(reviewPanel()).toBeTruthy();
+  });
+
+  it('closes on a mousedown in the code area', async () => {
+    serveReview();
+    await open();
+    fireEvent.click(reviewButton());
+    fireEvent.mouseDown(screen.getByTestId('code-view'));
+    expect(reviewPanel()).toBeNull();
+  });
+
+  it('keeps the typed summary and event when closed and opened again', async () => {
+    serveReview();
+    await open();
+    fireEvent.click(reviewButton());
+    fireEvent.change(screen.getByRole('textbox', { name: 'Summary' }), {
+      target: { value: 'Half written' },
+    });
+    fireEvent.click(screen.getByRole('radio', { name: 'Request changes' }));
+    fireEvent.click(within(reviewPanel()!).getByRole('button', { name: 'Close' }));
+    fireEvent.click(reviewButton());
+    expect(screen.getByRole<HTMLTextAreaElement>('textbox', { name: 'Summary' }).value).toBe(
+      'Half written',
+    );
+    expect(screen.getByRole<HTMLInputElement>('radio', { name: 'Request changes' }).checked).toBe(
+      true,
+    );
   });
 
   it('typing j in the summary does not move', async () => {
@@ -449,6 +495,14 @@ describe('step header: review counts', () => {
     });
     await open();
     await vi.waitFor(() => expect(facts()).toEqual(['1 comment', '1 pending']));
+  });
+
+  it('a thread without a line is file-level: not counted for a home', async () => {
+    serveReview({ threads: [reviewThread({ line: null, side: null })] });
+    await open();
+    await vi.waitFor(() => expect(getReview).toHaveBeenCalled());
+    await screen.findByRole('button', { name: /^Review/ });
+    expect(screen.queryByRole('list', { name: 'Step facts' })).toBeNull();
   });
 
   it('says "2 comments" for two', async () => {
