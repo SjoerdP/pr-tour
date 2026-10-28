@@ -28,6 +28,7 @@ import {
   type CallMatch,
   type Focus,
   type Owner,
+  type Reveal,
 } from './code-lines.js';
 import { FileComments, ReviewRow } from './CodeReview.js';
 import { Composer } from './Composer.js';
@@ -46,6 +47,8 @@ export type CodeViewProps = {
   file: string;
   focus: Focus | null;
   homeId: string;
+  /** A place to scroll to and flash once (a jump from the review panel). */
+  reveal?: Reveal | null;
   /** Show the code without syntax colours (generated code: skimmed, and often huge). */
   plain?: boolean;
   /** Follow a traced call: show `file` around `line`. */
@@ -64,6 +67,7 @@ export function CodeView({
   file,
   focus,
   homeId,
+  reveal = null,
   plain = false,
   onJump,
   onOpenHome,
@@ -103,6 +107,7 @@ export function CodeView({
         tokens={tokens}
         focus={focus}
         homeId={homeId}
+        reveal={reveal}
         onJump={onJump}
         onOpenHome={onOpenHome}
         review={review}
@@ -123,6 +128,7 @@ type FileCodeProps = {
   tokens: Tokens;
   focus: Focus | null;
   homeId: string;
+  reveal: Reveal | null;
   onJump: (file: string, line: number) => void;
   onOpenHome: (homeId: string) => void;
   review: ReviewState;
@@ -142,6 +148,7 @@ function FileCode({
   tokens,
   focus,
   homeId,
+  reveal,
   onJump,
   onOpenHome,
   review,
@@ -217,6 +224,16 @@ function FileCode({
     );
   }
 
+  // The row a jump from the review panel asked for: -1 for the comments on the file, null
+  // when the jump is not about this file.
+  const revealRow = useMemo((): number | null => {
+    if (!reveal) return null;
+    if (reveal.at === 'focus') return focusRange?.[0] ?? null;
+    const { path, side, line } = reveal.at;
+    if (path !== file.path) return null;
+    return side === null || line === null ? -1 : rowOf(rows, side, line);
+  }, [reveal, focusRange, file.path, rows]);
+
   const [opened, setOpened] = useState<Array<[number, number]>>([]);
   const [whole, setWhole] = useState(false);
   // Start on the first change at or after the focus (the last one if the focus is below all).
@@ -228,20 +245,45 @@ function FileCode({
   const segments: Segment[] = useMemo(() => {
     if (whole) return rows.length === 0 ? [] : [{ kind: 'rows', from: 0, to: rows.length - 1 }];
     const keep = [...opened, ...reviewRows, ...pickedRows];
+    // The row a jump asked for opens, like a thread's.
+    if (revealRow !== null && revealRow >= 0) keep.push([revealRow, revealRow]);
     return foldRows(rows, focusRange ? [focusRange, ...keep] : keep);
-  }, [rows, whole, focusRange, opened, reviewRows, pickedRows]);
+  }, [rows, whole, focusRange, opened, reviewRows, pickedRows, revealRow]);
 
   // The row to bring into view after the next render: the focus on mount, then each change
   // moved to.
   const scrollTo = useRef<number | null>(focusRange?.[0] ?? blocks[current]?.from ?? null);
   const container = useRef<HTMLDivElement>(null);
+  // The last jump shown, so each one scrolls and flashes once.
+  const revealed = useRef<number | null>(null);
+  const flashed = useRef<{ el: Element; timer: number } | null>(null);
   useEffect(() => {
+    if (reveal && revealRow !== null && reveal.seq !== revealed.current) {
+      revealed.current = reveal.seq;
+      scrollTo.current = null;
+      const el = container.current?.querySelector(
+        revealRow < 0 ? '.file-comments' : `[data-row="${revealRow}"]`,
+      );
+      if (el) {
+        el.scrollIntoView?.({ block: 'center' });
+        flashed.current = flash(el, flashed.current);
+      }
+      return;
+    }
     if (scrollTo.current === null) return;
     const el = container.current?.querySelector(`[data-row="${scrollTo.current}"]`);
     // jsdom has no scrollIntoView.
     el?.scrollIntoView?.({ block: 'center' });
     scrollTo.current = null;
   });
+
+  // A flash still running when the view goes away is stopped with it.
+  useEffect(
+    () => () => {
+      if (flashed.current) window.clearTimeout(flashed.current.timer);
+    },
+    [],
+  );
 
   function goToChange(i: number) {
     const block = blocks[i];
@@ -398,6 +440,29 @@ function FileCode({
       </div>
     </>
   );
+}
+
+/** How long a revealed row stays marked: as long as its fade in the stylesheet. */
+const FLASH_MS = 1600;
+
+/**
+ * Marks `el` with `reveal-flash` for a moment (the stylesheet fades it out), and takes the
+ * mark off the one flashed before. Set on the element directly: React does not own this
+ * class, and a re-render that changes the row's classes simply ends the flash early.
+ */
+function flash(
+  el: Element,
+  before: { el: Element; timer: number } | null,
+): { el: Element; timer: number } {
+  if (before) {
+    window.clearTimeout(before.timer);
+    before.el.classList.remove('reveal-flash');
+  }
+  // Reading the layout between removing and adding the class restarts the animation.
+  void (el as HTMLElement).offsetWidth;
+  el.classList.add('reveal-flash');
+  const timer = window.setTimeout(() => el.classList.remove('reveal-flash'), FLASH_MS);
+  return { el, timer };
 }
 
 const NO_CALLS: CallRef[] = [];

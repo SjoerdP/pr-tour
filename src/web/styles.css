@@ -43,6 +43,8 @@
   --accent: #2f6fdf;
   --accent-fg: #ffffff;
   --accent-soft: color-mix(in srgb, var(--accent) 11%, transparent);
+  /* A line a jump from the review panel brought into view; it fades back. */
+  --reveal-flash: color-mix(in srgb, var(--accent) 32%, transparent);
 
   /* One warning colour: read closely, missing tests, outdated tour, unexplained changes. */
   --warn: #c2410c;
@@ -1118,6 +1120,25 @@ p.why {
 
 .code-selected {
   background: var(--accent-soft);
+}
+
+/* The row (or comments block) a jump from the review panel showed: flashes, then fades. */
+.reveal-flash {
+  animation: reveal-flash 1.6s ease-out;
+}
+
+@keyframes reveal-flash {
+  from {
+    background-color: var(--reveal-flash);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* No fade: the mark stays still while it lasts. */
+  .reveal-flash {
+    animation: none;
+    background-color: var(--reveal-flash);
+  }
 }
 
 /* Threads, drafts and the composer under a code row; they stay in view when scrolled sideways. */

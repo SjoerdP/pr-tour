@@ -14,6 +14,19 @@ import { homeRanges, homesInOrder, homeTitle } from './homes.js';
 /** Head line numbers, or base line numbers with `side: 'old'` (deleted lines). */
 export type Focus = { start: number; end: number; side?: 'new' | 'old' };
 
+/**
+ * A place in a file to bring into view: a line on its side, or (`side`/`line` null) the
+ * file's "Comments on this file" block.
+ */
+export type RevealPlace = { path: string; side: DiffSide | null; line: number | null };
+
+/**
+ * What the code view scrolls to and flashes once after a jump from the review panel: a
+ * place, or `'focus'`, the start of the home shown. `seq` tells two jumps to the same place
+ * apart, so a second click shows it again.
+ */
+export type Reveal = { at: RevealPlace | 'focus'; seq: number };
+
 /** The row indexes (inclusive) of the focus lines, or null when no row has them. */
 export function focusRows(rows: Row[], focus: Focus | null): [number, number] | null {
   if (!focus) return null;

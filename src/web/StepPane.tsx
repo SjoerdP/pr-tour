@@ -1,6 +1,6 @@
 import { useId, useState, type ReactNode } from 'react';
 import type { Range, SideEffect, Tour } from '../shared/tour.js';
-import type { Focus as CodeFocus } from './code-lines.js';
+import type { Focus as CodeFocus, Reveal } from './code-lines.js';
 import { CodeView } from './CodeView.js';
 import { FlowEndNote } from './FlowEndNote.js';
 import { homeTouches, homeTitle, type Home } from './homes.js';
@@ -141,6 +141,8 @@ type Props = {
   home: Home;
   /** A traced call the user followed: shown instead of the home's own code. */
   jump: { file: string; line: number } | null;
+  /** A place to bring into view in the code, after a jump from the review panel. */
+  reveal: Reveal | null;
   onJump: (file: string, line: number) => void;
   onBack: () => void;
   onOpenHome: (homeId: string) => void;
@@ -156,6 +158,7 @@ export function StepPane({
   tour,
   home,
   jump,
+  reveal,
   onJump,
   onBack,
   onOpenHome,
@@ -233,6 +236,7 @@ export function StepPane({
         file={target.file}
         focus={target.focus}
         homeId={home.id}
+        reveal={reveal}
         plain={!jump && home.kind === 'other' && home.group.kind === 'generated'}
         onJump={onJump}
         onOpenHome={onOpenHome}

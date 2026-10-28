@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { BuildStatus } from './BuildStatus.js';
+import type { Reveal, RevealPlace } from './code-lines.js';
 import { ComposerMemory, ComposerMemoryContext } from './composer-memory.js';
 import { homesInOrder, nextFlowStart, previousFlowStart } from './homes.js';
 import { Outline } from './Outline.js';
@@ -25,6 +26,9 @@ export function TourView({ repo, pr }: { repo: string; pr: number }) {
   } = useSeenMarks(repo, pr, tour, data?.seen ?? NO_MARKS);
   const [currentId, setCurrentId] = useState<string | null>(null);
   const [jump, setJump] = useState<{ file: string; line: number } | null>(null);
+  // Where the code view scrolls to after a jump from the review panel (null: its own start).
+  const [reveal, setReveal] = useState<Reveal | null>(null);
+  const revealSeq = useRef(0);
   const about = useAboutPanel(repo, pr, tour !== null);
   // One review for the PR, shared by everything that shows or adds comments.
   const review = useReview(repo, pr);
@@ -52,13 +56,30 @@ export function TourView({ repo, pr }: { repo: string; pr: number }) {
     markLeft(current);
     setCurrentId(homeId);
     setJump(null);
+    setReveal(null);
     about.setOpen(false);
   }
 
-  /** Opens a home from elsewhere (the review panel); on the current one, back to its code. */
-  function openHome(homeId: string) {
+  /** Brings a place into view in the code (null: nothing in particular). */
+  function show(at: RevealPlace | 'focus' | null) {
+    revealSeq.current += 1;
+    setReveal(at === null ? null : { at, seq: revealSeq.current });
+  }
+
+  /** Follows a traced call, or goes back from one: no place to bring into view. */
+  function follow(to: { file: string; line: number } | null) {
+    setJump(to);
+    setReveal(null);
+  }
+
+  /**
+   * Opens a home from elsewhere (the review panel), showing `at` there, else its start; on
+   * the current one, back to its code.
+   */
+  function openHome(homeId: string, at?: RevealPlace) {
     if (homeId === current) setJump(null);
     else goTo(homeId);
+    show(at ?? 'focus');
   }
 
   const index = current === null ? -1 : ids.indexOf(current);
@@ -88,7 +109,7 @@ export function TourView({ repo, pr }: { repo: string; pr: number }) {
     '[': () => nav.previousFlow?.(),
     ']': () => nav.nextFlow?.(),
     // Back from a followed call to the step's own code.
-    ...(jump ? { Escape: () => setJump(null) } : {}),
+    ...(jump ? { Escape: () => follow(null) } : {}),
   });
 
   if (load.status === 'loading') {
@@ -126,7 +147,10 @@ export function TourView({ repo, pr }: { repo: string; pr: number }) {
           onAboutChange={about.setOpen}
           review={review}
           onOpenHome={openHome}
-          onJump={(file, line) => setJump({ file, line })}
+          onJump={(file, line, at) => {
+            setJump({ file, line });
+            show(at ?? null);
+          }}
         />
 
         {notices && (
@@ -199,8 +223,9 @@ export function TourView({ repo, pr }: { repo: string; pr: number }) {
                 tour={tour}
                 home={currentHome}
                 jump={jump}
-                onJump={(file, line) => setJump({ file, line })}
-                onBack={() => setJump(null)}
+                reveal={reveal}
+                onJump={(file, line) => follow({ file, line })}
+                onBack={() => follow(null)}
                 onOpenHome={goTo}
                 nav={nav}
                 review={review}

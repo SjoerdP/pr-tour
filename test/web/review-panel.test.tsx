@@ -123,14 +123,22 @@ describe('ReviewPanel: drafts and threads', () => {
   it('a draft in a home opens that home', () => {
     const props = renderPanel(fakeReview({ drafts: [comment()] }));
     fireEvent.click(screen.getByRole('button', { name: 'src/a.ts:5' }));
-    expect(props.onOpenHome).toHaveBeenCalledWith('F1.S1');
+    expect(props.onOpenHome).toHaveBeenCalledWith('F1.S1', {
+      path: 'src/a.ts',
+      side: 'new',
+      line: 5,
+    });
     expect(props.onJump).not.toHaveBeenCalled();
   });
 
   it('a draft no home owns opens its file at the line', () => {
     const props = renderPanel(fakeReview({ drafts: [comment({ startLine: 40, endLine: 41 })] }));
     fireEvent.click(screen.getByRole('button', { name: 'src/a.ts:40–41' }));
-    expect(props.onJump).toHaveBeenCalledWith('src/a.ts', 41);
+    expect(props.onJump).toHaveBeenCalledWith('src/a.ts', 41, {
+      path: 'src/a.ts',
+      side: 'new',
+      line: 41,
+    });
     expect(props.onOpenHome).not.toHaveBeenCalled();
   });
 
@@ -150,9 +158,11 @@ describe('ReviewPanel: drafts and threads', () => {
       }),
     );
     fireEvent.click(screen.getByRole('button', { name: 'lib/x.ts:12' }));
-    expect(props.onJump).toHaveBeenCalledWith('lib/x.ts', 12);
+    const at = { path: 'lib/x.ts', side: 'new', line: 12 };
+    expect(props.onJump).toHaveBeenCalledWith('lib/x.ts', 12, at);
     fireEvent.click(screen.getByRole('button', { name: 'reply in lib/x.ts' }));
     expect(props.onJump).toHaveBeenCalledTimes(2);
+    expect(props.onJump).toHaveBeenLastCalledWith('lib/x.ts', 12, at);
   });
 
   it('a thread without a line is file-level: it opens the file at the top', () => {
@@ -160,7 +170,11 @@ describe('ReviewPanel: drafts and threads', () => {
       fakeReview({ threads: [thread({ path: 'lib/x.ts', line: null, side: null })] }),
     );
     fireEvent.click(screen.getByRole('button', { name: 'lib/x.ts' }));
-    expect(props.onJump).toHaveBeenCalledWith('lib/x.ts', 1);
+    expect(props.onJump).toHaveBeenCalledWith('lib/x.ts', 1, {
+      path: 'lib/x.ts',
+      side: null,
+      line: null,
+    });
   });
 
   it('a thread with a line but no side is file-level too', () => {
@@ -168,7 +182,40 @@ describe('ReviewPanel: drafts and threads', () => {
     fireEvent.click(screen.getByRole('button', { name: 'src/a.ts' }));
     // src/a.ts line 1 belongs to a step, but a file-level thread has no line to open.
     expect(props.onOpenHome).not.toHaveBeenCalled();
-    expect(props.onJump).toHaveBeenCalledWith('src/a.ts', 1);
+    expect(props.onJump).toHaveBeenCalledWith('src/a.ts', 1, {
+      path: 'src/a.ts',
+      side: null,
+      line: null,
+    });
+  });
+
+  it('an outdated thread shows the comments on the file, not a line', () => {
+    const props = renderPanel(
+      fakeReview({ threads: [thread({ path: 'lib/x.ts', line: 12, outdated: true })] }),
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'lib/x.ts:12' }));
+    expect(props.onJump).toHaveBeenCalledWith('lib/x.ts', 12, {
+      path: 'lib/x.ts',
+      side: null,
+      line: null,
+    });
+  });
+
+  it('a draft made on an older version shows the comments on the file, not a line', () => {
+    const props = renderPanel(fakeReview({ drafts: [comment({ headSha: 'c'.repeat(40) })] }));
+    fireEvent.click(screen.getByRole('button', { name: 'src/a.ts:5' }));
+    expect(props.onOpenHome).toHaveBeenCalledWith('F1.S1', {
+      path: 'src/a.ts',
+      side: null,
+      line: null,
+    });
+  });
+
+  it('"Go to it" opens the home without a place: its start is shown', () => {
+    const props = renderPanel(fakeReview(), { isSeen: (id) => id !== 'F1.S3' });
+    fireEvent.click(screen.getByRole('radio', { name: 'Approve' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Go to it' }));
+    expect(props.onOpenHome).toHaveBeenCalledWith('F1.S3');
   });
 
   it('moves focus to its heading when it opens', () => {

@@ -104,6 +104,11 @@ Plan 2 lets the user do the GitHub review inside a tour. The pieces:
   (picked lines and text, keyed by head and path), the reply per thread and the edit per
   draft. The code view remounts on every step change; the composers read it back when
   their file or thread shows again. Sending or cancelling a composer clears its entry.
+- **A jump from the review panel shows its line.** The panel's links go through the same
+  `onOpenHome` / `onJump` as before, with the place to show (`RevealPlace` in
+  `code-lines.ts`). `TourView` keeps it as a `Reveal` with a sequence number; the code view
+  opens that row, scrolls it to the centre and flashes it once (`.reveal-flash`). A
+  file-level place scrolls to "Comments on this file". Other moves clear it.
 - **Replacing a tour with drafts** needs a confirmation: `checkReplace` in
   `build.ts` throws `ReplaceNeedsConfirmError`; the build route answers with it,
   the web asks the user, and `pr-tour import` exits with code 2 until it gets

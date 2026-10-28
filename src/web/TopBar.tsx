@@ -1,6 +1,7 @@
 import { useEffect, useId, useRef, useState, type KeyboardEvent } from 'react';
 import type { PrSummary } from '../shared/api.js';
 import { reviewableHomeIds, type Tour } from '../shared/tour.js';
+import type { RevealPlace } from './code-lines.js';
 import { inKeepOpenArea, keepsReviewOpen } from './keep-review-open.js';
 import { ReviewPanel, type ReviewDraftText } from './ReviewPanel.js';
 import type { ReviewState } from './useReview.js';
@@ -17,8 +18,8 @@ type Props = {
   /** The PR's review, done in the Review panel. */
   review: ReviewState;
   /** Opens a home, or a file at a line: where the Review panel's items jump to. */
-  onOpenHome: (homeId: string) => void;
-  onJump: (file: string, line: number) => void;
+  onOpenHome: (homeId: string, at?: RevealPlace) => void;
+  onJump: (file: string, line: number, at?: RevealPlace) => void;
 };
 
 /**

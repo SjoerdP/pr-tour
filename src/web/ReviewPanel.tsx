@@ -1,6 +1,7 @@
 import { useEffect, useId, useRef, useState } from 'react';
 import { isOlderDraft, type Draft, type ReviewEvent, type ReviewThread } from '../shared/review.js';
 import type { Tour } from '../shared/tour.js';
+import type { RevealPlace } from './code-lines.js';
 import { errorText } from './errors.js';
 import { homeAt, homeFile, homeTitle, unseenForReview } from './homes.js';
 import { OLDER_DRAFT_NOTICE } from './Thread.js';
@@ -15,10 +16,13 @@ type Props = {
   onTextChange: (text: ReviewDraftText) => void;
   tour: Tour;
   isSeen: (homeId: string) => boolean;
-  /** Opens a home of the tour. */
-  onOpenHome: (homeId: string) => void;
+  /**
+   * Opens a home of the tour. `at` is the place to bring into view there; without it, the
+   * start of the home.
+   */
+  onOpenHome: (homeId: string, at?: RevealPlace) => void;
   /** Opens a file at a line, for places no home owns (the code view's jump). */
-  onJump: (file: string, line: number) => void;
+  onJump: (file: string, line: number, at?: RevealPlace) => void;
   onClose: () => void;
 };
 
@@ -110,14 +114,20 @@ export function ReviewPanel({
   /**
    * Opens the home that owns the place and shows its file, else the file at the line. A
    * file-level place is owned only by a whole-file home; without one it opens at the top.
+   * The code view then scrolls to the line, or to the comments on the file when the item is
+   * shown there (`inFileBlock`: an outdated thread, a draft made on an older version).
    */
-  function go(place: Place) {
+  function go(place: Place, inFileBlock = false) {
+    const at: RevealPlace =
+      inFileBlock || place.side === null
+        ? { path: place.path, side: null, line: null }
+        : { path: place.path, side: place.side, line: place.end };
     const home = homeAt(tour, place.path, place.side, place.start, place.end);
-    if (home && homeFile(home) === place.path) onOpenHome(home.id);
-    else onJump(place.path, place.side === null ? 1 : place.end);
+    if (home && homeFile(home) === place.path) onOpenHome(home.id, at);
+    else onJump(place.path, place.side === null ? 1 : place.end, at);
   }
 
-  function draftPlace(draft: Draft): { text: string; place: Place | null } {
+  function draftPlace(draft: Draft): { text: string; place: Place | null; inFileBlock: boolean } {
     if (draft.kind === 'comment') {
       const place = {
         path: draft.path,
@@ -125,12 +135,16 @@ export function ReviewPanel({
         start: draft.startLine,
         end: draft.endLine,
       };
-      return { text: placeText(place), place };
+      return { text: placeText(place), place, inFileBlock: isOlderDraft(draft, tour.headSha) };
     }
     const thread = review.threads.find((t) => t.id === draft.threadId);
     return thread
-      ? { text: `reply in ${thread.path}`, place: threadPlace(thread) }
-      : { text: 'reply', place: null };
+      ? {
+          text: `reply in ${thread.path}`,
+          place: threadPlace(thread),
+          inFileBlock: thread.outdated,
+        }
+      : { text: 'reply', place: null, inFileBlock: false };
   }
 
   async function remove(id: number) {
@@ -189,7 +203,7 @@ export function ReviewPanel({
       ) : (
         <ul className="review-list" aria-label="Pending comments">
           {drafts.map((draft) => {
-            const { text, place } = draftPlace(draft);
+            const { text, place, inFileBlock } = draftPlace(draft);
             // By the tour shown, like the code view places drafts: the review may still know
             // the head from before a rebuild.
             const older = isOlderDraft(draft, tour.headSha);
@@ -198,7 +212,11 @@ export function ReviewPanel({
               <li key={draft.id} className={failed ? 'failed' : undefined}>
                 <div className="review-item-head">
                   {place ? (
-                    <button type="button" className="link-button" onClick={() => go(place)}>
+                    <button
+                      type="button"
+                      className="link-button"
+                      onClick={() => go(place, inFileBlock)}
+                    >
                       {text}
                     </button>
                   ) : (
@@ -239,7 +257,11 @@ export function ReviewPanel({
               const first = thread.comments[0];
               return (
                 <li key={thread.id}>
-                  <button type="button" className="link-button" onClick={() => go(place)}>
+                  <button
+                    type="button"
+                    className="link-button"
+                    onClick={() => go(place, thread.outdated)}
+                  >
                     {placeText(place)}
                   </button>
                   {first && (
