@@ -167,6 +167,21 @@ describe('RepoManager', () => {
     );
   });
 
+  it('clone and fetch log in to github.com through gh, not a credential helper of the user', async () => {
+    const { run, calls } = recordingRunner();
+    await manager(run).ensureWorktree(REPO, 7, base, head);
+    const network = calls.filter((c) => c.includes('clone') || c.includes('fetch'));
+    expect(network.length).toBeGreaterThan(0);
+    for (const call of network) {
+      const helpers = call.filter((a) => a.startsWith('credential.https://github.com.helper='));
+      // An empty value first clears helpers from the user's config; then gh answers.
+      expect(helpers).toEqual([
+        'credential.https://github.com.helper=',
+        'credential.https://github.com.helper=!gh auth git-credential',
+      ]);
+    }
+  });
+
   it('ensureWorktree throws CommandError when the clone fails', async () => {
     const broken = new RepoManager(home, realRunner, () => join(tmp, 'nowhere'));
     await expect(broken.ensureWorktree(REPO, 7, base, head)).rejects.toThrow(CommandError);

@@ -12,8 +12,21 @@ const KEEP_REFS = 'refs/pr-tour/';
  * or from running their hooks:
  * - `core.quotepath=off`: non-ASCII paths come out as-is instead of "\303\274"-quoted.
  * - `core.hooksPath=/dev/null`: `worktree add` does not run a global post-checkout hook.
+ * - `credential.https://github.com.helper`: clone and fetch log in to github.com with the
+ *   user's `gh` login (what `gh auth setup-git` sets up). Without it, a user whose git
+ *   talks to GitHub over ssh has no https credentials and every private repo fails.
+ *   The empty value first clears any helper from the user's config.
  */
-const GIT_CONFIG = ['-c', 'core.quotepath=off', '-c', 'core.hooksPath=/dev/null'];
+const GIT_CONFIG = [
+  '-c',
+  'core.quotepath=off',
+  '-c',
+  'core.hooksPath=/dev/null',
+  '-c',
+  'credential.https://github.com.helper=',
+  '-c',
+  'credential.https://github.com.helper=!gh auth git-credential',
+];
 
 /**
  * Plain unified diff whatever the config says: no external diff tool, no textconv
