@@ -313,6 +313,10 @@ describe('flow navigation: [ and ]', () => {
 
     fireEvent.keyDown(screen.getByLabelText('note'), { key: ']' });
     expect(currentTitle()).toContain('Create repayments table');
+
+    fireEvent.click(outlineItem('Queue the email'));
+    fireEvent.keyDown(screen.getByLabelText('note'), { key: '[' });
+    expect(currentTitle()).toContain('Queue the email');
   });
 
   it('a step shows Previous flow and Next flow buttons with their keys', async () => {
@@ -329,10 +333,21 @@ describe('flow navigation: [ and ]', () => {
     expect(currentTitle()).toContain('Parse the request');
   });
 
-  it('a foundation or other item has no flow buttons', async () => {
+  it('a foundation has flow buttons too: Next flow works, Previous flow is off', async () => {
     await open();
-    expect(screen.queryByRole('button', { name: 'Next flow' })).toBeNull();
-    fireEvent.click(outlineItem('Repay tests'));
-    expect(screen.queryByRole('button', { name: 'Previous flow' })).toBeNull();
+    const previous = screen.getByRole<HTMLButtonElement>('button', { name: 'Previous flow' });
+    expect(previous.disabled).toBe(true);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Next flow' }));
+    expect(currentTitle()).toContain('Parse the request');
+  });
+
+  it('an other-changes item has flow buttons too: Previous flow works, Next flow is off', async () => {
+    await open('Repay tests');
+    const next = screen.getByRole<HTMLButtonElement>('button', { name: 'Next flow' });
+    expect(next.disabled).toBe(true);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Previous flow' }));
+    expect(currentTitle()).toContain('Pick the lender');
   });
 });

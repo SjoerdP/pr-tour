@@ -238,8 +238,9 @@ describe('GET /api/inbox', () => {
       reviewRequested: [summary('acme/greet', 7)],
       mine: [summary('acme/other', 3)],
     });
-    fakes.store.saveTour(greetTour());
-    fakes.store.markSeen('acme/greet', 7, 'o1.1', 'hash');
+    const tour = greetTour();
+    fakes.store.saveTour(tour);
+    fakes.store.markSeen('acme/greet', 7, 'o1.1', tour.hashes['o1.1']!);
 
     const body = await json<InboxResponse>(await api('/api/inbox'));
 
@@ -262,8 +263,8 @@ describe('GET /api/inbox', () => {
       mine: [],
     });
     fakes.store.saveTour(greetTour());
-    const real = fakes.store.tourStatus.bind(fakes.store);
-    vi.spyOn(fakes.store, 'tourStatus').mockImplementation((repo, pr) => {
+    const real = fakes.store.getTour.bind(fakes.store);
+    vi.spyOn(fakes.store, 'getTour').mockImplementation((repo, pr) => {
       if (pr === 3) throw new StoreError('Stored tour for acme/other#3 is invalid');
       return real(repo, pr);
     });

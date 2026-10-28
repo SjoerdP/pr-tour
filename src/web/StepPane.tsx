@@ -96,26 +96,24 @@ export function StepPane({ repo, pr, tour, home, jump, onJump, onBack, onOpenHom
       )}
       <div className="step-context-row">
         <p className="muted step-context">{contextLine(home)}</p>
-        {home.kind === 'step' && (
-          <span className="flow-nav">
-            <button
-              type="button"
-              onClick={nav.previousFlow}
-              disabled={nav.previousFlow === undefined}
-              title={withKey('Previous flow', '[')}
-            >
-              Previous flow
-            </button>
-            <button
-              type="button"
-              onClick={nav.nextFlow}
-              disabled={nav.nextFlow === undefined}
-              title={withKey('Next flow', ']')}
-            >
-              Next flow
-            </button>
-          </span>
-        )}
+        <span className="flow-nav">
+          <button
+            type="button"
+            onClick={nav.previousFlow}
+            disabled={nav.previousFlow === undefined}
+            title={withKey('Previous flow', '[')}
+          >
+            Previous flow
+          </button>
+          <button
+            type="button"
+            onClick={nav.nextFlow}
+            disabled={nav.nextFlow === undefined}
+            title={withKey('Next flow', ']')}
+          >
+            Next flow
+          </button>
+        </span>
       </div>
       <h2 className="step-title" id={`step-title-${home.id}`}>
         {homeTitle(home)}

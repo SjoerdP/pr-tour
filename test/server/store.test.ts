@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import Database from 'better-sqlite3';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { Store, StoreError } from '../../src/server/store.js';
 import type { Step, Tour } from '../../src/shared/tour.js';
 
@@ -177,6 +177,35 @@ describe('Store progress counts only reviewable homes', () => {
     expect(store.seenCount('acme/loans', 7)).toBe(0);
   });
 
+  it("seenCount ignores a mark whose hash is not the home's current hash", () => {
+    const store = new Store(':memory:');
+    store.saveTour(tour());
+    store.markSeen('acme/loans', 7, 'F1.S1', 'stale');
+    store.markSeen('acme/loans', 7, 'f1', 'h-f1');
+    expect(store.seenCount('acme/loans', 7)).toBe(1);
+  });
+
+  it('progress reads the tour once for both status and seen count', () => {
+    const store = new Store(':memory:');
+    store.saveTour(tourWithUnchangedStep());
+    store.markSeen('acme/loans', 7, 'F1.S1', 'h-s1');
+    store.markSeen('acme/loans', 7, 'F1.S3', 'h-s1-3');
+    const getTour = vi.spyOn(store, 'getTour');
+
+    const progress = store.progress('acme/loans', 7);
+
+    expect(progress).toEqual({
+      tour: { exists: true, source: 'inferred', headSha: 'b'.repeat(40), homes: 5, flows: 2 },
+      seenCount: 1,
+    });
+    expect(getTour).toHaveBeenCalledTimes(1);
+  });
+
+  it('progress of a PR without a tour', () => {
+    const store = new Store(':memory:');
+    expect(store.progress('acme/loans', 7)).toEqual({ tour: { exists: false }, seenCount: 0 });
+  });
+
   it('seenCount is 0 without a tour', () => {
     const store = new Store(':memory:');
     store.markSeen('acme/loans', 7, 'f1', 'h-f1');
@@ -198,9 +227,9 @@ describe('Store repo keys', () => {
   it('seen marks ignore the case of the repo', () => {
     const store = new Store(':memory:');
     store.saveTour(tour());
-    store.markSeen('Acme/Loans', 7, 'f1', 'h1');
+    store.markSeen('Acme/Loans', 7, 'f1', 'h-f1');
 
-    expect(store.seen('acme/loans', 7)).toEqual({ f1: 'h1' });
+    expect(store.seen('acme/loans', 7)).toEqual({ f1: 'h-f1' });
     expect(store.seenCount('ACME/loans', 7)).toBe(1);
     store.close();
   });

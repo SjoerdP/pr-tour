@@ -36,6 +36,17 @@ function repoKey(repo: string): string {
   return repo.toLowerCase();
 }
 
+function statusOf(tour: Tour | null): TourStatus {
+  if (!tour) return { exists: false };
+  return {
+    exists: true,
+    source: tour.source,
+    headSha: tour.headSha,
+    homes: reviewableHomeIds(tour).length,
+    flows: tour.flows.length,
+  };
+}
+
 export class StoreError extends Error {
   constructor(message: string, options?: ErrorOptions) {
     super(message, options);
@@ -96,15 +107,13 @@ export class Store {
   }
 
   tourStatus(repo: string, pr: number): TourStatus {
+    return statusOf(this.getTour(repo, pr));
+  }
+
+  /** The tour's status and seen count for the inbox, from one read of the tour. */
+  progress(repo: string, pr: number): { tour: TourStatus; seenCount: number } {
     const tour = this.getTour(repo, pr);
-    if (!tour) return { exists: false };
-    return {
-      exists: true,
-      source: tour.source,
-      headSha: tour.headSha,
-      homes: reviewableHomeIds(tour).length,
-      flows: tour.flows.length,
-    };
+    return { tour: statusOf(tour), seenCount: this.countSeen(repo, pr, tour) };
   }
 
   /** Mark a home as seen at `contentHash`; marking again keeps the latest hash. */
@@ -127,14 +136,20 @@ export class Store {
   }
 
   /**
-   * How many of the stored tour's reviewable homes have a seen mark (0 without a tour).
-   * Marks on unchanged steps, or on homes no longer in the tour, do not count.
+   * How many of the stored tour's reviewable homes are seen at their current content hash
+   * (0 without a tour), matching what the outline shows. Marks on unchanged steps, on homes no
+   * longer in the tour, or with an old hash do not count.
    */
   seenCount(repo: string, pr: number): number {
-    const tour = this.getTour(repo, pr);
+    return this.countSeen(repo, pr, this.getTour(repo, pr));
+  }
+
+  private countSeen(repo: string, pr: number, tour: Tour | null): number {
     if (!tour) return 0;
     const seen = this.seen(repo, pr);
-    return reviewableHomeIds(tour).filter((id) => Object.hasOwn(seen, id)).length;
+    return reviewableHomeIds(tour).filter(
+      (id) => tour.hashes[id] !== undefined && seen[id] === tour.hashes[id],
+    ).length;
   }
 
   private migrate(): void {

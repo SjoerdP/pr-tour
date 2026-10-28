@@ -148,8 +148,7 @@ export function createApp(deps: AppDeps): Hono {
 
   function inboxPr(pr: PrSummary) {
     try {
-      const tour = store.tourStatus(pr.repo, pr.number);
-      return { ...pr, tour, seenCount: store.seenCount(pr.repo, pr.number) };
+      return { ...pr, ...store.progress(pr.repo, pr.number) };
     } catch (err) {
       // One unreadable tour must not hide the whole inbox; show it as missing.
       if (!(err instanceof StoreError)) throw err;
