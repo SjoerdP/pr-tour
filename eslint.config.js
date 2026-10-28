@@ -75,7 +75,7 @@ export default tseslint.config(
 
   // --- boundaries -----------------------------------------------------------
   {
-    files: ['src/shared/**/*.ts', 'test/shared/**/*.ts'],
+    files: ['src/shared/**/*.ts'],
     rules: {
       'no-restricted-imports': [
         'error',
@@ -85,6 +85,23 @@ export default tseslint.config(
             { regex: '^node:', message: 'shared must not use Node built-ins.' },
             ...noLayer('server', 'shared must not import server code.'),
             ...noLayer('web', 'shared must not import web code.'),
+          ],
+        },
+      ],
+    },
+  },
+  {
+    // Tests of shared code run under Node (they read fixtures with node:fs),
+    // but must still only exercise shared code.
+    files: ['test/shared/**/*.ts'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          ...preferNodeProtocol,
+          patterns: [
+            ...noLayer('server', 'shared tests must not import server code.'),
+            ...noLayer('web', 'shared tests must not import web code.'),
           ],
         },
       ],
@@ -109,7 +126,15 @@ export default tseslint.config(
     },
   },
   {
-    files: ['src/server/**/*.ts', 'src/cli.ts', 'test/server/**/*.ts', 'test/*.ts'],
+    // Node side: server, cli, their tests, root-level tests (test/cli.test.ts,
+    // test/smoke.test.ts) and shared test helpers in test/helpers.
+    files: [
+      'src/server/**/*.ts',
+      'src/cli.ts',
+      'test/server/**/*.ts',
+      'test/helpers/**/*.ts',
+      'test/*.ts',
+    ],
     rules: {
       'no-restricted-imports': [
         'error',

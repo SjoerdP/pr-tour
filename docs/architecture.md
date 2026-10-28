@@ -53,6 +53,7 @@ src/cli.ts       pr-tour binary: parseArgs + wiring of real dependencies
 src/web/         React app. Components PascalCase.tsx, hooks useX.ts, api.ts client.
 test/            Vitest tests mirroring src/ (test/server, test/shared, test/web, test/cli.test.ts)
 test/fixtures/   Real diffs and canned JSON used by tests (byte-exact, not formatted)
+test/helpers/    Shared test helpers for the Node side (fake runner, temp git repo, fixture reader)
 test/web/        React tests; this directory runs under jsdom (see Testing)
 skill/tour/      The /tour Claude Code skill (shipped in the npm package)
 docs/            This file, specs and plans
@@ -66,13 +67,15 @@ same name with an `index.ts` so import paths stay the same. Do not pre-split.
 
 ## Dependency rules
 
-| From           | May import                                | Never imports                 |
-| -------------- | ----------------------------------------- | ----------------------------- |
-| `src/shared`   | packages that run in the browser (`zod`)  | `src/server`, `src/web`, Node |
-| `src/web`      | `src/shared`, browser packages            | `src/server`, Node built-ins  |
-| `src/server`   | `src/shared`, `src/server`, Node packages | `src/web`                     |
-| `src/cli.ts`   | `src/server`, `src/shared`                | `src/web`                     |
-| `test/<layer>` | the same as `src/<layer>`                 | the same as `src/<layer>`     |
+| From                                       | May import                                                      | Never imports                 |
+| ------------------------------------------ | --------------------------------------------------------------- | ----------------------------- |
+| `src/shared`                               | packages that run in the browser (`zod`)                        | `src/server`, `src/web`, Node |
+| `src/web`                                  | `src/shared`, browser packages                                  | `src/server`, Node built-ins  |
+| `src/server`                               | `src/shared`, `src/server`, Node packages                       | `src/web`                     |
+| `src/cli.ts`                               | `src/server`, `src/shared`                                      | `src/web`                     |
+| `test/shared`                              | `src/shared`, Node built-ins (`node:` prefix, to read fixtures) | `src/server`, `src/web`       |
+| `test/server`, `test/helpers`, `test/*.ts` | the same as `src/server`                                        | `src/web`                     |
+| `test/web`                                 | the same as `src/web`                                           | the same as `src/web`         |
 
 Consequences:
 
@@ -146,7 +149,13 @@ type Runner = (
   `test/server/diff.test.ts`. Fixtures live in `test/fixtures/` and are read
   with `readFileSync(new URL('../fixtures/x.diff', import.meta.url), 'utf8')`
   (JSON fixtures too: JSON imports need import attributes under NodeNext and
-  are not worth the noise).
+  are not worth the noise). Tests of shared code may use Node built-ins for
+  this; the code under test in `src/shared` may not.
+- Helpers used by more than one test file (a fake `Runner`, a temporary git
+  repository, a fixture reader) live in `test/helpers/` and follow the server
+  layer's rules: Node is fine, `src/web` is not. Web tests keep their helpers
+  in `test/web/` (like `setup.ts`), because that directory is typechecked with
+  the DOM lib and no Node types.
 - Unit tests are the default: pure functions (`diff`, `check`, `rows`,
   `tour`) are tested directly on their inputs and outputs.
 - Git code (`RepoManager`) is tested against real temporary repositories
