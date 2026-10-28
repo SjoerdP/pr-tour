@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useLayoutEffect, useRef } from 'react';
 
 /** True when the key press goes into a text field, where letters are typing, not shortcuts. */
 function isTyping(target: EventTarget | null): boolean {
@@ -18,8 +18,10 @@ function isTyping(target: EventTarget | null): boolean {
  */
 export function useKeys(map: Record<string, () => void>): void {
   // Read the latest map on each key press, so callers can pass a fresh object every render.
+  // A layout effect: a key pressed right after a commit (before passive effects) must not
+  // run the previous render's handlers.
   const latest = useRef(map);
-  useEffect(() => {
+  useLayoutEffect(() => {
     latest.current = map;
   });
 
