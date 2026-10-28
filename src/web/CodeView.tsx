@@ -227,22 +227,54 @@ function FileCode({
   // A drag over line numbers, like GitHub: the range shows while the button is down, and
   // becomes the selection (opening the composer) only on release, so nothing moves under
   // the pointer while picking. A press and release on one line is a plain click.
-  const [drag, setDrag] = useState<Selection | null>(null);
+  const [drag, setDragState] = useState<Selection | null>(null);
+  // The latest drag for the document listeners, which subscribe once per drag.
+  const dragNow = useRef<Selection | null>(null);
+  function setDrag(next: Selection | null) {
+    dragNow.current = next;
+    setDragState(next);
+  }
   const lineDrag: LineDrag = {
     start: (side, line) => setDrag({ side, anchor: line, line }),
-    // Over the other side's numbers the range stays as it was.
-    over: (side, line) => setDrag((d) => (d && d.side === side ? { ...d, line } : d)),
+    over: (side, line, held) => {
+      const d = dragNow.current;
+      if (!d) return;
+      // No button down: the release was missed (outside the window, a context menu).
+      if (!held) setDrag(null);
+      // Over the other side's numbers the range stays as it was.
+      else if (d.side === side && d.line !== line) setDrag({ ...d, line });
+    },
   };
+  const dragging = drag !== null;
   useEffect(() => {
-    if (!drag) return;
-    // On the document: the button may be released anywhere, even off the numbers.
-    function onUp() {
-      setSelection(drag);
+    if (!dragging) return;
+    // On the document: the button may be released anywhere, even off the numbers. A press
+    // that slid off its one line and was let go elsewhere picks nothing.
+    function onUp(event: globalThis.MouseEvent) {
+      const d = dragNow.current;
+      const onNumber =
+        event.target instanceof Element && event.target.closest('.code-no-button') !== null;
+      if (d && (d.anchor !== d.line || onNumber)) setSelection(d);
       setDrag(null);
     }
+    function cancel() {
+      setDrag(null);
+    }
+    function onKey(event: KeyboardEvent) {
+      if (event.key !== 'Escape') return;
+      // Esc ends only the drag here, not also a jump the tour would go back from.
+      event.stopPropagation();
+      cancel();
+    }
     document.addEventListener('mouseup', onUp);
-    return () => document.removeEventListener('mouseup', onUp);
-  }, [drag]);
+    document.addEventListener('keydown', onKey);
+    window.addEventListener('blur', cancel);
+    return () => {
+      document.removeEventListener('mouseup', onUp);
+      document.removeEventListener('keydown', onKey);
+      window.removeEventListener('blur', cancel);
+    };
+  }, [dragging]);
   // What the rows show as picked: the drag while it lasts, else the selection.
   const marked = drag ?? selection;
   const markedRange = marked && {
@@ -580,7 +612,8 @@ type CodeRowProps = {
 /** A drag over line numbers: pressed on a line, then moved over others. */
 type LineDrag = {
   start: (side: DiffSide, line: number) => void;
-  over: (side: DiffSide, line: number) => void;
+  /** `held`: the primary button is still down. */
+  over: (side: DiffSide, line: number, held: boolean) => void;
 };
 
 /**
@@ -611,7 +644,7 @@ function LineNo({
         // Shift+click extends in onClick; other buttons do not pick.
         if (event.button === 0 && !event.shiftKey) drag.start(side, no);
       }}
-      onMouseEnter={() => drag.over(side, no)}
+      onMouseEnter={(event: MouseEvent) => drag.over(side, no, (event.buttons & 1) === 1)}
       // After a drag released on this same line, this picks that line again: no change.
       onClick={(event: MouseEvent) => onPick(side, no, event.shiftKey)}
     >
