@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { CommandError, type RunResult, type Runner } from '../../src/server/exec.js';
+import { CommandError } from '../../src/server/exec.js';
 import { GitHub, type PrSummary } from '../../src/server/github.js';
+import { fakeRunner } from '../helpers/fake-runner.js';
 
 /** A GraphQL pull request node as `gh api graphql` returns it. */
 function prNode(repo: string, number: number, updatedAt: string, extra: object = {}) {
@@ -34,16 +35,6 @@ function summary(repo: string, number: number, updatedAt: string): PrSummary {
     baseSha: 'a'.repeat(40),
     headSha: 'b'.repeat(40),
   };
-}
-
-/** A runner that answers every call with `result` and records the calls. */
-function fakeRunner(result: RunResult): { run: Runner; calls: { cmd: string; args: string[] }[] } {
-  const calls: { cmd: string; args: string[] }[] = [];
-  const run: Runner = (cmd, args) => {
-    calls.push({ cmd, args });
-    return Promise.resolve(result);
-  };
-  return { run, calls };
 }
 
 function answering(data: unknown): ReturnType<typeof fakeRunner> {

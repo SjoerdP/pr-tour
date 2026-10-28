@@ -52,7 +52,7 @@ function allHomes(body: TourBody): Home[] {
 }
 
 /** `whole` contains every line of the file on both sides, so it matches the old or new path. */
-function contains(range: Range, changed: ChangedLine, file: FileDiff): boolean {
+export function contains(range: Range, changed: ChangedLine, file: FileDiff): boolean {
   if ('whole' in range) return range.file === file.path || range.file === file.oldPath;
   return (
     range.file === changed.file &&

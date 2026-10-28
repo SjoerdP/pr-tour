@@ -136,7 +136,7 @@ export function tourBodyJsonSchema(): object {
 }
 
 /** Ids of every foundation, step and other item, in tour order. */
-export function homeIds(tour: Tour): string[] {
+export function homeIds(tour: TourBody): string[] {
   return [
     ...tour.foundations.map((f) => f.id),
     ...tour.flows.flatMap((flow) => flow.steps.map((s) => s.id)),
