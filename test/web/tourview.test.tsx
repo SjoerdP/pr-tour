@@ -1,7 +1,7 @@
 import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Job, PrResponse, PrSummary } from '../../src/shared/api.js';
-import type { Tour } from '../../src/shared/tour.js';
+import type { OtherGroup, Tour } from '../../src/shared/tour.js';
 import * as api from '../../src/web/api.js';
 import { TourView } from '../../src/web/TourView.js';
 
@@ -111,6 +111,23 @@ function job(state: Job['state'], log: string[], error?: string): Job {
   return error === undefined ? { state, log } : { state, log, error };
 }
 
+/** A one-item other-changes group; its item's file is its title. */
+function group(kind: OtherGroup['kind'], id: string, title: string): OtherGroup {
+  return {
+    kind,
+    title: `${kind} group`,
+    summary: `Summary of the ${kind} group.`,
+    items: [{ id, file: `src/${id}.ts`, title, homes: [] }],
+  };
+}
+
+/** `tour` with these groups added after its own other changes (and hashes for their items). */
+function withGroups(tour: Tour, ...groups: OtherGroup[]): Tour {
+  const hashes = { ...tour.hashes };
+  for (const g of groups) for (const item of g.items) hashes[item.id] = `h-${item.id}`;
+  return { ...tour, other: [...tour.other, ...groups], hashes };
+}
+
 function outline(): HTMLElement {
   return screen.getByRole('navigation', { name: 'Tour outline' });
 }
@@ -177,24 +194,7 @@ describe('TourView', () => {
   });
 
   it('outline order is foundations, flows, other', async () => {
-    const tour = makeTour();
-    tour.other = [
-      ...tour.other,
-      {
-        kind: 'unexplained',
-        title: 'Unexplained',
-        summary: 'Changed lines no item explains.',
-        items: [
-          {
-            id: 'u1',
-            file: 'src/misc.ts',
-            title: 'src/misc.ts lines 3–4',
-            homes: [{ file: 'src/misc.ts', side: 'new', start: 3, end: 4 }],
-          },
-        ],
-      },
-    ];
-    tour.hashes = { ...tour.hashes, u1: 'h-u1' };
+    const tour = withGroups(makeTour(), group('unexplained', 'u1', 'src/misc.ts lines 3–4'));
     getPr.mockResolvedValue(response({ tour }));
     render(<TourView repo="acme/loans" pr={42} />);
 
@@ -305,5 +305,130 @@ describe('TourView', () => {
 
     expect(screen.getByText('no tests cover this step')).toBeTruthy();
     expect(screen.getByText('Check and insert are not in one transaction.')).toBeTruthy();
+  });
+  it('j and k follow the outline order: unexplained changes come before other groups', async () => {
+    const tour = withGroups(makeTour(), group('unexplained', 'u1', 'Unexplained lines'));
+    getPr.mockResolvedValue(response({ tour }));
+    render(<TourView repo="acme/loans" pr={42} />);
+
+    fireEvent.click(await screen.findByRole('button', { name: /Validate and record/ }));
+    fireEvent.keyDown(window, { key: 'j' });
+    expect(outlineItem('Unexplained lines').getAttribute('aria-current')).toBe('step');
+
+    fireEvent.keyDown(window, { key: 'j' });
+    expect(outlineItem('Repay tests').getAttribute('aria-current')).toBe('step');
+
+    fireEvent.keyDown(window, { key: 'k' });
+    expect(outlineItem('Unexplained lines').getAttribute('aria-current')).toBe('step');
+  });
+
+  it('polling stops when the page goes away', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    getPr.mockResolvedValue(response({ tour: null, job: job('running', ['Cloning']) }));
+    const { unmount } = render(<TourView repo="acme/loans" pr={42} />);
+
+    await screen.findByText('Cloning');
+    await act(() => vi.advanceTimersByTimeAsync(2000));
+    expect(getPr).toHaveBeenCalledTimes(2);
+
+    unmount();
+    await act(() => vi.advanceTimersByTimeAsync(10000));
+    expect(getPr).toHaveBeenCalledTimes(2);
+  });
+
+  it('a failed status check keeps the log and checks again', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    getPr
+      .mockResolvedValueOnce(response({ tour: null, job: job('running', ['Cloning']) }))
+      .mockRejectedValueOnce(new Error('Failed to fetch'))
+      .mockResolvedValueOnce(response({ job: job('done', ['Cloning', 'Saved']) }));
+    render(<TourView repo="acme/loans" pr={42} />);
+
+    await screen.findByText('Cloning');
+    await act(() => vi.advanceTimersByTimeAsync(2000));
+    expect((await screen.findByRole('status')).textContent).toBe(
+      "Couldn't check the build status: Failed to fetch",
+    );
+    expect(screen.getByText('Cloning')).toBeTruthy();
+    expect(screen.queryByRole('alert')).toBeNull();
+
+    await act(() => vi.advanceTimersByTimeAsync(2000));
+    expect(await screen.findByRole('navigation', { name: 'Tour outline' })).toBeTruthy();
+  });
+
+  it('status checks that keep failing end the wait with Try again', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    getPr
+      .mockResolvedValueOnce(response({ tour: null, job: job('running', ['Cloning']) }))
+      .mockRejectedValue(new Error('Failed to fetch'));
+    render(<TourView repo="acme/loans" pr={42} />);
+
+    await screen.findByText('Cloning');
+    await act(() => vi.advanceTimersByTimeAsync(2000 * 3));
+
+    expect((await screen.findByRole('alert')).textContent).toContain(
+      "Couldn't check the build status: Failed to fetch",
+    );
+    expect(screen.getByText('Cloning')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Try again' })).toBeTruthy();
+    const calls = getPr.mock.calls.length;
+    await act(() => vi.advanceTimersByTimeAsync(10000));
+    expect(getPr).toHaveBeenCalledTimes(calls);
+  });
+
+  it('generated and refactor groups start collapsed and expand on click', async () => {
+    const tour = withGroups(
+      makeTour(),
+      group('generated', 'g1', 'Lockfile'),
+      group('refactor', 'r1', 'Rename helper'),
+    );
+    getPr.mockResolvedValue(response({ tour }));
+    render(<TourView repo="acme/loans" pr={42} />);
+
+    await screen.findByRole('navigation', { name: 'Tour outline' });
+    expect(within(outline()).getByText('skim only')).toBeTruthy();
+    expect(within(outline()).getByText('Summary of the refactor group.')).toBeTruthy();
+    expect(within(outline()).queryByText('Lockfile')).toBeNull();
+    expect(within(outline()).queryByText('Rename helper')).toBeNull();
+
+    const toggle = within(outline()).getByRole('button', { name: /refactor group/ });
+    expect(toggle.getAttribute('aria-expanded')).toBe('false');
+    fireEvent.click(toggle);
+    expect(toggle.getAttribute('aria-expanded')).toBe('true');
+    expect(within(outline()).getByText('Rename helper')).toBeTruthy();
+    expect(within(outline()).queryByText('Lockfile')).toBeNull();
+  });
+
+  it('collapsing a group hides it even when the current item is inside', async () => {
+    const tour = withGroups(makeTour(), group('generated', 'g1', 'Lockfile'));
+    getPr.mockResolvedValue(response({ tour }));
+    render(<TourView repo="acme/loans" pr={42} />);
+
+    fireEvent.click(await screen.findByRole('button', { name: /Repay tests/ }));
+    fireEvent.keyDown(window, { key: 'j' });
+    const toggle = within(outline()).getByRole('button', { name: /generated group/ });
+    expect(toggle.getAttribute('aria-expanded')).toBe('true');
+    expect(outlineItem('Lockfile').getAttribute('aria-current')).toBe('step');
+
+    fireEvent.click(toggle);
+    expect(toggle.getAttribute('aria-expanded')).toBe('false');
+    expect(within(outline()).queryByText('Lockfile')).toBeNull();
+  });
+
+  it('check problems are listed under the outline', async () => {
+    const tour = makeTour({ check: { problems: ['src/a.ts:3 has two homes: F1.S1, o1.1'] } });
+    getPr.mockResolvedValue(response({ tour }));
+    render(<TourView repo="acme/loans" pr={42} />);
+
+    expect(await screen.findByText('1 check problem')).toBeTruthy();
+    expect(screen.getByText('src/a.ts:3 has two homes: F1.S1, o1.1')).toBeTruthy();
+  });
+
+  it('a foundation shows its schema after and deploy compatibility', async () => {
+    getPr.mockResolvedValue(response());
+    render(<TourView repo="acme/loans" pr={42} />);
+
+    expect(await screen.findByText('repayments(id uuid pk, amount_cents bigint)')).toBeTruthy();
+    expect(screen.getByText(/Additive only\./).textContent).toBe('Compatible: Additive only.');
   });
 });

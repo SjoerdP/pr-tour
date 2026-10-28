@@ -1,6 +1,7 @@
 import { useEffect, useId, useState } from 'react';
 import type { InboxPr, InboxResponse } from '../shared/api.js';
 import { getInbox } from './api.js';
+import { errorText } from './errors.js';
 
 type State =
   | { status: 'loading' }
@@ -43,10 +44,6 @@ export function Inbox() {
       )}
     </main>
   );
-}
-
-function errorText(err: unknown): string {
-  return err instanceof Error ? err.message : String(err);
 }
 
 function PrTable({ title, prs }: { title: string; prs: InboxPr[] }) {

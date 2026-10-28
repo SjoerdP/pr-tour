@@ -1,26 +1,6 @@
-import type { Flow, Foundation, OtherGroup, OtherItem, Range, Step, Tour } from '../shared/tour.js';
+import type { Foundation, Range, Step, Tour } from '../shared/tour.js';
 import { CodeView } from './CodeView.js';
-
-/** One place a changed line can live: a foundation, a flow step or an other-changes item. */
-export type Home =
-  | { kind: 'foundation'; id: string; foundation: Foundation }
-  | { kind: 'step'; id: string; step: Step; flow: Flow }
-  | { kind: 'other'; id: string; item: OtherItem; group: OtherGroup };
-
-/** Every home of the tour by id. */
-export function homesById(tour: Tour): Map<string, Home> {
-  const map = new Map<string, Home>();
-  for (const foundation of tour.foundations) {
-    map.set(foundation.id, { kind: 'foundation', id: foundation.id, foundation });
-  }
-  for (const flow of tour.flows) {
-    for (const step of flow.steps) map.set(step.id, { kind: 'step', id: step.id, step, flow });
-  }
-  for (const group of tour.other) {
-    for (const item of group.items) map.set(item.id, { kind: 'other', id: item.id, item, group });
-  }
-  return map;
-}
+import type { Home } from './homes.js';
 
 type Focus = { start: number; end: number } | null;
 

@@ -1,5 +1,6 @@
 import { useId, useState } from 'react';
 import type { OtherGroup, Risk, SideEffect, Tour } from '../shared/tour.js';
+import { otherGroupsInOrder } from './homes.js';
 
 type Props = {
   tour: Tour;
@@ -13,11 +14,7 @@ const COLLAPSED_BY_DEFAULT: ReadonlySet<OtherGroup['kind']> = new Set(['generate
 
 /** The tour's table of contents: foundations, then flows, then other changes. */
 export function Outline({ tour, currentId, isSeen, onSelect }: Props) {
-  // Unexplained lines are the ones most worth a look, so they lead their section.
-  const other = [
-    ...tour.other.filter((g) => g.kind === 'unexplained'),
-    ...tour.other.filter((g) => g.kind !== 'unexplained'),
-  ];
+  const other = otherGroupsInOrder(tour);
   const itemProps = { currentId, isSeen, onSelect };
 
   return (
@@ -97,10 +94,11 @@ type ItemProps = {
 function Group({ group, ...itemProps }: { group: OtherGroup } & ItemProps) {
   const listId = useId();
   const collapsible = COLLAPSED_BY_DEFAULT.has(group.kind);
-  const [expanded, setExpanded] = useState(false);
-  // A group never hides the item being read (j/k can land inside a shut group).
+  // `null` until the user toggles: then their choice wins, also over the current item.
+  const [expanded, setExpanded] = useState<boolean | null>(null);
+  // By default a group never hides the item being read (j/k can land inside a shut group).
   const open =
-    !collapsible || expanded || group.items.some((item) => item.id === itemProps.currentId);
+    expanded ?? (!collapsible || group.items.some((item) => item.id === itemProps.currentId));
 
   return (
     <div className={`outline-group outline-group-${group.kind}`}>
