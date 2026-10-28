@@ -7,12 +7,14 @@ import type { Draft, NewDraft, ReviewEvent, ReviewResponse } from '../shared/rev
 /**
  * A failed API call: the server's short `error` message and the HTTP status.
  * `failedDraftId` is the draft GitHub refused, when a review submit names one.
+ * `drafts` is the PR's unsent draft count, when replacing its tour needs a confirmation.
  */
 export class ApiError extends Error {
   constructor(
     readonly status: number,
     message: string,
     readonly failedDraftId?: number,
+    readonly drafts?: number,
   ) {
     super(message);
     this.name = 'ApiError';
@@ -32,28 +34,36 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   if (method !== 'GET') headers.set('X-PR-Tour', '1');
   const res = await fetch(path, { ...init, method, headers });
   if (!res.ok) {
-    const { message, failedDraftId } = await errorBody(res);
-    throw new ApiError(res.status, message, failedDraftId);
+    const { message, failedDraftId, drafts } = await errorBody(res);
+    throw new ApiError(res.status, message, failedDraftId, drafts);
   }
   if (res.status === 204) return undefined as T;
   return (await res.json()) as T;
 }
 
 /**
- * The server answers errors as `{ error, failedDraftId? }`; anything else (a proxy page, say)
- * gets a generic message.
+ * The server answers errors as `{ error, failedDraftId?, drafts? }`; anything else (a proxy
+ * page, say) gets a generic message.
  */
-async function errorBody(res: Response): Promise<{ message: string; failedDraftId?: number }> {
+async function errorBody(
+  res: Response,
+): Promise<{ message: string; failedDraftId?: number; drafts?: number }> {
   let message = `Request failed (HTTP ${res.status})`;
   let failedDraftId: number | undefined;
+  let drafts: number | undefined;
   try {
-    const body = (await res.json()) as { error?: unknown; failedDraftId?: unknown };
+    const body = (await res.json()) as {
+      error?: unknown;
+      failedDraftId?: unknown;
+      drafts?: unknown;
+    };
     if (typeof body.error === 'string' && body.error !== '') message = body.error;
     if (typeof body.failedDraftId === 'number') failedDraftId = body.failedDraftId;
+    if (typeof body.drafts === 'number') drafts = body.drafts;
   } catch {
     // Not JSON: keep the generic message.
   }
-  return { message, failedDraftId };
+  return { message, failedDraftId, drafts };
 }
 
 function withJson(method: string, body: unknown): RequestInit {
@@ -72,9 +82,12 @@ export function getPr(repo: string, pr: number): Promise<PrResponse> {
   return request(prPath(repo, pr));
 }
 
-/** Starts (or joins) a tour build; returns its job. */
-export function buildTour(repo: string, pr: number): Promise<{ job: Job | null }> {
-  return request(`${prPath(repo, pr)}/tour`, { method: 'POST' });
+/**
+ * Starts (or joins) a tour build; returns its job. When the PR has a tour and unsent drafts,
+ * the server refuses with a 409 `ApiError` carrying `drafts` unless `replace` is true.
+ */
+export function buildTour(repo: string, pr: number, replace = false): Promise<{ job: Job | null }> {
+  return request(`${prPath(repo, pr)}/tour`, withJson('POST', { replace }));
 }
 
 /**

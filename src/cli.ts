@@ -8,7 +8,7 @@ import { parseArgs as parseNodeArgs } from 'node:util';
 import { createAdaptorServer, type ServerType } from '@hono/node-server';
 import type { Hono } from 'hono';
 import { createApp } from './server/app.js';
-import { TourBuilder, TourBuildError } from './server/build.js';
+import { ReplaceNeedsConfirmError, TourBuilder, TourBuildError } from './server/build.js';
 import { CommandError, realRunner } from './server/exec.js';
 import { GitHub, InvalidRepoError, PrNotFoundError } from './server/github.js';
 import { Jobs } from './server/jobs.js';
@@ -22,7 +22,10 @@ export const USAGE = `Usage:
   pr-tour                                                   run pr-tour here and open it in the browser
   pr-tour open <owner/name>#<pr>                            open the tour of a PR (starts pr-tour in the
                                                             background if it is not running)
-  pr-tour import --repo <owner/name> --pr <n> --file <path> store a tour written by the PR's author
+  pr-tour import --repo <owner/name> --pr <n> --file <path> [--replace]
+                                                            store a tour written by the PR's author;
+                                                            --replace confirms replacing a tour while
+                                                            the PR has unsent drafts (else exit 2)
   pr-tour schema                                            print the JSON Schema of a tour file
   pr-tour rules                                             print the rules for writing a tour file
 
@@ -41,10 +44,13 @@ export class UsageError extends Error {
 
 export type Command =
   | { cmd: 'serve' }
-  | { cmd: 'import'; repo: string; pr: number; file: string }
+  | { cmd: 'import'; repo: string; pr: number; file: string; replace: boolean }
   | { cmd: 'open'; repo: string; pr: number }
   | { cmd: 'schema' }
   | { cmd: 'rules' };
+
+/** Exit code of `pr-tour import` when replacing the tour needs `--replace`; errors exit 1. */
+const EXIT_NEEDS_CONFIRM = 2;
 
 /** The only address the server listens on: this machine, never the network. */
 const HOST = '127.0.0.1';
@@ -81,6 +87,7 @@ export function parseArgs(argv: string[]): Command {
         repo: { type: 'string' },
         pr: { type: 'string' },
         file: { type: 'string' },
+        replace: { type: 'boolean' },
       },
     });
   } catch (err) {
@@ -99,7 +106,7 @@ export function parseArgs(argv: string[]): Command {
     const repo = parseRepo(values.repo);
     const pr = parsePr(values.pr);
     if (values.file === undefined) throw new UsageError('Missing --file <path>.');
-    return { cmd: 'import', repo, pr, file: values.file };
+    return { cmd: 'import', repo, pr, file: values.file, replace: values.replace === true };
   }
   if (cmd === 'open') {
     if (hasOptions || rest.length !== 1) throw new UsageError('open takes one <owner/name>#<pr>.');
@@ -336,7 +343,13 @@ export function importReport(tour: Tour): string[] {
 }
 
 /** `pr-tour import`: check and store an author-made tour. */
-async function importTour(config: Config, repo: string, pr: number, file: string): Promise<void> {
+async function importTour(
+  config: Config,
+  repo: string,
+  pr: number,
+  file: string,
+  replace: boolean,
+): Promise<void> {
   let bodyJson: string;
   try {
     bodyJson = readFileSync(file, 'utf8');
@@ -347,7 +360,7 @@ async function importTour(config: Config, repo: string, pr: number, file: string
   }
   const { store, builder } = wire(config.home);
   try {
-    const tour = await builder.importAuthorTour(repo, pr, bodyJson);
+    const tour = await builder.importAuthorTour(repo, pr, bodyJson, { replace });
     for (const line of importReport(tour)) console.log(line);
     console.log(tourUrl(config.port, repo, pr));
   } finally {
@@ -378,13 +391,18 @@ async function main(argv: string[]): Promise<void> {
     }
     const config = readConfig(process.env, homedir());
     if (command.cmd === 'import') {
-      await importTour(config, command.repo, command.pr, command.file);
+      await importTour(config, command.repo, command.pr, command.file, command.replace);
     } else if (command.cmd === 'open') {
       await openTour(config, command.repo, command.pr);
     } else {
       await serve(config, `http://${HOST}:${config.port}/`);
     }
   } catch (err) {
+    if (err instanceof ReplaceNeedsConfirmError) {
+      // Not a failure: the caller (the /tour skill) asks the user, then runs with --replace.
+      console.error(err.message);
+      process.exit(EXIT_NEEDS_CONFIRM);
+    }
     if (err instanceof UsageError) {
       console.error(`${err.message}\n\n${USAGE}`);
     } else {

@@ -14,7 +14,7 @@ const NO_MARKS: Record<string, string> = {};
 
 /** The review screen of one PR: build its tour, then read it home by home. */
 export function TourView({ repo, pr }: { repo: string; pr: number }) {
-  const { load, build, startBuild } = useTourBuild(repo, pr);
+  const { load, build, startBuild, confirmReplace, cancelReplace } = useTourBuild(repo, pr);
   const data = load.status === 'ready' ? load.data : null;
   const tour = data?.tour ?? null;
   const {
@@ -131,7 +131,14 @@ export function TourView({ repo, pr }: { repo: string; pr: number }) {
             </div>
           )}
           {tour ? (
-            build.state !== 'idle' && <BuildStatus build={build} onRetry={startBuild} />
+            build.state !== 'idle' && (
+              <BuildStatus
+                build={build}
+                onRetry={startBuild}
+                onConfirm={confirmReplace}
+                onCancel={cancelReplace}
+              />
+            )
           ) : (
             <section className="build-panel">
               <p>There is no tour for this pull request yet.</p>
@@ -140,7 +147,12 @@ export function TourView({ repo, pr }: { repo: string; pr: number }) {
                   Build tour
                 </button>
               ) : (
-                <BuildStatus build={build} onRetry={startBuild} />
+                <BuildStatus
+                  build={build}
+                  onRetry={startBuild}
+                  onConfirm={confirmReplace}
+                  onCancel={cancelReplace}
+                />
               )}
             </section>
           )}

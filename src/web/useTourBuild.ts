@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { Job, PrResponse } from '../shared/api.js';
-import { buildTour, getPr } from './api.js';
+import { ApiError, buildTour, getPr } from './api.js';
 import { errorText } from './errors.js';
 
 /** How often a running build is checked. */
@@ -18,9 +18,11 @@ export type Load =
  * A build the user started here or that was already running.
  * `starting` waits for the server to accept it; only `running` polls.
  * `pollError` is set while a status check failed and the next one is pending.
+ * `confirm` waits for the user to say yes to replacing a tour while the PR has `drafts`.
  */
 export type Build =
   | { state: 'idle' }
+  | { state: 'confirm'; drafts: number }
   | { state: 'starting' }
   | { state: 'running'; log: string[]; pollError?: string }
   | { state: 'failed'; error: string; log: string[] };
@@ -42,7 +44,13 @@ function logOf(build: Build): string[] {
 export function useTourBuild(
   repo: string,
   pr: number,
-): { load: Load; build: Build; startBuild: () => void } {
+): {
+  load: Load;
+  build: Build;
+  startBuild: () => void;
+  confirmReplace: () => void;
+  cancelReplace: () => void;
+} {
   const [load, setLoad] = useState<Load>({ status: 'loading' });
   const [build, setBuild] = useState<Build>({ state: 'idle' });
 
@@ -100,13 +108,26 @@ export function useTourBuild(
     };
   }, [polling, repo, pr]);
 
-  function startBuild() {
+  function post(replace: boolean) {
     setBuild({ state: 'starting' });
-    buildTour(repo, pr).then(
+    buildTour(repo, pr, replace).then(
       ({ job }) => setBuild(job ? buildFromJob(job) : { state: 'running', log: [] }),
-      (err: unknown) => setBuild({ state: 'failed', error: errorText(err), log: [] }),
+      (err: unknown) => {
+        // The PR has unsent drafts: ask before replacing its tour.
+        if (err instanceof ApiError && err.status === 409 && err.drafts !== undefined) {
+          setBuild({ state: 'confirm', drafts: err.drafts });
+        } else {
+          setBuild({ state: 'failed', error: errorText(err), log: [] });
+        }
+      },
     );
   }
 
-  return { load, build, startBuild };
+  return {
+    load,
+    build,
+    startBuild: () => post(false),
+    confirmReplace: () => post(true),
+    cancelReplace: () => setBuild({ state: 'idle' }),
+  };
 }

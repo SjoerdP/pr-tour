@@ -499,6 +499,67 @@ describe('POST /api/pr/:owner/:name/:pr/tour', () => {
     expect(fakes.builder.build).toHaveBeenCalledWith('acme/greet', 7, expect.any(Function));
   });
 
+  it('POST tour with drafts → 409 with count', async () => {
+    fakes.store.saveTour(greetTour());
+    fakes.store.addDraft('acme/greet', 7, { kind: 'reply', threadId: 'T1', body: 'a' });
+    fakes.store.addDraft('acme/greet', 7, { kind: 'reply', threadId: 'T2', body: 'b' });
+
+    const res = await api('/api/pr/acme/greet/7/tour', { method: 'POST' });
+
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual({
+      error:
+        'This PR has 2 unsent drafts. Run again with --replace to replace the tour. The drafts are kept; drafts made on an older version will be sent as file-level comments.',
+      drafts: 2,
+    });
+    expect(fakes.builder.build).not.toHaveBeenCalled();
+    expect(fakes.jobs.get('acme/greet#7')).toBeNull();
+  });
+
+  it('POST tour with drafts and replace: false → 409', async () => {
+    fakes.store.saveTour(greetTour());
+    fakes.store.addDraft('acme/greet', 7, { kind: 'reply', threadId: 'T1', body: 'a' });
+
+    const res = await api('/api/pr/acme/greet/7/tour', {
+      method: 'POST',
+      body: { replace: false },
+    });
+
+    expect(res.status).toBe(409);
+    expect(fakes.builder.build).not.toHaveBeenCalled();
+  });
+
+  it('POST tour with replace: true → 202', async () => {
+    fakes.builder.build.mockReturnValue(new Promise<Tour>(() => {}));
+    fakes.store.saveTour(greetTour());
+    fakes.store.addDraft('acme/greet', 7, { kind: 'reply', threadId: 'T1', body: 'a' });
+
+    const res = await api('/api/pr/acme/greet/7/tour', { method: 'POST', body: { replace: true } });
+
+    expect(res.status).toBe(202);
+    expect(fakes.builder.build).toHaveBeenCalledTimes(1);
+    expect(fakes.store.draftCount('acme/greet', 7)).toBe(1);
+  });
+
+  it('POST tour without drafts replaces silently', async () => {
+    fakes.builder.build.mockReturnValue(new Promise<Tour>(() => {}));
+    fakes.store.saveTour(greetTour());
+
+    const res = await api('/api/pr/acme/greet/7/tour', { method: 'POST' });
+
+    expect(res.status).toBe(202);
+  });
+
+  it('POST tour with a body that is not an object of booleans is 400', async () => {
+    const res = await api('/api/pr/acme/greet/7/tour', {
+      method: 'POST',
+      body: { replace: 'yes' },
+    });
+
+    expect(res.status).toBe(400);
+    expect(fakes.builder.build).not.toHaveBeenCalled();
+  });
+
   it('the same PR spelled in another case is the same job', async () => {
     fakes.builder.build.mockReturnValue(new Promise<Tour>(() => {}));
 

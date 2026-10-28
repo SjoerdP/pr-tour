@@ -18,7 +18,7 @@ import { firstLine, type Runner } from './exec.js';
 import type { GitHub, PrSummary } from './github.js';
 import { tourPrompt } from './prompt.js';
 import type { RepoManager } from './repo.js';
-import type { Store } from './store.js';
+import { StoreError, type Store } from './store.js';
 
 const CLAUDE_TIMEOUT_MS = 15 * 60 * 1000;
 /** How much raw output to keep in `TourBuildError.details`. */
@@ -36,6 +36,44 @@ export class TourBuildError extends Error {
     super(message);
     this.name = 'TourBuildError';
   }
+}
+
+/**
+ * Replacing the tour would leave the PR's unsent drafts on an older version: the user must
+ * confirm first (`--replace`, or `replace: true` on the API). `drafts` is how many there are.
+ */
+export class ReplaceNeedsConfirmError extends Error {
+  constructor(readonly drafts: number) {
+    super(
+      `This PR has ${drafts} unsent ${drafts === 1 ? 'draft' : 'drafts'}. Run again with --replace to replace the tour. The drafts are kept; drafts made on an older version will be sent as file-level comments.`,
+    );
+    this.name = 'ReplaceNeedsConfirmError';
+  }
+}
+
+/**
+ * Throw `ReplaceNeedsConfirmError` when the PR has a tour and unsent drafts and the caller
+ * did not say `replace`. Without drafts, replacing needs no confirmation: seen marks carry
+ * over by content hash.
+ */
+export function checkReplace(
+  store: Pick<Store, 'getTour' | 'draftCount'>,
+  repo: string,
+  pr: number,
+  replace: boolean,
+): void {
+  if (replace) return;
+  const drafts = store.draftCount(repo, pr);
+  if (drafts === 0) return;
+  let hasTour: boolean;
+  try {
+    hasTour = store.getTour(repo, pr) !== null;
+  } catch (err) {
+    if (!(err instanceof StoreError)) throw err;
+    // A tour that no longer reads is still the tour being replaced: ask.
+    hasTour = true;
+  }
+  if (hasTour) throw new ReplaceNeedsConfirmError(drafts);
 }
 
 /** Assign ids by position: `f1`, `F1`, `F1.S1`, `o1.1`. Ids in the input are overwritten. */
@@ -188,11 +226,20 @@ export class TourBuilder {
     return this.finishAndSave(body, summary, mergeBase, 'inferred', diff, onLog);
   }
 
-  /** Validate a tour written by the PR's author (the /tour skill), check it, and store it. */
-  async importAuthorTour(repo: string, pr: number, bodyJson: string): Promise<Tour> {
+  /**
+   * Validate a tour written by the PR's author (the /tour skill), check it, and store it.
+   * Replacing a tour while the PR has unsent drafts needs `replace` (see `checkReplace`).
+   */
+  async importAuthorTour(
+    repo: string,
+    pr: number,
+    bodyJson: string,
+    { replace = false }: { replace?: boolean } = {},
+  ): Promise<Tour> {
     // Check the file first: a bad one fails at once, before any fetch or clone.
     const parsed = parseBody(bodyJson);
     if (!parsed.ok) throw new TourBuildError('The tour file is not a valid tour.', parsed.error);
+    checkReplace(this.deps.store, repo, pr, replace);
     const { summary, diff, mergeBase } = await this.checkout(repo, pr, () => {});
     return this.finishAndSave(parsed.body, summary, mergeBase, 'author', diff, () => {});
   }

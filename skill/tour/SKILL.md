@@ -32,6 +32,12 @@ as a pr-tour tour: the reviewer reads it next to the code, in the order the code
      is a run of changed lines that no home covers. Fix those homes and import again.
    - Retry at most 2 times. If problems remain, keep the last import and tell the
      user which problems are left.
+   - Exit code 2 with `This PR has N unsent drafts. Run again with --replace ...` means
+     a tour already exists and the PR has review drafts that are not sent yet. Stop. Tell
+     the user how many drafts there are, that the drafts are kept, and that drafts made
+     on an older version will be sent as file-level comments. Ask if you should replace
+     the tour. Only if the user says yes, run the same import again with `--replace`.
+     Never pass `--replace` without the user's yes.
 6. **Open it.** Run `pr-tour open <owner/name>#<number>`. It starts pr-tour in the
    background if it is not running yet, opens the browser and exits; it does not keep
    running in your shell. Give the user the URL it prints.

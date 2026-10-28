@@ -60,3 +60,20 @@ export async function jsonBody<T>(c: Context, schema: z.ZodType<T>, what: string
   }
   return parse(schema, json, what);
 }
+
+/** Like `jsonBody`, but an empty or missing body counts as `{}`. */
+export async function optionalJsonBody<T>(
+  c: Context,
+  schema: z.ZodType<T>,
+  what: string,
+): Promise<T> {
+  const text = await c.req.text();
+  if (text.trim() === '') return parse(schema, {}, what);
+  let json: unknown;
+  try {
+    json = JSON.parse(text);
+  } catch {
+    throw new HttpError(400, 'Body must be JSON');
+  }
+  return parse(schema, json, what);
+}

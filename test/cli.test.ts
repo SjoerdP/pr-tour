@@ -1,5 +1,5 @@
-import { execFileSync } from 'node:child_process';
-import { existsSync, mkdtempSync, rmSync } from 'node:fs';
+import { execFileSync, spawnSync } from 'node:child_process';
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:http';
 import type { AddressInfo, Server } from 'node:net';
 import { tmpdir } from 'node:os';
@@ -16,8 +16,10 @@ import {
   serverStatus,
   UsageError,
 } from '../src/cli.js';
+import { finishTour } from '../src/server/build.js';
 import { tourRules } from '../src/server/prompt.js';
-import type { Tour } from '../src/shared/tour.js';
+import { Store } from '../src/server/store.js';
+import type { Tour, TourBodyInput } from '../src/shared/tour.js';
 
 describe('parseArgs', () => {
   it('no args → serve', () => {
@@ -27,7 +29,18 @@ describe('parseArgs', () => {
   it('import parses repo, pr, file', () => {
     expect(
       parseArgs(['import', '--repo', 'acme/api', '--pr', '12', '--file', 'tour.json']),
-    ).toEqual({ cmd: 'import', repo: 'acme/api', pr: 12, file: 'tour.json' });
+    ).toEqual({ cmd: 'import', repo: 'acme/api', pr: 12, file: 'tour.json', replace: false });
+  });
+
+  it('import --replace sets replace', () => {
+    expect(
+      parseArgs(['import', '--repo', 'acme/api', '--pr', '12', '--file', 't.json', '--replace']),
+    ).toEqual({ cmd: 'import', repo: 'acme/api', pr: 12, file: 't.json', replace: true });
+  });
+
+  it('--replace on another command throws a usage error', () => {
+    expect(() => parseArgs(['--replace'])).toThrow(UsageError);
+    expect(() => parseArgs(['open', 'acme/api#12', '--replace'])).toThrow(UsageError);
   });
 
   it('import without --file throws a usage error', () => {
@@ -234,6 +247,54 @@ describe('pr-tour schema and rules', () => {
   it('rules prints the same rules the build prompt embeds', () => {
     expect(run('rules')).toBe(`${tourRules()}\n`);
   });
+});
+
+describe('pr-tour import', () => {
+  const cli = fileURLToPath(new URL('../src/cli.ts', import.meta.url));
+  let home: string;
+  afterEach(() => rmSync(home, { recursive: true, force: true }));
+
+  const body: TourBodyInput = { summary: 'A tour.', foundations: [], flows: [], other: [] };
+
+  it('import refuses with drafts and no --replace (exit 2, tour unchanged)', () => {
+    home = mkdtempSync(join(tmpdir(), 'pr-tour-import-'));
+    const store = new Store(join(home, 'pr-tour.db'));
+    const before = finishTour(
+      body,
+      {
+        repo: 'acme/api',
+        pr: 12,
+        baseSha: 'a'.repeat(40),
+        headSha: 'b'.repeat(40),
+        source: 'author',
+        createdAt: '2026-10-28T12:00:00.000Z',
+      },
+      [],
+    );
+    store.saveTour(before);
+    store.addDraft('acme/api', 12, { kind: 'reply', threadId: 'T1', body: 'a' });
+    store.addDraft('acme/api', 12, { kind: 'reply', threadId: 'T2', body: 'b' });
+    store.addDraft('acme/api', 12, { kind: 'reply', threadId: 'T3', body: 'c' });
+    store.close();
+    const file = join(home, 'tour.json');
+    writeFileSync(file, JSON.stringify(body));
+
+    // The refusal comes before any fetch: no gh or git runs.
+    const result = spawnSync(
+      process.execPath,
+      ['--import', 'tsx', cli, 'import', '--repo', 'acme/api', '--pr', '12', '--file', file],
+      { env: { ...process.env, PR_TOUR_HOME: home }, encoding: 'utf8', timeout: 20_000 },
+    );
+
+    expect(result.status).toBe(2);
+    expect(result.stderr.trim()).toBe(
+      'This PR has 3 unsent drafts. Run again with --replace to replace the tour. The drafts are kept; drafts made on an older version will be sent as file-level comments.',
+    );
+    const after = new Store(join(home, 'pr-tour.db'));
+    expect(after.getTour('acme/api', 12)).toEqual(before);
+    expect(after.draftCount('acme/api', 12)).toBe(3);
+    after.close();
+  }, 30_000);
 });
 
 describe('importReport', () => {

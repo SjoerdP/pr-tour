@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
+  ReplaceNeedsConfirmError,
   TourBuildError,
   TourBuilder,
   assignIds,
@@ -448,5 +449,64 @@ describe('TourBuilder.importAuthorTour', () => {
       TourBuildError,
     );
     expect(checkoutCalls).toEqual([]);
+  });
+
+  describe('replacing a tour', () => {
+    const oldTour = () =>
+      finishTour(FULL_GREET, { ...meta, headSha: 'c'.repeat(40) }, parseDiff(DIFF));
+    const addReply = (body: string) =>
+      store.addDraft('acme/greet', 7, { kind: 'reply', threadId: 'T1', body });
+
+    it('import refuses with drafts and no --replace (tour unchanged)', async () => {
+      const before = oldTour();
+      store.saveTour(before);
+      addReply('one');
+      addReply('two');
+      const { tours, checkoutCalls } = builder();
+
+      const error = await tours
+        .importAuthorTour('acme/greet', 7, JSON.stringify(FULL_GREET))
+        .catch((e: unknown) => e);
+
+      expect(error).toBeInstanceOf(ReplaceNeedsConfirmError);
+      expect((error as ReplaceNeedsConfirmError).drafts).toBe(2);
+      expect((error as Error).message).toBe(
+        'This PR has 2 unsent drafts. Run again with --replace to replace the tour. The drafts are kept; drafts made on an older version will be sent as file-level comments.',
+      );
+      expect(store.getTour('acme/greet', 7)).toEqual(before);
+      expect(checkoutCalls).toEqual([]);
+    });
+
+    it('import with --replace keeps drafts', async () => {
+      store.saveTour(oldTour());
+      addReply('one');
+      const { tours } = builder();
+
+      const tour = await tours.importAuthorTour('acme/greet', 7, JSON.stringify(FULL_GREET), {
+        replace: true,
+      });
+
+      expect(store.getTour('acme/greet', 7)).toEqual(tour);
+      expect(store.draftCount('acme/greet', 7)).toBe(1);
+    });
+
+    it('import without drafts replaces silently', async () => {
+      store.saveTour(oldTour());
+      const { tours } = builder();
+
+      const tour = await tours.importAuthorTour('acme/greet', 7, JSON.stringify(FULL_GREET));
+
+      expect(tour.headSha).toBe(pr.headSha);
+      expect(store.getTour('acme/greet', 7)).toEqual(tour);
+    });
+
+    it('import with drafts but no tour yet needs no confirmation', async () => {
+      addReply('one');
+      const { tours } = builder();
+
+      await tours.importAuthorTour('acme/greet', 7, JSON.stringify(FULL_GREET));
+
+      expect(store.getTour('acme/greet', 7)).not.toBeNull();
+    });
   });
 });

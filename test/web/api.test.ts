@@ -47,6 +47,24 @@ describe('api client writes', () => {
     expect(url).toBe('/api/pr/acme/loans/42/tour');
     expect(init.method).toBe('POST');
     expect(headers.get('X-PR-Tour')).toBe('1');
+    expect(JSON.parse(init.body as string)).toEqual({ replace: false });
+  });
+
+  it('buildTour with replace posts replace: true', async () => {
+    const fetchMock = serve(202, { job: { state: 'running', log: [] } });
+
+    await buildTour('acme/loans', 42, true);
+
+    expect(JSON.parse(sent(fetchMock).init.body as string)).toEqual({ replace: true });
+  });
+
+  it('a 409 for a tour with drafts carries the draft count', async () => {
+    serve(409, { error: 'This PR has 2 unsent drafts.', drafts: 2 });
+
+    const err = await buildTour('acme/loans', 42).catch((e: unknown) => e);
+
+    expect(err).toBeInstanceOf(ApiError);
+    expect(err).toMatchObject({ status: 409, drafts: 2 });
   });
 
   it('markSeen posts the home id and content hash as JSON', async () => {

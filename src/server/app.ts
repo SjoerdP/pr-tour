@@ -6,12 +6,17 @@ import { Hono } from 'hono';
 import { z } from 'zod';
 import type { InboxPr, InboxResponse, InboxSummary, PrResponse } from '../shared/api.js';
 import { homeIds, type Tour } from '../shared/tour.js';
-import { TourBuildError, type TourBuilder } from './build.js';
+import {
+  checkReplace,
+  ReplaceNeedsConfirmError,
+  TourBuildError,
+  type TourBuilder,
+} from './build.js';
 import { findFileDiff, parseDiff } from './diff.js';
 import { CommandError } from './exec.js';
 import { InvalidRepoError, PrNotFoundError, type GitHub } from './github.js';
 import { GraphqlError } from './graphql.js';
-import { HttpError, jsonBody, parse, prParams } from './http.js';
+import { HttpError, jsonBody, optionalJsonBody, parse, prParams } from './http.js';
 import type { Jobs } from './jobs.js';
 import type { RepoManager } from './repo.js';
 import type { ReviewGitHub } from './review-github.js';
@@ -50,6 +55,9 @@ const SeenBodySchema = z.object({
   homeId: z.string().min(1).max(100),
   contentHash: z.string().regex(/^[0-9a-f]{40}$/),
 });
+
+/** `replace: true` confirms replacing a tour while the PR has unsent drafts. */
+const BuildBodySchema = z.object({ replace: z.boolean().optional() });
 
 /** Full detail of an error, for the server log. */
 function logDetail(err: unknown): string {
@@ -176,8 +184,16 @@ export function createApp(deps: AppDeps): Hono {
     return c.json(body);
   });
 
-  app.post('/api/pr/:owner/:name/:pr/tour', (c) => {
+  app.post('/api/pr/:owner/:name/:pr/tour', async (c) => {
     const { repo, pr, key } = prParams(c);
+    const { replace = false } = await optionalJsonBody(c, BuildBodySchema, 'build request');
+    // Ask before the job starts, so nothing runs until the user confirms.
+    try {
+      checkReplace(store, repo, pr, replace);
+    } catch (err) {
+      if (!(err instanceof ReplaceNeedsConfirmError)) throw err;
+      return c.json({ error: err.message, drafts: err.drafts }, 409);
+    }
     jobs.start(key, async (log) => {
       try {
         await builder.build(repo, pr, log);

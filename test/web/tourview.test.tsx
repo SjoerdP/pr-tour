@@ -6,7 +6,8 @@ import * as api from '../../src/web/api.js';
 import { TourView } from '../../src/web/TourView.js';
 import { outline, outlineItem } from './outline-helpers.js';
 
-vi.mock('../../src/web/api.js', () => ({
+vi.mock('../../src/web/api.js', async (importActual) => ({
+  ApiError: (await importActual<typeof import('../../src/web/api.js')>()).ApiError,
   getPr: vi.fn(),
   buildTour: vi.fn(),
   markSeen: vi.fn(),
@@ -181,7 +182,7 @@ describe('TourView', () => {
     render(<TourView repo="acme/loans" pr={42} />);
 
     fireEvent.click(await screen.findByRole('button', { name: 'Build tour' }));
-    expect(buildTour).toHaveBeenCalledWith('acme/loans', 42);
+    expect(buildTour).toHaveBeenCalledWith('acme/loans', 42, false);
     expect(await screen.findByText('Cloning')).toBeTruthy();
 
     await act(() => vi.advanceTimersByTimeAsync(2000));
@@ -326,8 +327,44 @@ describe('TourView', () => {
     const banner = await screen.findByText('New commits since this tour was built');
     expect(banner).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'Rebuild tour' }));
-    expect(buildTour).toHaveBeenCalledWith('acme/loans', 42);
+    expect(buildTour).toHaveBeenCalledWith('acme/loans', 42, false);
     // The old tour stays readable while the new one builds.
+    expect(outline()).toBeTruthy();
+  });
+
+  it('409 shows inline confirm; Rebuild re-posts with replace', async () => {
+    const confirm = vi.spyOn(window, 'confirm');
+    getPr.mockResolvedValue(response({ outdated: true }));
+    buildTour
+      .mockRejectedValueOnce(new api.ApiError(409, 'This PR has 2 unsent drafts.', undefined, 2))
+      .mockResolvedValueOnce({ job: job('running', ['Cloning']) });
+    render(<TourView repo="acme/loans" pr={42} />);
+
+    await screen.findByText('New commits since this tour was built');
+    fireEvent.click(screen.getByRole('button', { name: 'Rebuild tour' }));
+
+    expect(await screen.findByText('You have 2 unsent drafts. Rebuild anyway?')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Rebuild' }));
+
+    expect(buildTour).toHaveBeenLastCalledWith('acme/loans', 42, true);
+    expect(await screen.findByText('Cloning')).toBeTruthy();
+    expect(screen.queryByText(/Rebuild anyway/)).toBeNull();
+    expect(confirm).not.toHaveBeenCalled();
+  });
+
+  it('Cancel on the replace confirm builds nothing', async () => {
+    getPr.mockResolvedValue(response({ outdated: true }));
+    buildTour.mockRejectedValueOnce(
+      new api.ApiError(409, 'This PR has 1 unsent draft.', undefined, 1),
+    );
+    render(<TourView repo="acme/loans" pr={42} />);
+
+    await screen.findByText('New commits since this tour was built');
+    fireEvent.click(screen.getByRole('button', { name: 'Rebuild tour' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Cancel' }));
+
+    expect(screen.queryByText(/Rebuild anyway/)).toBeNull();
+    expect(buildTour).toHaveBeenCalledTimes(1);
     expect(outline()).toBeTruthy();
   });
 

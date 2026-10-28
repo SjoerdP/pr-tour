@@ -462,6 +462,11 @@ pre {
   margin: 0;
 }
 
+.build-confirm-actions {
+  display: flex;
+  gap: var(--space-2);
+}
+
 .job-log {
   align-self: stretch;
   max-height: 240px;
