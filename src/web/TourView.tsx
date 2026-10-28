@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { BuildStatus } from './BuildStatus.js';
+import { ComposerMemory, ComposerMemoryContext } from './composer-memory.js';
 import { homesInOrder, nextFlowStart, previousFlowStart } from './homes.js';
 import { Outline } from './Outline.js';
 import { StepPane } from './StepPane.js';
@@ -27,6 +28,8 @@ export function TourView({ repo, pr }: { repo: string; pr: number }) {
   const about = useAboutPanel(repo, pr, tour !== null);
   // One review for the PR, shared by everything that shows or adds comments.
   const review = useReview(repo, pr);
+  // What the reviewer is writing, kept across moves through this PR's tour.
+  const memory = useMemo(() => new ComposerMemory(`${repo}#${pr}`), [repo, pr]);
   // A rebuild swaps in a tour on another head: load the review again for it.
   const head = tour?.headSha ?? null;
   const shownHead = useRef(head);
@@ -113,92 +116,94 @@ export function TourView({ repo, pr }: { repo: string; pr: number }) {
   const notices = (tour && outdated) || build.state !== 'idle' || !tour || seenError;
 
   return (
-    <div className="tour-app">
-      <TopBar
-        pr={summary}
-        tour={tour}
-        isSeen={isSeen}
-        aboutOpen={about.open}
-        onAboutChange={about.setOpen}
-        review={review}
-        onOpenHome={openHome}
-        onJump={(file, line) => setJump({ file, line })}
-      />
+    <ComposerMemoryContext.Provider value={memory}>
+      <div className="tour-app">
+        <TopBar
+          pr={summary}
+          tour={tour}
+          isSeen={isSeen}
+          aboutOpen={about.open}
+          onAboutChange={about.setOpen}
+          review={review}
+          onOpenHome={openHome}
+          onJump={(file, line) => setJump({ file, line })}
+        />
 
-      {notices && (
-        <div className="notices">
-          {tour && outdated && (
-            <div className="banner">
-              <span>New commits since this tour was built</span>
-              <button
-                type="button"
-                onClick={startBuild}
-                disabled={build.state === 'starting' || build.state === 'running'}
-              >
-                Rebuild tour
-              </button>
-            </div>
-          )}
-          {tour ? (
-            build.state !== 'idle' && (
-              <BuildStatus
-                build={build}
-                onRetry={startBuild}
-                onConfirm={confirmReplace}
-                onCancel={cancelReplace}
-              />
-            )
-          ) : (
-            <section className="build-panel">
-              <p>There is no tour for this pull request yet.</p>
-              {build.state === 'idle' ? (
-                <button type="button" className="primary" onClick={startBuild}>
-                  Build tour
+        {notices && (
+          <div className="notices">
+            {tour && outdated && (
+              <div className="banner">
+                <span>New commits since this tour was built</span>
+                <button
+                  type="button"
+                  onClick={startBuild}
+                  disabled={build.state === 'starting' || build.state === 'running'}
+                >
+                  Rebuild tour
                 </button>
-              ) : (
+              </div>
+            )}
+            {tour ? (
+              build.state !== 'idle' && (
                 <BuildStatus
                   build={build}
                   onRetry={startBuild}
                   onConfirm={confirmReplace}
                   onCancel={cancelReplace}
                 />
-              )}
-            </section>
-          )}
-          {seenError && (
-            <p className="error seen-error" role="status">
-              {seenError}
-            </p>
-          )}
-        </div>
-      )}
+              )
+            ) : (
+              <section className="build-panel">
+                <p>There is no tour for this pull request yet.</p>
+                {build.state === 'idle' ? (
+                  <button type="button" className="primary" onClick={startBuild}>
+                    Build tour
+                  </button>
+                ) : (
+                  <BuildStatus
+                    build={build}
+                    onRetry={startBuild}
+                    onConfirm={confirmReplace}
+                    onCancel={cancelReplace}
+                  />
+                )}
+              </section>
+            )}
+            {seenError && (
+              <p className="error seen-error" role="status">
+                {seenError}
+              </p>
+            )}
+          </div>
+        )}
 
-      {tour && current !== null && currentHome && (
-        <div className="tour-body">
-          <Outline
-            tour={tour}
-            currentId={current}
-            isSeen={isSeen}
-            onSelect={goTo}
-            previousFlow={nav.previousFlow}
-            nextFlow={nav.nextFlow}
-          />
-          <main className="tour-main">
-            <StepPane
-              repo={repo}
-              pr={pr}
+        {tour && current !== null && currentHome && (
+          <div className="tour-body">
+            <Outline
               tour={tour}
-              home={currentHome}
-              jump={jump}
-              onJump={(file, line) => setJump({ file, line })}
-              onBack={() => setJump(null)}
-              onOpenHome={goTo}
-              nav={nav}
-              review={review}
+              currentId={current}
+              isSeen={isSeen}
+              onSelect={goTo}
+              previousFlow={nav.previousFlow}
+              nextFlow={nav.nextFlow}
             />
-          </main>
-        </div>
-      )}
-    </div>
+            <main className="tour-main">
+              <StepPane
+                repo={repo}
+                pr={pr}
+                tour={tour}
+                home={currentHome}
+                jump={jump}
+                onJump={(file, line) => setJump({ file, line })}
+                onBack={() => setJump(null)}
+                onOpenHome={goTo}
+                nav={nav}
+                review={review}
+              />
+            </main>
+          </div>
+        )}
+      </div>
+    </ComposerMemoryContext.Provider>
   );
 }

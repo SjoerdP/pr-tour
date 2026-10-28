@@ -1,6 +1,7 @@
 import { useState, type ReactNode } from 'react';
 import type { Draft, DraftReply, ReviewThread, ThreadComment } from '../shared/review.js';
 import { Composer } from './Composer.js';
+import { useComposerMemory } from './composer-memory.js';
 import { errorText } from './errors.js';
 
 type Props = {
@@ -34,7 +35,13 @@ export function Thread({
   now,
 }: Props) {
   const [expanded, setExpanded] = useState(!thread.resolved);
-  const [replying, setReplying] = useState(false);
+  // An open reply, and its text, come back when the thread shows again.
+  const memory = useComposerMemory();
+  const [replying, setReplyingState] = useState(() => memory?.reply(thread.id) !== undefined);
+  function setReplying(open: boolean) {
+    setReplyingState(open);
+    memory?.setReply(thread.id, open ? '' : null);
+  }
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -98,6 +105,8 @@ export function Thread({
               path={thread.path}
               suggestFrom={null}
               submitLabel="Add reply"
+              restore={() => memory?.reply(thread.id) ?? ''}
+              onType={(text) => memory?.setReply(thread.id, text)}
               onSubmit={reply}
               onCancel={() => setReplying(false)}
             />
@@ -160,7 +169,13 @@ export function PendingDraft({
   onEdit: (body: string) => Promise<unknown> | void;
   onDelete: () => Promise<unknown> | void;
 }) {
-  const [editing, setEditing] = useState(false);
+  // An open edit, and its text, come back when the draft shows again.
+  const memory = useComposerMemory();
+  const [editing, setEditingState] = useState(() => memory?.edit(draft.id) !== undefined);
+  function setEditing(open: boolean) {
+    setEditingState(open);
+    memory?.setEdit(draft.id, open ? '' : null);
+  }
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -194,6 +209,8 @@ export function PendingDraft({
           path={path}
           suggestFrom={null}
           initial={draft.body}
+          restore={() => memory?.edit(draft.id) ?? ''}
+          onType={(text) => memory?.setEdit(draft.id, text)}
           submitLabel="Save"
           onSubmit={save}
           onCancel={() => setEditing(false)}

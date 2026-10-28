@@ -99,6 +99,11 @@ Plan 2 lets the user do the GitHub review inside a tour. The pieces:
   comment (`kind = 'comment'`: path, side, start/end line, placement, quote,
   head_sha) or reply (`kind = 'reply'`: thread_id), with its body. Drafts stay
   local until a submit sends them. Saving a new tour leaves them alone.
+- **Typed text survives moves.** `ComposerMemory` (`src/web/composer-memory.ts`), one
+  per PR in `TourView` and handed down by context, keeps the open new comment per file
+  (picked lines and text, keyed by head and path), the reply per thread and the edit per
+  draft. The code view remounts on every step change; the composers read it back when
+  their file or thread shows again. Sending or cancelling a composer clears its entry.
 - **Replacing a tour with drafts** needs a confirmation: `checkReplace` in
   `build.ts` throws `ReplaceNeedsConfirmError`; the build route answers with it,
   the web asks the user, and `pr-tour import` exits with code 2 until it gets

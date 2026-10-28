@@ -31,6 +31,7 @@ import {
 } from './code-lines.js';
 import { FileComments, ReviewRow } from './CodeReview.js';
 import { Composer } from './Composer.js';
+import { useComposerMemory, type Selection } from './composer-memory.js';
 import type { HighlightedLine, Token } from './highlight.js';
 import { homesInOrder } from './homes.js';
 import { withKey } from './shortcuts.js';
@@ -135,9 +136,6 @@ function draftsOn(drafts: Draft[], path: string): DraftComment[] {
   return drafts.filter((d): d is DraftComment => d.kind === 'comment' && d.path === path);
 }
 
-/** Lines picked for a comment: from the first one clicked to the last one (shift+)clicked. */
-type Selection = { side: DiffSide; anchor: number; line: number };
-
 function FileCode({
   tour,
   file,
@@ -182,7 +180,12 @@ function FileCode({
 
   // GitHub takes comments only on files the PR changes.
   const diff = file.diff;
-  const [selection, setSelection] = useState<Selection | null>(null);
+  // What was being written on this file comes back when it shows again (see ComposerMemory).
+  const memory = useComposerMemory();
+  const memoryKey = `${tour.headSha}:${file.path}`;
+  const [selection, setSelection] = useState<Selection | null>(
+    () => memory?.file(memoryKey)?.selection ?? null,
+  );
   const picked = selection && {
     side: selection.side,
     start: Math.min(selection.anchor, selection.line),
@@ -190,7 +193,11 @@ function FileCode({
   };
   // The composer remounts when it moves to another row; its text lives here meanwhile. A
   // ref, not state: typing must not re-render every row of the file.
-  const typed = useRef('');
+  const typed = useRef(memory?.file(memoryKey)?.typed ?? '');
+  // The memory follows the picked lines; typing updates it in `onType`.
+  useEffect(() => {
+    memory?.setFile(memoryKey, selection ? { selection, typed: typed.current } : null);
+  }, [memory, memoryKey, selection]);
   function clearSelection() {
     setSelection(null);
     typed.current = '';
@@ -277,6 +284,7 @@ function FileCode({
         restore={() => typed.current}
         onType={(body) => {
           typed.current = body;
+          if (selection) memory?.setFile(memoryKey, { selection, typed: body });
         }}
       />
     );
