@@ -168,13 +168,13 @@ describe('CodeView', () => {
     );
     renderView();
 
-    expect(await screen.findByText('change 1 of 2 in this file')).toBeTruthy();
+    expect(await screen.findByText('change 1 of 2')).toBeTruthy();
     fireEvent.keyDown(window, { key: 'n' });
-    expect(screen.getByText('change 2 of 2 in this file')).toBeTruthy();
+    expect(screen.getByText('change 2 of 2')).toBeTruthy();
     fireEvent.keyDown(window, { key: 'n' });
-    expect(screen.getByText('change 2 of 2 in this file')).toBeTruthy();
-    fireEvent.click(screen.getByRole('button', { name: 'Prev change' }));
-    expect(screen.getByText('change 1 of 2 in this file')).toBeTruthy();
+    expect(screen.getByText('change 2 of 2')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Previous change' }));
+    expect(screen.getByText('change 1 of 2')).toBeTruthy();
   });
 
   it('the toolbar buttons name their keys in their tooltips', async () => {
@@ -184,11 +184,13 @@ describe('CodeView', () => {
     });
     renderView();
 
-    await screen.findByText('change 1 of 1 in this file');
-    const titles = ['Prev change', 'Next change', 'Whole file'].map(
+    await screen.findByText('change 1 of 1');
+    const titles = ['Previous change', 'Next change', 'Whole file'].map(
       (name) => screen.getByRole('button', { name }).title,
     );
-    expect(titles).toEqual(['Prev change (p)', 'Next change (n)', 'Whole file (f)']);
+    expect(titles).toEqual(['Previous change (p)', 'Next change (n)', 'Whole file (f)']);
+    expect(screen.getByRole('button', { name: 'Previous change' }).textContent).toBe('↑');
+    expect(screen.getByRole('button', { name: 'Next change' }).textContent).toBe('↓');
   });
 
   it('f shows the whole file', async () => {

@@ -140,30 +140,36 @@ function FileCode({ tour, file, tokens, focus, homeId, onJump, onOpenHome }: Fil
   return (
     <>
       <div className="code-toolbar">
-        <code className="code-path">{file.path}</code>
+        <code className="code-path" title={file.path}>
+          {file.path}
+        </code>
         {status === 'renamed' && <span className="muted">renamed from {file.oldPath}</span>}
         {status === 'added' && <span className="muted">new file</span>}
         {status === 'deleted' && <span className="muted">deleted file</span>}
         <span className="code-counter muted">
           {blocks.length === 0
             ? 'no changes in this file'
-            : `change ${current + 1} of ${blocks.length} in this file`}
+            : `change ${current + 1} of ${blocks.length}`}
         </span>
         <button
           type="button"
+          className="icon-button"
+          aria-label="Previous change"
           onClick={() => goToChange(current - 1)}
           disabled={current <= 0}
-          title={withKey('Prev change', 'p')}
+          title={withKey('Previous change', 'p')}
         >
-          Prev change
+          ↑
         </button>
         <button
           type="button"
+          className="icon-button"
+          aria-label="Next change"
           onClick={() => goToChange(current + 1)}
           disabled={current >= blocks.length - 1}
           title={withKey('Next change', 'n')}
         >
-          Next change
+          ↓
         </button>
         <button
           type="button"
