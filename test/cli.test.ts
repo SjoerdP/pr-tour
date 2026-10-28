@@ -77,6 +77,10 @@ describe('readConfig', () => {
     });
   });
 
+  it('a relative PR_TOUR_HOME is made absolute from the working directory', () => {
+    expect(readConfig({ PR_TOUR_HOME: 'tours' }, '/home/u', '/work').home).toBe('/work/tours');
+  });
+
   it('a PR_TOUR_PORT that is not a port throws a usage error', () => {
     expect(() => readConfig({ PR_TOUR_PORT: 'abc' }, '/home/u')).toThrow(UsageError);
     expect(() => readConfig({ PR_TOUR_PORT: '70000' }, '/home/u')).toThrow(UsageError);

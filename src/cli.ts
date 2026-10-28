@@ -2,7 +2,7 @@
 import { spawn } from 'node:child_process';
 import { mkdirSync, readFileSync, realpathSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs as parseNodeArgs } from 'node:util';
 import { createAdaptorServer, type ServerType } from '@hono/node-server';
@@ -112,8 +112,12 @@ export function parseArgs(argv: string[]): Command {
 
 export type Config = { port: number; home: string; openBrowser: boolean };
 
-/** Settings from `PR_TOUR_*` environment variables. */
-export function readConfig(env: NodeJS.ProcessEnv, userHome: string): Config {
+/** Settings from `PR_TOUR_*` environment variables. A relative `PR_TOUR_HOME` is from `cwd`. */
+export function readConfig(
+  env: NodeJS.ProcessEnv,
+  userHome: string,
+  cwd: string = process.cwd(),
+): Config {
   const portText = env.PR_TOUR_PORT ?? String(DEFAULT_PORT);
   const port = Number(portText);
   if (!/^\d+$/.test(portText) || port < 1 || port > 65535) {
@@ -121,7 +125,7 @@ export function readConfig(env: NodeJS.ProcessEnv, userHome: string): Config {
   }
   return {
     port,
-    home: env.PR_TOUR_HOME || join(userHome, '.pr-tour'),
+    home: env.PR_TOUR_HOME ? resolve(cwd, env.PR_TOUR_HOME) : join(userHome, '.pr-tour'),
     openBrowser: env.PR_TOUR_NO_OPEN !== '1',
   };
 }
