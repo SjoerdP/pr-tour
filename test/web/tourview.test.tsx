@@ -257,6 +257,19 @@ describe('TourView', () => {
     expect(screen.getByTestId('code-view').textContent).toBe('F1.S1 src/loans/repay.ts');
   });
 
+  it('pressing j on the last item marks it seen and stays there', async () => {
+    getPr.mockResolvedValue(response());
+    render(<TourView repo="acme/loans" pr={42} />);
+
+    fireEvent.click(await screen.findByRole('button', { name: /Repay tests/ }));
+    fireEvent.keyDown(window, { key: 'j' });
+
+    expect(markSeen).toHaveBeenCalledWith('acme/loans', 42, 'o1.1', 'h-o1');
+    const last = outlineItem('Repay tests');
+    expect(within(last).getByLabelText('seen')).toBeTruthy();
+    expect(last.getAttribute('aria-current')).toBe('step');
+  });
+
   it('a seen mark with an old hash does not count as seen', async () => {
     getPr.mockResolvedValue(response({ seen: { f1: 'old-hash', 'F1.S1': 'h-s1' } }));
     render(<TourView repo="acme/loans" pr={42} />);

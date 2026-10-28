@@ -38,7 +38,12 @@ export function TourView({ repo, pr }: { repo: string; pr: number }) {
 
   const index = current === null ? -1 : ids.indexOf(current);
   useKeys({
-    j: () => goTo(ids[index + 1]),
+    j: () => {
+      const next = ids[index + 1];
+      if (next !== undefined) goTo(next);
+      // On the last home there is nowhere to go; j still says "done with this one".
+      else if (current !== null) markLeft(current);
+    },
     k: () => goTo(index > 0 ? ids[index - 1] : undefined),
     // Back from a followed call to the step's own code.
     ...(jump ? { Escape: () => setJump(null) } : {}),
