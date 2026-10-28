@@ -6,7 +6,13 @@ export type RunResult = { stdout: string; stderr: string; code: number };
 /** The one way out of the process: run an external command (gh, git, claude). */
 export type Runner = (cmd: string, args: string[], opts?: RunOptions) => Promise<RunResult>;
 
-/** A command exited non-zero where the caller needed it to succeed. */
+/** Longest stderr line kept in `CommandError.shortMessage`. */
+const SHORT_LINE_CHARS = 200;
+
+/**
+ * A command exited non-zero where the caller needed it to succeed. `message` has the
+ * full command line and stderr, for the log; `shortMessage` is fit to show the user.
+ */
 export class CommandError extends Error {
   constructor(
     readonly cmd: string,
@@ -15,6 +21,17 @@ export class CommandError extends Error {
   ) {
     super(`${[cmd, ...args].join(' ')} exited with code ${result.code}: ${result.stderr.trim()}`);
     this.name = 'CommandError';
+  }
+
+  /** `<cmd> failed: <first stderr line>`, without the arguments (they can hold a whole query). */
+  get shortMessage(): string {
+    const line = this.result.stderr
+      .split('\n')
+      .map((l) => l.trim())
+      .find((l) => l !== '');
+    if (line === undefined) return `${this.cmd} failed with exit code ${this.result.code}`;
+    const cut = line.length > SHORT_LINE_CHARS ? `${line.slice(0, SHORT_LINE_CHARS)}...` : line;
+    return `${this.cmd} failed: ${cut}`;
   }
 }
 

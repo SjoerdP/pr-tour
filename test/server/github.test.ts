@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { CommandError } from '../../src/server/exec.js';
-import { GitHub, type PrSummary } from '../../src/server/github.js';
+import {
+  GitHub,
+  InvalidRepoError,
+  PrNotFoundError,
+  type PrSummary,
+} from '../../src/server/github.js';
 import { fakeRunner } from '../helpers/fake-runner.js';
 
 /** A GraphQL pull request node as `gh api graphql` returns it. */
@@ -123,14 +128,33 @@ describe('GitHub.pr', () => {
   it('pr rejects a repo that is not owner/name', async () => {
     const { run, calls } = answering({});
 
-    await expect(new GitHub(run).pr('@/etc/passwd', 1)).rejects.toThrow(/owner\/name/);
+    const error: unknown = await new GitHub(run).pr('@/etc/passwd', 1).catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(InvalidRepoError);
+    expect((error as Error).message).toMatch(/owner\/name/);
     expect(calls).toHaveLength(0);
   });
 
   it('pr throws when the PR does not exist', async () => {
     const { run } = answering({ repository: { pullRequest: null } });
 
-    await expect(new GitHub(run).pr('acme/api', 999)).rejects.toThrow(/acme\/api#999/);
+    const error: unknown = await new GitHub(run).pr('acme/api', 999).catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(PrNotFoundError);
+    expect((error as Error).message).toContain('acme/api#999');
+  });
+
+  it('pr throws PrNotFoundError when gh cannot resolve the repo or PR', async () => {
+    const { run } = fakeRunner({
+      stdout: '',
+      stderr: "GraphQL: Could not resolve to a Repository with the name 'acme/nope'. (repository)",
+      code: 1,
+    });
+
+    const error: unknown = await new GitHub(run).pr('acme/nope', 1).catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(PrNotFoundError);
+    expect((error as Error).message).toContain('acme/nope#1');
   });
 });
 

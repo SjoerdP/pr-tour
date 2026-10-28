@@ -1,9 +1,27 @@
 import type { Inbox, PrSummary } from '../shared/api.js';
-import { runOk, type Runner } from './exec.js';
+import { CommandError, runOk, type Runner } from './exec.js';
 
 export type { Inbox, PrSummary } from '../shared/api.js';
 
 const REPO = /^([\w.-]+)\/([\w.-]+)$/;
+/** What `gh api graphql` prints when the repo or PR does not exist (or the user cannot see it). */
+const NOT_RESOLVED = /Could not resolve to a (Repository|PullRequest)/;
+
+/** A repo argument that is not `owner/name`. */
+export class InvalidRepoError extends Error {
+  constructor(repo: string) {
+    super(`repo must be owner/name, got "${repo}"`);
+    this.name = 'InvalidRepoError';
+  }
+}
+
+/** The PR (or its repo) does not exist, or the user's gh login cannot see it. */
+export class PrNotFoundError extends Error {
+  constructor(repo: string, number: number) {
+    super(`pull request ${repo}#${number} not found`);
+    this.name = 'PrNotFoundError';
+  }
+}
 
 const PR_FIELDS = `
   number title url additions deletions isDraft updatedAt baseRefOid headRefOid
@@ -85,19 +103,27 @@ export class GitHub {
   /** One PR of `repo` (`owner/name`). */
   async pr(repo: string, number: number): Promise<PrSummary> {
     const match = REPO.exec(repo);
-    if (!match) throw new Error(`repo must be owner/name, got "${repo}"`);
+    if (!match) throw new InvalidRepoError(repo);
     const [, owner = '', name = ''] = match;
     // `-f` passes strings as-is; `-F` would read a value starting with "@" as a file.
-    const data = await this.graphql<PrData>(PR_QUERY, [
-      '-f',
-      `owner=${owner}`,
-      '-f',
-      `name=${name}`,
-      '-F',
-      `number=${number}`,
-    ]);
+    let data: PrData;
+    try {
+      data = await this.graphql<PrData>(PR_QUERY, [
+        '-f',
+        `owner=${owner}`,
+        '-f',
+        `name=${name}`,
+        '-F',
+        `number=${number}`,
+      ]);
+    } catch (err) {
+      if (err instanceof CommandError && NOT_RESOLVED.test(err.result.stderr)) {
+        throw new PrNotFoundError(repo, number);
+      }
+      throw err;
+    }
     const node = data.repository?.pullRequest;
-    if (!node) throw new Error(`pull request ${repo}#${number} not found`);
+    if (!node) throw new PrNotFoundError(repo, number);
     return toSummary(node);
   }
 
