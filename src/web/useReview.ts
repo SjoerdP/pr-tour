@@ -113,6 +113,10 @@ export function useReview(repo: string, pr: number): ReviewState {
   const reload = fetchReview;
 
   function patch(change: (data: ReviewResponse) => ReviewResponse) {
+    // `key` and `stored` are from the render that started the change. After a switch to
+    // another PR the change is for a PR no longer shown: touching `loadId` would cancel the
+    // new PR's load, and switching back loads afresh anyway.
+    if (currentKey.current !== key) return;
     // A load that started before this change would undo it: drop it. Only while ready, so
     // the first load is never dropped (there is nothing to change before it).
     if (stored?.key === key && stored.state === 'ready') loadId.current++;

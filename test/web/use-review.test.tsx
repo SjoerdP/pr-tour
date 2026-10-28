@@ -401,4 +401,38 @@ describe('useReview', () => {
     expect(result.current.error).toBe('GitHub is down');
     expect(result.current.threads).toHaveLength(2);
   });
+
+  it('a change that ends after a PR switch leaves the new PR alone', async () => {
+    const OTHER = '/api/pr/acme/other/7';
+    let finishAdd: (r: Reply) => void = () => {};
+    let finishOther: (r: Reply) => void = () => {};
+    serve({
+      [`GET ${BASE}/review`]: () => ({ status: 200, body: review() }),
+      [`POST ${BASE}/drafts`]: () => new Promise<Reply>((resolve) => (finishAdd = resolve)),
+      [`GET ${OTHER}/review`]: () => new Promise<Reply>((resolve) => (finishOther = resolve)),
+    });
+    const hook = renderHook(({ repo, pr }) => useReview(repo, pr), {
+      initialProps: { repo: 'acme/loans', pr: 42 },
+    });
+    await waitFor(() => expect(hook.result.current.state).toBe('ready'));
+
+    let adding: Promise<void> = Promise.resolve();
+    act(() => {
+      adding = hook.result.current.add({ kind: 'reply', threadId: 't1', body: 'x' });
+    });
+    hook.rerender({ repo: 'acme/other', pr: 7 });
+
+    await act(async () => {
+      finishAdd({ status: 201, body: comment(9, 'a.ts') });
+      await adding;
+    });
+    await act(async () => {
+      finishOther({ status: 200, body: review({ threads: [thread('o1', 'o.ts')], drafts: [] }) });
+      await settled();
+    });
+
+    await waitFor(() => expect(hook.result.current.state).toBe('ready'));
+    expect(hook.result.current.threads.map((t) => t.id)).toEqual(['o1']);
+    expect(hook.result.current.drafts).toEqual([]);
+  });
 });
