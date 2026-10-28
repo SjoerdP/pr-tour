@@ -94,6 +94,15 @@ describe('tour layout CSS', () => {
     expect(rule('.step-facts li + li::before')['padding-right']).toBeUndefined();
   });
 
+  it('the comment button is a visible accent +, and the row it would comment on is outlined', () => {
+    const plus = rule('.code-no-button::before');
+    expect(plus.content).toBe("'+'");
+    expect(plus.background).toBe('var(--accent)');
+    expect(plus.color).toBe('var(--accent-fg)');
+    expect(css).toMatch(/\.code-row:hover \.code-no-button::before/);
+    expect(rule('.code-row:has(.code-no-button:hover)')['box-shadow']).toContain('var(--accent)');
+  });
+
   it('colors and outline font sizes come from tokens', () => {
     const body = css.slice(css.indexOf('*,'));
     expect(body).not.toMatch(/font-size:\s*\d+px/);

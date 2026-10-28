@@ -1017,7 +1017,8 @@ p.why {
 .code-no {
   /* As wide as the longest line number (set on .code), no wider. */
   flex: none;
-  width: calc(var(--no-width, 4ch) + var(--space-2) + var(--space-1));
+  /* Room at the left for the comment button (+) without covering the number. */
+  width: calc(var(--no-width, 4ch) + var(--space-2) + var(--space-1) + 18px);
   padding: 0 var(--space-2) 0 var(--space-1);
   color: var(--fg-faint);
   text-align: right;
@@ -1095,7 +1096,8 @@ p.why {
   white-space: pre;
 }
 
-/* A line number that picks its line for a comment; hover shows a + at its left edge. */
+/* A line number that picks its line for a comment. Hovering the row shows a blue + button
+   at the number's left edge, and outlines the row, as on GitHub. */
 .code-no-button {
   position: relative;
   display: block;
@@ -1106,22 +1108,50 @@ p.why {
   font: inherit;
   line-height: inherit;
   text-align: right;
+  cursor: pointer;
 }
 
-.code-no-button:hover:not(:disabled) {
-  background: var(--accent-soft);
-  color: var(--accent);
+.code-no-button::before {
+  content: '+';
+  position: absolute;
+  top: 50%;
+  left: 2px;
+  display: none;
+  width: 18px;
+  height: 18px;
+  border-radius: var(--radius-small);
+  background: var(--accent);
+  color: var(--accent-fg);
+  font-family: var(--font-sans);
+  font-size: var(--font-size);
+  font-weight: 700;
+  line-height: 18px;
+  text-align: center;
+  transform: translateY(-50%);
+}
+
+.code-row:hover .code-no-button::before,
+.code-no-button:focus-visible::before {
+  display: block;
 }
 
 .code-no-button:hover::before {
-  content: '+';
-  position: absolute;
-  left: 2px;
-  font-weight: 700;
+  transform: translateY(-50%) scale(1.15);
 }
 
+.code-no-button:hover {
+  color: var(--accent);
+}
+
+/* The row under the pointer, when it can take a comment. */
+.code-row:has(.code-no-button:hover) {
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+
+/* Lines picked for a comment: tinted, with an accent edge. */
 .code-selected {
   background: var(--accent-soft);
+  box-shadow: inset 3px 0 0 var(--accent);
 }
 
 /* While a range is dragged over the line numbers, the code's text is not selected. */
