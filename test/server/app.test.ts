@@ -14,6 +14,7 @@ import {
 } from '../../src/server/github.js';
 import { Jobs } from '../../src/server/jobs.js';
 import type { RepoManager } from '../../src/server/repo.js';
+import type { ReviewGitHub } from '../../src/server/review-github.js';
 import { Store, StoreError } from '../../src/server/store.js';
 import type { InboxResponse, Job, PrResponse } from '../../src/shared/api.js';
 import type { FileDiff } from '../../src/shared/diff.js';
@@ -95,6 +96,11 @@ type Fakes = {
   github: { inbox: Mock<GitHub['inbox']>; pr: Mock<GitHub['pr']> };
   repos: { fileAt: Mock<RepoManager['fileAt']>; diffText: Mock<RepoManager['diffText']> };
   builder: { build: Mock<TourBuilder['build']> };
+  review: {
+    reviewState: Mock<ReviewGitHub['reviewState']>;
+    submitReview: Mock<ReviewGitHub['submitReview']>;
+    setResolved: Mock<ReviewGitHub['setResolved']>;
+  };
   store: Store;
   jobs: Jobs;
 };
@@ -117,6 +123,11 @@ beforeEach(() => {
       diffText: vi.fn<RepoManager['diffText']>().mockResolvedValue(DIFF),
     },
     builder: { build: vi.fn<TourBuilder['build']>().mockResolvedValue(greetTour()) },
+    review: {
+      reviewState: vi.fn<ReviewGitHub['reviewState']>(),
+      submitReview: vi.fn<ReviewGitHub['submitReview']>(),
+      setResolved: vi.fn<ReviewGitHub['setResolved']>(),
+    },
     store: new Store(':memory:'),
     jobs: new Jobs(),
   };
@@ -235,6 +246,45 @@ describe('guard', () => {
     });
     expect(res.status).toBe(403);
     expect(fakes.builder.build).not.toHaveBeenCalled();
+  });
+
+  /** POST a seen mark of the stored tour with the web app's headers plus `extra`. */
+  function seenPost(extra: Record<string, string>) {
+    fakes.store.saveTour(greetTour());
+    return app.request('/api/pr/acme/greet/7/seen', {
+      method: 'POST',
+      headers: { Host: HOST, 'X-PR-Tour': '1', 'Content-Type': 'application/json', ...extra },
+      body: JSON.stringify({ homeId: 'o1.1', contentHash: 'd'.repeat(40) }),
+    });
+  }
+
+  it.each(['https://evil.example', `http://127.0.0.1:${PORT}`, `https://${HOST}`, 'null'])(
+    'cross-origin POST (Origin %s) is rejected',
+    async (origin) => {
+      const res = await seenPost({ Origin: origin });
+      expect(res.status).toBe(403);
+      expect(fakes.store.seen('acme/greet', 7)).toEqual({});
+    },
+  );
+
+  it.each(['cross-site', 'same-site'])('Sec-Fetch-Site %s POST is rejected', async (site) => {
+    const res = await seenPost({ 'Sec-Fetch-Site': site });
+    expect(res.status).toBe(403);
+  });
+
+  it.each(['same-origin', 'none'])(
+    'same-origin POST with header is OK (Sec-Fetch-Site %s)',
+    async (site) => {
+      const res = await seenPost({ Origin: `http://${HOST}`, 'Sec-Fetch-Site': site });
+      expect(res.status).toBe(204);
+    },
+  );
+
+  it('a GET with a foreign Origin is still served', async () => {
+    const res = await app.request('/api/health', {
+      headers: { Host: HOST, Origin: 'https://evil.example', 'Sec-Fetch-Site': 'cross-site' },
+    });
+    expect(res.status).toBe(200);
   });
 
   it('POST with X-PR-Tour other than 1 is rejected', async () => {

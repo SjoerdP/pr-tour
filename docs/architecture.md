@@ -43,7 +43,7 @@ src/server/      Everything that runs under Node, flat, one module per concern.
   repo.ts        RepoManager: bare-clone cache, worktrees, diff text, file at sha (git)
   github.ts      GitHub: inbox + PR meta (gh api graphql)
   graphql.ts     ghGraphql (gh api graphql), PR query helper, InvalidRepoError/PrNotFoundError/GraphqlError
-  review-github.ts ReviewGitHub: review threads, CI status, authorship (read-only)
+  review-github.ts ReviewGitHub: review threads, CI status, authorship; submit, resolve
   diff.ts        parseDiff, changedLines (parse-diff)
   check.ts       checkTour: every changed line has exactly one home
   prompt.ts      tourPrompt text
@@ -51,6 +51,8 @@ src/server/      Everything that runs under Node, flat, one module per concern.
   store.ts       Store: SQLite (tours, seen marks, review drafts)
   jobs.ts        Jobs: in-memory build jobs
   app.ts         createApp: Hono routes, localhost guard, static web app
+  http.ts        HttpError, prParams, parse, jsonBody: request helpers for the routes
+  review-routes.ts registerReviewRoutes: drafts, review state, submit, resolve
 src/cli.ts       pr-tour binary: parseArgs + wiring of real dependencies
 src/web/         React app. Components PascalCase.tsx, hooks useX.ts, api.ts client.
 test/            Vitest tests mirroring src/ (test/server, test/shared, test/web, test/cli.test.ts)

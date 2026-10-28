@@ -14,6 +14,7 @@ import { GitHub, InvalidRepoError, PrNotFoundError } from './server/github.js';
 import { Jobs } from './server/jobs.js';
 import { tourRules } from './server/prompt.js';
 import { RepoManager } from './server/repo.js';
+import { ReviewGitHub } from './server/review-github.js';
 import { Store } from './server/store.js';
 import { tourBodyJsonSchema, type Tour } from './shared/tour.js';
 
@@ -258,7 +259,8 @@ function wire(home: string) {
   const github = new GitHub(realRunner);
   const store = new Store(join(home, 'pr-tour.db'));
   const builder = new TourBuilder({ run: realRunner, repos, github, store, home });
-  return { repos, github, store, builder, jobs: new Jobs() };
+  const review = new ReviewGitHub(realRunner);
+  return { repos, github, store, builder, review, jobs: new Jobs() };
 }
 
 /** Print `url`, and open it in the browser unless `PR_TOUR_NO_OPEN` says not to. */

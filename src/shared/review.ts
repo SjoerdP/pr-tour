@@ -134,12 +134,20 @@ export function commentTarget(
     return true;
   });
   if (inOneHunk) return { placement: 'line', side, startLine, endLine };
+  return { placement: 'file', quote: quoteLines(startLine, endLine, lineText) };
+}
 
+/** Lines `startLine..endLine`, one per line; past the first 10 the rest is `…`. */
+export function quoteLines(
+  startLine: number,
+  endLine: number,
+  lineText: (n: number) => string,
+): string {
   const quoted: string[] = [];
   const last = Math.min(endLine, startLine + MAX_QUOTE_LINES - 1);
   for (let n = startLine; n <= last; n++) quoted.push(lineText(n));
   if (endLine > last) quoted.push('…');
-  return { placement: 'file', quote: quoted.join('\n') };
+  return quoted.join('\n');
 }
 
 /** The body of a file-level comment: line reference, quoted code, then the reviewer's text. */

@@ -3,6 +3,11 @@ import type { DiffLine, FileDiff, Hunk } from '../shared/diff.js';
 
 export type { DiffLine, FileDiff, Hunk } from '../shared/diff.js';
 
+/** The file of `files` at `path`, by its new path or else its old one (a rename). */
+export function findFileDiff(files: FileDiff[], path: string): FileDiff | null {
+  return files.find((f) => f.path === path) ?? files.find((f) => f.oldPath === path) ?? null;
+}
+
 export type ChangedLine = { file: string; side: 'new' | 'old'; line: number };
 
 const DEV_NULL = '/dev/null';
