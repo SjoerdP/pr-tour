@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { FileDiff } from '../../src/shared/diff.js';
 import type { Tour } from '../../src/shared/tour.js';
@@ -11,9 +11,15 @@ vi.mock('../../src/web/api.js', async (importOriginal) => ({
   getDiff: vi.fn(),
 }));
 
+/** Paths passed to highlight(), in order. */
+const highlighted = vi.hoisted((): string[] => []);
+
 // Shiki is not what these tests are about: one plain token per line.
 vi.mock('../../src/web/highlight.js', () => ({
-  highlight: (text: string) => Promise.resolve(text.split('\n').map((line) => [{ content: line }])),
+  highlight: (text: string, path: string) => {
+    highlighted.push(path);
+    return Promise.resolve(text.split('\n').map((line) => [{ content: line }]));
+  },
 }));
 
 const getFile = vi.mocked(api.getFile);
@@ -115,6 +121,7 @@ function renderView(props: Partial<Props> = {}) {
 
 beforeEach(() => {
   vi.resetAllMocks();
+  highlighted.length = 0;
 });
 
 describe('CodeView', () => {
@@ -296,6 +303,24 @@ describe('CodeView', () => {
     expect(await screen.findByText('line 12')).toBeTruthy();
     expect(screen.queryByText('line 30')).toBeNull();
     expect(screen.getByText('no changes in this file')).toBeTruthy();
+  });
+
+  it('highlights the code, unless asked to show it plain', async () => {
+    const diff = modified('src/repay.ts', [replaceHunk(5, 'old', 'new')]);
+    serve(diff, {
+      [`${BASE}:src/repay.ts`]: lines(6, { 5: 'old' }),
+      [`${HEAD}:src/repay.ts`]: lines(6, { 5: 'new' }),
+    });
+
+    renderView();
+    await screen.findByText('new');
+    await vi.waitFor(() => expect(highlighted).toContain('src/repay.ts'));
+    cleanup();
+    highlighted.length = 0;
+
+    renderView({ plain: true });
+    await screen.findByText('new');
+    expect(highlighted).toEqual([]);
   });
 
   it('binary file shows a placeholder', async () => {

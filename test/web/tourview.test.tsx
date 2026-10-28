@@ -18,17 +18,19 @@ vi.mock('../../src/web/CodeView.js', () => ({
     file,
     focus,
     homeId,
+    plain,
     onJump,
     onOpenHome,
   }: {
     file: string;
     focus: { start: number } | null;
     homeId: string;
+    plain?: boolean;
     onJump: (file: string, line: number) => void;
     onOpenHome: (homeId: string) => void;
   }) => (
     <div>
-      <div data-testid="code-view">{`${homeId} ${file}`}</div>
+      <div data-testid="code-view" data-plain={plain ? 'yes' : 'no'}>{`${homeId} ${file}`}</div>
       <div data-testid="code-focus">{focus?.start}</div>
       <button type="button" onClick={() => onJump('src/fees.ts', 12)}>
         follow chargeFee
@@ -432,6 +434,19 @@ describe('TourView', () => {
     expect(toggle.getAttribute('aria-expanded')).toBe('true');
     expect(within(outline()).getByText('Rename helper')).toBeTruthy();
     expect(within(outline()).queryByText('Lockfile')).toBeNull();
+  });
+
+  it('generated code is shown without highlighting, other code with it', async () => {
+    const tour = withGroups(makeTour(), group('generated', 'g1', 'Lockfile'));
+    getPr.mockResolvedValue(response({ tour }));
+    render(<TourView repo="acme/loans" pr={42} />);
+
+    fireEvent.click(await screen.findByRole('button', { name: /Repay tests/ }));
+    expect(screen.getByTestId('code-view').dataset.plain).toBe('no');
+
+    fireEvent.keyDown(window, { key: 'j' });
+    expect(screen.getByTestId('code-view').textContent).toBe('g1 src/g1.ts');
+    expect(screen.getByTestId('code-view').dataset.plain).toBe('yes');
   });
 
   it('collapsing a group hides it even when the current item is inside', async () => {

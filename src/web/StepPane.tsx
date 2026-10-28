@@ -113,6 +113,7 @@ export function StepPane({ repo, pr, tour, home, jump, onJump, onBack, onOpenHom
         file={target.file}
         focus={target.focus}
         homeId={home.id}
+        plain={!jump && home.kind === 'other' && home.group.kind === 'generated'}
         onJump={onJump}
         onOpenHome={onOpenHome}
       />

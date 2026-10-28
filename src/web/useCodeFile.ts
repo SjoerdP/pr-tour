@@ -71,19 +71,23 @@ function prefersDark(): boolean {
   return window.matchMedia?.('(prefers-color-scheme: dark)').matches ?? false;
 }
 
-/** Loads `file` at the tour's base and head, then highlights both sides in the background. */
+/**
+ * Loads `file` at the tour's base and head, then highlights both sides in the background
+ * (unless `plain`).
+ */
 export function useCodeFile(
   repo: string,
   pr: number,
   tour: Tour,
   file: string,
+  plain = false,
 ): { load: CodeFileLoad; tokens: Tokens } {
   const [state, setState] = useState<{ key: string; load: CodeFileLoad; tokens: Tokens }>({
     key: '',
     load: { status: 'loading' },
     tokens: NO_TOKENS,
   });
-  const key = `${repo}#${pr}@${tour.baseSha}..${tour.headSha}:${file}`;
+  const key = `${repo}#${pr}@${tour.baseSha}..${tour.headSha}:${file}${plain ? ':plain' : ''}`;
 
   useEffect(() => {
     let cancelled = false;
@@ -94,7 +98,7 @@ export function useCodeFile(
     loadFile(repo, pr, tour, file).then(
       (load) => {
         update(load);
-        if (load.status !== 'ready') return;
+        if (load.status !== 'ready' || plain) return;
         const { path, oldPath, newText, oldText } = load.file;
         const theme = prefersDark() ? 'dark' : 'light';
         const head = newText === null ? null : highlight(newText, path, theme);

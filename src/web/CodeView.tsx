@@ -21,6 +21,8 @@ export type CodeViewProps = {
   file: string;
   focus: Focus | null;
   homeId: string;
+  /** Show the code without syntax colours (generated code: skimmed, and often huge). */
+  plain?: boolean;
   /** Follow a traced call: show `file` around `line`. */
   onJump: (file: string, line: number) => void;
   /** Open another home of the tour (from a "belongs to" label). */
@@ -35,10 +37,11 @@ export function CodeView({
   file,
   focus,
   homeId,
+  plain = false,
   onJump,
   onOpenHome,
 }: CodeViewProps) {
-  const { load, tokens } = useCodeFile(repo, pr, tour, file);
+  const { load, tokens } = useCodeFile(repo, pr, tour, file, plain);
 
   let body: ReactNode;
   if (load.status === 'loading') body = <p className="muted">Loading {file}…</p>;

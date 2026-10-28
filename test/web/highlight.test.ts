@@ -23,4 +23,11 @@ describe('highlight', () => {
       [{ content: '' }],
     ]);
   });
+
+  it('a file over 100,000 characters is shown plain', async () => {
+    const text = 'const a = 1;\n'.repeat(8000);
+    const lines = await highlight(text, 'src/big.ts', 'light');
+    expect(lines).toHaveLength(8001);
+    expect(lines.every((l) => l.every((t) => t.color === undefined))).toBe(true);
+  });
 });

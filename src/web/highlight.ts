@@ -10,7 +10,7 @@ export type HighlightedLine = Token[];
 const THEMES = { light: 'github-light', dark: 'github-dark' } as const;
 
 /** Above this size highlighting costs more than it is worth; the file is shown plain. */
-const MAX_CHARS = 500_000;
+const MAX_CHARS = 100_000;
 
 /** File names without a useful extension that still have a grammar. */
 const NAMED: Record<string, string> = {
