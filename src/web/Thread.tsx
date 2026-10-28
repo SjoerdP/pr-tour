@@ -18,6 +18,8 @@ type Props = {
   onEditDraft: (id: number, body: string) => Promise<unknown> | void;
   onDeleteDraft: (id: number) => Promise<unknown> | void;
   onResolve: (resolved: boolean) => Promise<unknown> | void;
+  /** A review is being sent: its reply drafts cannot be edited or deleted meanwhile. */
+  locked?: boolean;
   /** The time relative times count from; tests pass a fixed one. */
   now?: Date;
 };
@@ -33,6 +35,7 @@ export function Thread({
   onEditDraft,
   onDeleteDraft,
   onResolve,
+  locked = false,
   now,
 }: Props) {
   const [expanded, setExpanded] = useState(!thread.resolved);
@@ -96,6 +99,7 @@ export function Thread({
               key={draft.id}
               draft={draft}
               path={thread.path}
+              locked={locked}
               onEdit={(body) => onEditDraft(draft.id, body)}
               onDelete={() => onDeleteDraft(draft.id)}
             />
@@ -161,18 +165,21 @@ export const OLDER_DRAFT_NOTICE =
 
 /**
  * A draft (a reply or a new comment) not yet sent: its text, with Edit and Delete. `older`
- * marks a comment made on an older version of the PR.
+ * marks a comment made on an older version of the PR. `locked` (a review is being sent)
+ * turns Edit and Delete off: a deleted draft would still be sent, and an edit lost.
  */
 export function PendingDraft({
   draft,
   path,
   older = false,
+  locked = false,
   onEdit,
   onDelete,
 }: {
   draft: Draft;
   path: string;
   older?: boolean;
+  locked?: boolean;
   onEdit: (body: string) => Promise<unknown> | void;
   onDelete: () => Promise<unknown> | void;
 }) {
@@ -226,10 +233,10 @@ export function PendingDraft({
         <>
           <CommentBody body={draft.body} />
           <div className="thread-actions">
-            <button type="button" onClick={() => setEditing(true)}>
+            <button type="button" disabled={locked} onClick={() => setEditing(true)}>
               Edit
             </button>
-            <button type="button" disabled={busy} onClick={() => void remove()}>
+            <button type="button" disabled={busy || locked} onClick={() => void remove()}>
               Delete
             </button>
           </div>

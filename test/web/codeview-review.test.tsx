@@ -410,6 +410,22 @@ describe('CodeView: threads and drafts in place', () => {
     await vi.waitFor(() => expect(review.remove).toHaveBeenCalledWith(7));
   });
 
+  it('drafts and reply drafts cannot be edited or deleted while the review is sent', async () => {
+    serve();
+    renderView({
+      ...fakeReview({
+        threads: [thread()],
+        drafts: [draft(), { id: 8, kind: 'reply', threadId: 'T1', body: 'Re', createdAt: 'x' }],
+      }),
+      submitting: true,
+    });
+    await screen.findByText('Rename this');
+
+    const buttons = screen.getAllByRole<HTMLButtonElement>('button', { name: /^(Edit|Delete)$/ });
+    expect(buttons).toHaveLength(4);
+    for (const b of buttons) expect(b.disabled).toBe(true);
+  });
+
   it('a draft made on an older head goes to the top block, not to a line', async () => {
     serve();
     renderView(fakeReview({ drafts: [draft({ headSha: 'c'.repeat(40) })] }));

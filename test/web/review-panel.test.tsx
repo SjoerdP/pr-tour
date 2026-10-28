@@ -399,6 +399,12 @@ describe('ReviewPanel: submit', () => {
     expect(screen.getByRole<HTMLTextAreaElement>('textbox', { name: 'Summary' }).value).toBe('');
   });
 
+  it('a draft cannot be deleted while sending', () => {
+    renderPanel({ ...fakeReview({ drafts: [comment()] }), submitting: true });
+    const del = within(panel()).getByRole('button', { name: /^Delete draft on/ });
+    expect((del as HTMLButtonElement).disabled).toBe(true);
+  });
+
   it('Submit is disabled while sending', () => {
     renderPanel({ ...fakeReview({ drafts: [comment()] }), submitting: true });
     expect((submitButton() as HTMLButtonElement).disabled).toBe(true);

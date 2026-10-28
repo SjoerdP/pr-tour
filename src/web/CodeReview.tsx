@@ -24,6 +24,7 @@ function Items({ path, headSha, threads, drafts, review }: ItemsProps) {
           thread={thread}
           drafts={review.drafts}
           viewerIsAuthor={review.viewerIsAuthor}
+          locked={review.submitting}
           onReply={(body) => review.add({ kind: 'reply', threadId: thread.id, body })}
           onEditDraft={(id, body) => review.update(id, body)}
           onDeleteDraft={(id) => review.remove(id)}
@@ -36,6 +37,7 @@ function Items({ path, headSha, threads, drafts, review }: ItemsProps) {
           draft={draft}
           path={path}
           older={isOlderDraft(draft, headSha)}
+          locked={review.submitting}
           onEdit={(body) => review.update(draft.id, body)}
           onDelete={() => review.remove(draft.id)}
         />

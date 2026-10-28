@@ -204,6 +204,8 @@ export function ReviewPanel({
                     type="button"
                     className="link-button review-delete"
                     aria-label={`Delete draft on ${text}`}
+                    // A draft deleted while the review is sent would still be sent.
+                    disabled={review.submitting}
                     onClick={() => void remove(draft.id)}
                   >
                     Delete
