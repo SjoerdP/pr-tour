@@ -1,4 +1,5 @@
 import { Inbox } from './Inbox.js';
+import { TourView } from './TourView.js';
 
 /** Where the browser is, from `location.pathname`. Links reload the page; there is no client router. */
 export type Route =
@@ -20,17 +21,7 @@ export function App() {
     case 'inbox':
       return <Inbox />;
     case 'tour':
-      // The tour view comes in Task 12 (TourView).
-      return (
-        <main className="page">
-          <p>
-            <a href="/">← Inbox</a>
-          </p>
-          <h1 className="page-title">
-            {route.repo}#{route.pr}
-          </h1>
-        </main>
-      );
+      return <TourView repo={route.repo} pr={route.pr} />;
     case 'not-found':
       return (
         <main className="page">

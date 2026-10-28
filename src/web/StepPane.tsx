@@ -1,0 +1,204 @@
+import type { Flow, Foundation, OtherGroup, OtherItem, Range, Step, Tour } from '../shared/tour.js';
+import { CodeView } from './CodeView.js';
+
+/** One place a changed line can live: a foundation, a flow step or an other-changes item. */
+export type Home =
+  | { kind: 'foundation'; id: string; foundation: Foundation }
+  | { kind: 'step'; id: string; step: Step; flow: Flow }
+  | { kind: 'other'; id: string; item: OtherItem; group: OtherGroup };
+
+/** Every home of the tour by id. */
+export function homesById(tour: Tour): Map<string, Home> {
+  const map = new Map<string, Home>();
+  for (const foundation of tour.foundations) {
+    map.set(foundation.id, { kind: 'foundation', id: foundation.id, foundation });
+  }
+  for (const flow of tour.flows) {
+    for (const step of flow.steps) map.set(step.id, { kind: 'step', id: step.id, step, flow });
+  }
+  for (const group of tour.other) {
+    for (const item of group.items) map.set(item.id, { kind: 'other', id: item.id, item, group });
+  }
+  return map;
+}
+
+type Focus = { start: number; end: number } | null;
+
+/** The first head-side range of `file` in `homes`: what the code view opens on. */
+function firstNewRange(homes: Range[], file: string): Focus {
+  for (const r of homes) {
+    if ('side' in r && r.side === 'new' && r.file === file) return { start: r.start, end: r.end };
+  }
+  return null;
+}
+
+function codeTarget(home: Home): { file: string; focus: Focus } {
+  switch (home.kind) {
+    case 'step':
+      return {
+        file: home.step.file,
+        focus: { start: home.step.startLine, end: home.step.endLine },
+      };
+    case 'foundation':
+      return {
+        file: home.foundation.file,
+        focus: firstNewRange(home.foundation.homes, home.foundation.file),
+      };
+    case 'other':
+      return { file: home.item.file, focus: firstNewRange(home.item.homes, home.item.file) };
+  }
+}
+
+function homeTitle(home: Home): string {
+  switch (home.kind) {
+    case 'foundation':
+      return home.foundation.title;
+    case 'step':
+      return home.step.title;
+    case 'other':
+      return home.item.title;
+  }
+}
+
+function contextLine(home: Home): string {
+  switch (home.kind) {
+    case 'foundation':
+      return `Foundation · ${home.foundation.kind}`;
+    case 'step':
+      return `${home.flow.title} · ${home.flow.entry.label}`;
+    case 'other':
+      return `Other changes · ${home.group.title}`;
+  }
+}
+
+type Props = {
+  repo: string;
+  pr: number;
+  tour: Tour;
+  home: Home;
+  /** A traced call the user followed: shown instead of the home's own code. */
+  jump: { file: string; line: number } | null;
+  onJump: (file: string, line: number) => void;
+  onBack: () => void;
+};
+
+/** The current home: its notes, then its code. */
+export function StepPane({ repo, pr, tour, home, jump, onJump, onBack }: Props) {
+  const why =
+    home.kind === 'foundation'
+      ? home.foundation.why
+      : home.kind === 'step'
+        ? home.step.why
+        : home.item.why;
+  const risk =
+    home.kind === 'foundation'
+      ? home.foundation.risk
+      : home.kind === 'step'
+        ? home.step.risk
+        : null;
+  const target = jump
+    ? { file: jump.file, focus: { start: jump.line, end: jump.line } }
+    : codeTarget(home);
+
+  return (
+    <article className="step-pane" aria-labelledby={`step-title-${home.id}`}>
+      <p className="muted step-context">{contextLine(home)}</p>
+      <h2 className="step-title" id={`step-title-${home.id}`}>
+        {homeTitle(home)}
+        {risk === 'read-closely' && <span className="tag tag-warn">read closely</span>}
+      </h2>
+
+      {why !== undefined && (
+        <section className="note">
+          <h3>Why · {tour.source === 'author' ? 'by the author' : 'inferred by Claude'}</h3>
+          <p>{why}</p>
+        </section>
+      )}
+      {home.kind === 'other' && <p className="muted">{home.group.summary}</p>}
+
+      {home.kind === 'step' && <StepDetails step={home.step} />}
+      {home.kind === 'foundation' && <FoundationDetails foundation={home.foundation} />}
+
+      {jump && (
+        <p className="jump-bar">
+          Showing <code>{jump.file}</code> line {jump.line}.{' '}
+          <button type="button" className="link-button" onClick={onBack}>
+            Back to this step
+          </button>
+        </p>
+      )}
+      <CodeView
+        repo={repo}
+        pr={pr}
+        tour={tour}
+        file={target.file}
+        focus={target.focus}
+        homeId={home.id}
+        onJump={onJump}
+      />
+    </article>
+  );
+}
+
+function StepDetails({ step }: { step: Step }) {
+  return (
+    <>
+      {step.riskReason && (
+        <section className="note">
+          <h3>Risk</h3>
+          <p>{step.riskReason}</p>
+        </section>
+      )}
+      {step.sideEffects.length > 0 && (
+        <section className="note">
+          <h3>Side effects</h3>
+          <ul>
+            {step.sideEffects.map((effect, i) => (
+              <li key={i}>
+                <span className="tag tag-effect">{effect.kind}</span> {effect.label}
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+      <section className="note">
+        <h3>Tests</h3>
+        {step.tests.length > 0 ? (
+          <ul>
+            {step.tests.map((test, i) => (
+              <li key={i}>
+                <code>{test.file}</code> — {test.name}
+              </li>
+            ))}
+          </ul>
+        ) : step.changed ? (
+          <p className="warn">no tests cover this step</p>
+        ) : (
+          <p className="muted">None listed.</p>
+        )}
+      </section>
+    </>
+  );
+}
+
+function FoundationDetails({ foundation }: { foundation: Foundation }) {
+  return (
+    <>
+      {foundation.schemaAfter !== undefined && (
+        <section className="note">
+          <h3>Schema after</h3>
+          <pre className="schema">{foundation.schemaAfter}</pre>
+        </section>
+      )}
+      {foundation.deployCompat && (
+        <section className="note">
+          <h3>Deploy compatibility</h3>
+          <p className={foundation.deployCompat.ok ? undefined : 'warn'}>
+            {foundation.deployCompat.ok ? 'Compatible: ' : 'Not compatible: '}
+            {foundation.deployCompat.note}
+          </p>
+        </section>
+      )}
+    </>
+  );
+}
