@@ -1,0 +1,15 @@
+diff --git a/src/app.ts b/src/app.ts
+index 1111111..2222222 100644
+--- a/src/app.ts
++++ b/src/app.ts
+@@ -4,3 +4,2 @@
+ four
+-five
+ six
+@@ -10,2 +9,6 @@
+ ten
++eleven
++twelve
++thirteen
++fourteen
+ last
