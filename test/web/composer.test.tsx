@@ -124,6 +124,19 @@ describe('Composer', () => {
     expect(onCancel).toHaveBeenCalledTimes(1);
   });
 
+  it('starts from earlier typed text, reports each change, and asks before dropping it', () => {
+    const onType = vi.fn();
+    const { textarea, onCancel } = renderComposer({ restore: () => 'Half a thought', onType });
+    expect(textarea.value).toBe('Half a thought');
+
+    fireEvent.keyDown(textarea, { key: 'Escape' });
+    expect(onCancel).not.toHaveBeenCalled();
+    expect(screen.getByRole('status').textContent).toContain('Discard this comment?');
+
+    type(textarea, 'Half a thought, done');
+    expect(onType).toHaveBeenCalledWith('Half a thought, done');
+  });
+
   it('the Cancel button shows Esc in its tooltip and asks first when there is text', () => {
     const { textarea, onCancel } = renderComposer();
     const cancel = screen.getByRole('button', { name: 'Cancel' });

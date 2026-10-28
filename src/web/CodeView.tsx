@@ -187,6 +187,21 @@ function FileCode({
     start: Math.min(selection.anchor, selection.line),
     end: Math.max(selection.anchor, selection.line),
   };
+  // The composer remounts when it moves to another row; its text lives here meanwhile. A
+  // ref, not state: typing must not re-render every row of the file.
+  const typed = useRef('');
+  function clearSelection() {
+    setSelection(null);
+    typed.current = '';
+  }
+  // The picked rows, where the composer sits, stay open (folding them would drop its text).
+  const pickedRows = useMemo((): Array<[number, number]> => {
+    if (!selection) return [];
+    const { side, anchor, line } = selection;
+    const a = rowOf(rows, side, Math.min(anchor, line));
+    const b = rowOf(rows, side, Math.max(anchor, line));
+    return a < 0 || b < 0 ? [] : [[a, b]];
+  }, [rows, selection]);
 
   function pick(side: DiffSide, line: number, extend: boolean) {
     setSelection((s) =>
@@ -204,9 +219,9 @@ function FileCode({
   });
   const segments: Segment[] = useMemo(() => {
     if (whole) return rows.length === 0 ? [] : [{ kind: 'rows', from: 0, to: rows.length - 1 }];
-    const keep = [...opened, ...reviewRows];
+    const keep = [...opened, ...reviewRows, ...pickedRows];
     return foldRows(rows, focusRange ? [focusRange, ...keep] : keep);
-  }, [rows, whole, focusRange, opened, reviewRows]);
+  }, [rows, whole, focusRange, opened, reviewRows, pickedRows]);
 
   // The row to bring into view after the next render: the focus on mount, then each change
   // moved to.
@@ -253,9 +268,13 @@ function FileCode({
             endLine: picked.end,
             body,
           });
-          setSelection(null);
+          clearSelection();
         }}
-        onCancel={() => setSelection(null)}
+        onCancel={clearSelection}
+        restore={() => typed.current}
+        onType={(body) => {
+          typed.current = body;
+        }}
       />
     );
   }
@@ -384,12 +403,17 @@ function PickedComposer({
   picked,
   onSubmit,
   onCancel,
+  restore,
+  onType,
 }: {
   diff: FileDiff;
   rows: Row[];
   picked: Picked;
   onSubmit: (body: string) => Promise<void>;
   onCancel: () => void;
+  /** The text typed before the composer last moved. */
+  restore: () => string;
+  onType: (body: string) => void;
 }) {
   const { side, start, end } = picked;
   const lineText = (n: number) => rows[rowOf(rows, side, n)]?.text ?? '';
@@ -401,6 +425,8 @@ function PickedComposer({
       path={diff.path}
       suggestFrom={suggestFrom}
       submitLabel="Add comment"
+      restore={restore}
+      onType={onType}
       onSubmit={onSubmit}
       onCancel={onCancel}
     />

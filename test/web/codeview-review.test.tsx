@@ -254,6 +254,59 @@ describe('CodeView: commenting on lines', () => {
     );
   });
 
+  it('shift+click on the other side starts a new selection', async () => {
+    serve();
+    renderView();
+    await screen.findByText('new five');
+
+    fireEvent.click(lineButton(6));
+    fireEvent.click(screen.getByRole('button', { name: 'Comment on old line 5' }), {
+      shiftKey: true,
+    });
+    const selected = [...document.querySelectorAll('.code-selected')].map(
+      (row) => row.querySelector('.code-text')!.textContent,
+    );
+    expect(selected).toEqual(['old five']);
+    expect(rowAbove(field()).textContent).toContain('old five');
+  });
+
+  it('typed text stays when shift+click moves the composer to a new last row', async () => {
+    serve();
+    renderView();
+    await screen.findByText('new five');
+
+    fireEvent.click(lineButton(5));
+    fireEvent.change(field(), { target: { value: 'Half a thought' } });
+    fireEvent.click(lineButton(7), { shiftKey: true });
+    expect(rowAbove(field()).textContent).toContain('line 7');
+    expect((field() as HTMLTextAreaElement).value).toBe('Half a thought');
+  });
+
+  it('typed text stays when the whole file folds back up', async () => {
+    serve();
+    renderView();
+    await screen.findByText('new five');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Whole file' }));
+    fireEvent.click(lineButton(20));
+    fireEvent.change(field(), { target: { value: 'About line 20' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Whole file' }));
+
+    // Line 20 is outside the changes, but the selection keeps it open.
+    expect(screen.getByText('line 20')).toBeTruthy();
+    expect((field() as HTMLTextAreaElement).value).toBe('About line 20');
+    expect(rowAbove(field()).textContent).toContain('line 20');
+  });
+
+  it('a file the PR does not change has no line buttons', async () => {
+    getDiff.mockRejectedValue(new api.ApiError(404, 'src/fees.ts is not changed in this tour'));
+    getFile.mockResolvedValue({ text: lines(10) });
+    renderView(fakeReview(), { file: 'src/fees.ts', focus: { start: 5, end: 5 } });
+
+    expect(await screen.findByText('line 5')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: /Comment on/ })).toBeNull();
+  });
+
   it('Cancel closes the composer and clears the selection', async () => {
     serve();
     renderView();

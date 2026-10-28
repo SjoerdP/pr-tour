@@ -10,6 +10,13 @@ type Props = {
   /** The selected new-side lines, for "Suggest change"; null when there is nothing to suggest. */
   suggestFrom: string[] | null;
   initial?: string;
+  /**
+   * Text typed earlier, kept by the parent while the composer moves (it remounts); read once
+   * on mount, else `initial`. Unlike `initial`, it is not saved text: Esc still asks first.
+   */
+  restore?: () => string;
+  /** Called with the text on each change, so the parent can keep it. */
+  onType?: (body: string) => void;
   submitLabel: string;
   /** May reject; the text then stays and a short error shows. */
   onSubmit: (body: string) => Promise<unknown> | void;
@@ -27,11 +34,13 @@ export function Composer({
   path,
   suggestFrom,
   initial = '',
+  restore,
+  onType,
   submitLabel,
   onSubmit,
   onCancel,
 }: Props) {
-  const [body, setBody] = useState(initial);
+  const [body, setBody] = useState(() => restore?.() || initial);
   const [confirming, setConfirming] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -75,6 +84,7 @@ export function Composer({
   function edit(next: string) {
     setBody(next);
     setConfirming(false);
+    onType?.(next);
   }
 
   function suggest() {
