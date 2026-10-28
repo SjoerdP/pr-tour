@@ -13,7 +13,7 @@ import {
 } from '../shared/tour.js';
 import { z } from 'zod';
 import { checkTour, contains } from './check.js';
-import { parseDiff, type ChangedLine, type FileDiff } from './diff.js';
+import { lineChanges, parseDiff, type FileDiff, type LineChange } from './diff.js';
 import type { Runner } from './exec.js';
 import type { GitHub, PrSummary } from './github.js';
 import { tourPrompt } from './prompt.js';
@@ -74,39 +74,21 @@ export function finishTour(body: TourBodyInput, meta: TourMeta, files: FileDiff[
   return { ...full, ...meta, check: { problems }, hashes: hashHomes(full, files) };
 }
 
-/** A changed line with the text its home is hashed by. */
-type HashLine = { changed: ChangedLine; file: FileDiff; text: string };
-
 /**
- * Every changed line in diff order. Added lines hash as `+text`, deleted lines as
+ * The text a changed line is hashed by. Added lines hash as `+text`, deleted lines as
  * `-text`, so adding a line and deleting the same line do not look alike. A file
  * without hunks (binary, pure rename, mode-only, empty) has no line text; it hashes
  * as a marker of its status and paths. Such a home keeps its hash when a binary's
  * content changes, because the diff model does not keep blob ids.
  */
-function hashLines(files: FileDiff[]): HashLine[] {
-  const out: HashLine[] = [];
-  for (const file of files) {
-    if (file.hunks.length === 0) {
-      const changed: ChangedLine = { file: file.path, side: 'new', line: 0 };
-      out.push({ changed, file, text: `${file.status} ${file.oldPath} -> ${file.path}` });
-      continue;
-    }
-    for (const l of file.hunks.flatMap((h) => h.lines)) {
-      if (l.kind === 'add' && l.newNo !== undefined) {
-        const changed: ChangedLine = { file: file.path, side: 'new', line: l.newNo };
-        out.push({ changed, file, text: `+${l.text}` });
-      } else if (l.kind === 'del' && l.oldNo !== undefined) {
-        const changed: ChangedLine = { file: file.oldPath, side: 'old', line: l.oldNo };
-        out.push({ changed, file, text: `-${l.text}` });
-      }
-    }
-  }
-  return out;
+function hashText(change: LineChange, file: FileDiff): string {
+  if (change.kind === 'file') return `${file.status} ${file.oldPath} -> ${file.path}`;
+  return `${change.kind === 'add' ? '+' : '-'}${change.text}`;
 }
 
 function hashHomes(body: TourBody, files: FileDiff[]): Record<string, string> {
-  const all = hashLines(files);
+  // The same lines and the same `contains` as the check pass, so hashes and check agree.
+  const all = files.flatMap((file) => lineChanges([file]).map((change) => ({ change, file })));
   const homesById = new Map<string, Range[]>();
   for (const owner of [
     ...body.foundations,
@@ -119,18 +101,26 @@ function hashHomes(body: TourBody, files: FileDiff[]): Record<string, string> {
   for (const id of homeIds(body)) {
     const ranges = homesById.get(id) ?? [];
     const texts = all
-      .filter((l) => ranges.some((r) => contains(r, l.changed, l.file)))
-      .map((l) => l.text);
+      .filter((l) => ranges.some((r) => contains(r, l.change, l.file)))
+      .map((l) => hashText(l.change, l.file));
     hashes[id] = contentHash(texts);
   }
   return hashes;
 }
 
 /**
- * Claude's answer may wrap the JSON in prose: take the first ```json fenced
- * block if there is one, else everything from the first `{` to the last `}`.
+ * Find the JSON in Claude's answer: the whole answer if it parses as JSON; else
+ * the first ```json fenced block; else everything from the first `{` to the last `}`.
+ * The whole answer goes first because a valid tour can itself contain a fence in a string.
  */
 function extractJson(text: string): string | null {
+  const trimmed = text.trim();
+  try {
+    JSON.parse(trimmed);
+    return trimmed;
+  } catch {
+    // Not plain JSON: look for it inside prose below.
+  }
   const fenced = /```json\s*\n([\s\S]*?)```/.exec(text);
   if (fenced?.[1] !== undefined) return fenced[1];
   const start = text.indexOf('{');

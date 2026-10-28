@@ -171,6 +171,49 @@ describe('finishTour', () => {
   });
 });
 
+describe('finishTour and the check pass agree', () => {
+  // renamed.diff: config.txt -> settings.txt, deletes old 5 and adds new 5.
+  const renamed = () => parseDiff(readFixture('renamed.diff'));
+  const renameBody = (homes: Range[]): TourBodyInput => ({
+    summary: 's',
+    foundations: [],
+    flows: [],
+    other: [
+      {
+        kind: 'refactor',
+        title: 'Rename',
+        summary: 's',
+        items: [{ file: 'settings.txt', title: 'Rename', homes }],
+      },
+    ],
+  });
+
+  it('a deleted line of a renamed file is homed and hashed by its old path', () => {
+    const body = renameBody([lines('config.txt', 'old', 5, 5), lines('settings.txt', 'new', 5, 5)]);
+
+    const tour = finishTour(body, meta, renamed());
+
+    expect(tour.check.problems).toEqual([]);
+    expect(tour.other).toHaveLength(1);
+    expect(tour.hashes['o1.1']).toBe(contentHash(['-line five', '+line 5']));
+  });
+
+  it('a line the check pass leaves unhomed is not in the hash either', () => {
+    const body = renameBody([
+      lines('settings.txt', 'old', 5, 5),
+      lines('settings.txt', 'new', 5, 5),
+    ]);
+
+    const tour = finishTour(body, meta, renamed());
+
+    expect(tour.other.at(-1)!.items.map((i) => i.homes)).toEqual([
+      [lines('config.txt', 'old', 5, 5)],
+    ]);
+    expect(tour.hashes['o1.1']).toBe(contentHash(['+line 5']));
+    expect(tour.hashes['u1']).toBe(contentHash(['-line five']));
+  });
+});
+
 describe('contentHash', () => {
   it('contentHash is the sha1 of the lines joined by newlines', () => {
     expect(contentHash(['a', 'b'])).toBe('fcd127ffa1016069006ad91f3f361248f9bdf272');
@@ -273,6 +316,7 @@ describe('TourBuilder.build', () => {
 
     const { args, opts } = calls[0]!;
     expect(args.join(' ')).toContain('--allowedTools Read Grep Glob');
+    expect(args.join(' ')).toContain('--tools Read,Grep,Glob');
     expect(args).toContain('--strict-mcp-config');
     expect(args).not.toContain('--dangerously-skip-permissions');
     expect(opts?.cwd).toBe(WORKTREE);
@@ -297,6 +341,16 @@ describe('TourBuilder.build', () => {
 
     expect(calls[1]!.opts?.input).toMatch(/summary/);
     expect(calls[1]!.opts?.input).toMatch(/expected string/i);
+  });
+
+  it('build reads an answer that is plain JSON as a whole, even with a fence inside', async () => {
+    const body = { ...FULL_GREET, summary: 'Example:\n```json\n{}\n```' };
+    const { tours, calls } = builder(answer(JSON.stringify(body)));
+
+    const tour = await tours.build('acme/greet', 7);
+
+    expect(calls).toHaveLength(1);
+    expect(tour.summary).toBe(body.summary);
   });
 
   it('build fails after two bad answers and stores nothing', async () => {

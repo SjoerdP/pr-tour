@@ -30,23 +30,34 @@ export function parseDiff(text: string): FileDiff[] {
 }
 
 /**
- * Every added line (new side) and deleted line (old side).
+ * A changed line with what changed. `kind` is `add` or `del` with the line's text,
+ * or `file` (text `''`) for a file with no hunks; see `changedLines`.
+ */
+export type LineChange = ChangedLine & { kind: 'add' | 'del' | 'file'; text: string };
+
+/**
+ * Every added line (new side) and deleted line (old side), in diff order.
  * A file with no hunks (binary, pure rename, mode-only change, empty added or deleted file)
  * counts as one whole-file line: `{ file: path, side: 'new', line: 0 }`, so it still needs a home.
  */
 export function changedLines(files: FileDiff[]): ChangedLine[] {
-  const out: ChangedLine[] = [];
+  return lineChanges(files).map(({ file, side, line }) => ({ file, side, line }));
+}
+
+/** `changedLines` with each line's kind and text. The one place that walks the hunks. */
+export function lineChanges(files: FileDiff[]): LineChange[] {
+  const out: LineChange[] = [];
   for (const file of files) {
     if (file.hunks.length === 0) {
-      out.push({ file: file.path, side: 'new', line: 0 });
+      out.push({ file: file.path, side: 'new', line: 0, kind: 'file', text: '' });
       continue;
     }
     for (const hunk of file.hunks) {
       for (const l of hunk.lines) {
         if (l.kind === 'add' && l.newNo !== undefined) {
-          out.push({ file: file.path, side: 'new', line: l.newNo });
+          out.push({ file: file.path, side: 'new', line: l.newNo, kind: 'add', text: l.text });
         } else if (l.kind === 'del' && l.oldNo !== undefined) {
-          out.push({ file: file.oldPath, side: 'old', line: l.oldNo });
+          out.push({ file: file.oldPath, side: 'old', line: l.oldNo, kind: 'del', text: l.text });
         }
       }
     }

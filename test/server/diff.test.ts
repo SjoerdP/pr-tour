@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { changedLines, parseDiff, type FileDiff } from '../../src/server/diff.js';
+import { changedLines, lineChanges, parseDiff, type FileDiff } from '../../src/server/diff.js';
 
 function fixture(name: string): FileDiff[] {
   return parseDiff(readFileSync(new URL(`../fixtures/${name}.diff`, import.meta.url), 'utf8'));
@@ -144,5 +144,16 @@ describe('parseDiff', () => {
 
   it('empty diff returns []', () => {
     expect(parseDiff('')).toEqual([]);
+  });
+});
+
+describe('lineChanges', () => {
+  it('lineChanges gives kind and text of each changed line, in diff order', () => {
+    const files = [...fixture('renamed'), ...fixture('binary')];
+    expect(lineChanges(files)).toEqual([
+      { file: 'config.txt', side: 'old', line: 5, kind: 'del', text: 'line five' },
+      { file: 'settings.txt', side: 'new', line: 5, kind: 'add', text: 'line 5' },
+      { file: 'logo.png', side: 'new', line: 0, kind: 'file', text: '' },
+    ]);
   });
 });
