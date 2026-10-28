@@ -90,3 +90,59 @@ export function previousFlowStart(homes: Home[], currentId: string): string | un
   return homes.slice(0, sectionStart).findLast((h) => isFlowStart(h) || h.kind === 'foundation')
     ?.id;
 }
+
+/** The file a home's code view opens. */
+export function homeFile(home: Home): string {
+  switch (home.kind) {
+    case 'foundation':
+      return home.foundation.file;
+    case 'step':
+      return home.step.file;
+    case 'other':
+      return home.item.file;
+  }
+}
+
+/**
+ * True when the home owns a line of `path` on `side` in `start..end`. A file-level place
+ * (`side` null) has no lines: only a whole-file range owns it.
+ */
+export function homeTouches(
+  home: Home,
+  path: string,
+  side: 'new' | 'old' | null,
+  start: number,
+  end: number,
+): boolean {
+  return homeRanges(home).some((range) => {
+    if (range.file !== path) return false;
+    if ('whole' in range) return true;
+    return side === range.side && start <= range.end && end >= range.start;
+  });
+}
+
+/** The first home (in display order) that owns the place, if any. */
+export function homeAt(
+  tour: Tour,
+  path: string,
+  side: 'new' | 'old' | null,
+  start: number,
+  end: number = start,
+): Home | undefined {
+  return homesInOrder(tour).find((home) => homeTouches(home, path, side, start, end));
+}
+
+function isReadClosely(home: Home): boolean {
+  if (home.kind === 'foundation') return home.foundation.risk === 'read-closely';
+  if (home.kind === 'step') return home.step.risk === 'read-closely';
+  return false;
+}
+
+/**
+ * The homes with changed lines the reader has not seen: read-closely ones first, then the
+ * rest, each in display order.
+ */
+export function unseenForReview(tour: Tour, isSeen: (homeId: string) => boolean): Home[] {
+  const unseen = homesInOrder(tour).filter((h) => homeRanges(h).length > 0 && !isSeen(h.id));
+  return [...unseen.filter(isReadClosely), ...unseen.filter((h) => !isReadClosely(h))];
+}

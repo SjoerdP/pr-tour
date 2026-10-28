@@ -139,15 +139,24 @@ function Comment({ comment, now }: { comment: ThreadComment; now: Date | undefin
   );
 }
 
-/** A draft (a reply or a new comment) not yet sent: its text, with Edit and Delete. */
+/** What an older-version draft says about how it will be sent. */
+export const OLDER_DRAFT_NOTICE =
+  'Made on an older version of this PR. It will be sent as a file-level comment that quotes the lines.';
+
+/**
+ * A draft (a reply or a new comment) not yet sent: its text, with Edit and Delete. `older`
+ * marks a comment made on an older version of the PR.
+ */
 export function PendingDraft({
   draft,
   path,
+  older = false,
   onEdit,
   onDelete,
 }: {
   draft: Draft;
   path: string;
+  older?: boolean;
   onEdit: (body: string) => Promise<unknown> | void;
   onDelete: () => Promise<unknown> | void;
 }) {
@@ -176,7 +185,9 @@ export function PendingDraft({
     <div className="draft-card">
       <div className="comment-head">
         <span className="pending-label">Pending</span>
+        {older && <span className="older-label">older version</span>}
       </div>
+      {older && <p className="older-notice">{OLDER_DRAFT_NOTICE}</p>}
       {editing ? (
         <Composer
           target={null}

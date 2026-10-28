@@ -93,6 +93,77 @@ describe('Inbox', () => {
     expect(within(mine).getByText('2 of 9 seen')).toBeTruthy();
   });
 
+  it('shows the CI state of each PR', async () => {
+    serve(200, {
+      reviewRequested: [
+        pr({ number: 1, ci: { state: 'success', failing: null } }),
+        pr({ number: 2, ci: { state: 'pending', failing: null } }),
+        pr({ number: 3, ci: { state: 'none', failing: null } }),
+      ],
+      mine: [],
+    });
+    render(<Inbox />);
+
+    const review = await tableNamed('Waiting for my review');
+    const ciCells = within(review)
+      .getAllByRole('row')
+      .slice(1)
+      .map((row) => within(row).getAllByRole('cell')[2]!.textContent);
+    expect(ciCells).toEqual(['✓ passing', '● running', '—']);
+    expect(within(review).getByRole('columnheader', { name: 'CI' })).toBeTruthy();
+  });
+
+  it('a failing CI links to the failing check in a new tab', async () => {
+    serve(200, {
+      reviewRequested: [
+        pr({ ci: { state: 'failure', failing: { name: 'test', url: 'https://ci.example/1' } } }),
+      ],
+      mine: [],
+    });
+    render(<Inbox />);
+
+    const review = await tableNamed('Waiting for my review');
+    const link = within(review).getByRole('link', { name: /✗ failing/ });
+    expect(link.getAttribute('href')).toBe('https://ci.example/1');
+    expect(link.getAttribute('target')).toBe('_blank');
+    expect(link.getAttribute('rel')).toBe('noreferrer');
+    expect(link.getAttribute('title')).toContain('test');
+  });
+
+  it('a failing check without a URL is not a link', async () => {
+    serve(200, {
+      reviewRequested: [pr({ ci: { state: 'failure', failing: { name: 'lint', url: '' } } })],
+      mine: [],
+    });
+    render(<Inbox />);
+
+    const review = await tableNamed('Waiting for my review');
+    expect(within(review).getByText(/✗ failing/)).toBeTruthy();
+    expect(within(review).queryByRole('link', { name: /failing/ })).toBeNull();
+    expect(within(review).getByText(/lint/)).toBeTruthy();
+  });
+
+  it('shows the number of drafts next to the progress', async () => {
+    serve(200, {
+      reviewRequested: [
+        pr({
+          number: 1,
+          tour: { exists: true, source: 'author', flows: 1, homes: 4 },
+          seenCount: 1,
+          drafts: 2,
+        }),
+        pr({ number: 2, tour: { exists: true, source: 'author', flows: 1, homes: 4 } }),
+      ],
+      mine: [],
+    });
+    render(<Inbox />);
+
+    const review = await tableNamed('Waiting for my review');
+    const [first, second] = within(review).getAllByRole('row').slice(1);
+    expect(within(first!).getByText('2 drafts')).toBeTruthy();
+    expect(within(second!).queryByText(/draft/)).toBeNull();
+  });
+
   it('shows the server error message when the inbox fails to load', async () => {
     serve(502, { error: 'gh: not logged in to github.com' });
     render(<Inbox />);

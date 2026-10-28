@@ -2,7 +2,7 @@
 // "Comments on this file" block above the code.
 
 import type { ReactNode } from 'react';
-import type { DraftComment, ReviewThread } from '../shared/review.js';
+import { isOlderDraft, type DraftComment, type ReviewThread } from '../shared/review.js';
 import { PendingDraft, Thread } from './Thread.js';
 import type { ReviewState } from './useReview.js';
 
@@ -33,6 +33,7 @@ function Items({ path, threads, drafts, review }: ItemsProps) {
           key={draft.id}
           draft={draft}
           path={path}
+          older={review.headSha !== null && isOlderDraft(draft, review.headSha)}
           onEdit={(body) => review.update(draft.id, body)}
           onDelete={() => review.remove(draft.id)}
         />

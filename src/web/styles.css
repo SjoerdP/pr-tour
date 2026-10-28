@@ -798,6 +798,8 @@ pre {
 .step-facts {
   display: flex;
   flex-wrap: wrap;
+  /* The same as the gap inside an item, so a separator has equal space on both sides. */
+  column-gap: 5px;
   margin: 0;
   padding: 0;
   color: var(--fg-muted);
@@ -813,7 +815,6 @@ pre {
 
 .step-facts li + li::before {
   content: '·';
-  padding-right: 3px;
   color: var(--fg-faint);
 }
 
@@ -1168,7 +1169,9 @@ p.why {
 }
 
 .thread-label,
-.pending-label {
+.pending-label,
+.older-label,
+.failed-label {
   padding: 0 var(--space-1);
   border: 1px solid var(--border);
   border-radius: var(--radius-small);
@@ -1281,6 +1284,177 @@ p.why {
 
 .composer-spacer {
   flex: 1;
+}
+
+.older-notice {
+  margin: var(--space-1) 0 0;
+  color: var(--fg-muted);
+  font-size: var(--font-size-small);
+}
+
+.failed-label {
+  border-color: var(--error-border);
+  background: var(--error-bg);
+  color: var(--error-fg);
+}
+
+/* The review panel: a column on the right, under the top bar, above the code. */
+.review-panel-box {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  z-index: 10;
+  width: min(420px, 100vw);
+  height: calc(100dvh - 100% - var(--space-1));
+  overflow-y: auto;
+  border-left: 1px solid var(--border);
+  background: var(--bg);
+  box-shadow: var(--shadow-popover);
+}
+
+.review-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-4);
+}
+
+.review-panel-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+}
+
+.review-panel-head h2 {
+  margin: 0;
+  font-size: var(--font-size);
+}
+
+.review-panel-title {
+  margin: var(--space-2) 0 0;
+  color: var(--fg-muted);
+  font-size: var(--font-size-small);
+  font-weight: 600;
+}
+
+.review-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.review-list li {
+  padding: var(--space-1) var(--space-2);
+  border-left: 2px solid transparent;
+}
+
+.review-list li.failed {
+  border-left-color: var(--error-fg);
+  background: var(--error-bg);
+}
+
+.review-item-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-2);
+}
+
+.review-delete {
+  margin-left: auto;
+  color: var(--fg-muted);
+}
+
+.review-preview {
+  margin: 0;
+  overflow: hidden;
+  color: var(--fg-muted);
+  font-size: var(--font-size-small);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.refresh-note,
+.review-sent {
+  margin: 0;
+  font-size: var(--font-size-small);
+}
+
+.review-summary-label {
+  margin-top: var(--space-2);
+  font-weight: 600;
+}
+
+.review-summary {
+  width: 100%;
+  min-height: var(--composer-min-height);
+  padding: var(--space-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg);
+  color: var(--fg);
+  font: inherit;
+  resize: vertical;
+}
+
+.review-events {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-3);
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.review-events label {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.review-events p {
+  flex-basis: 100%;
+  margin: 0;
+  font-size: var(--font-size-small);
+}
+
+.approve-reminder {
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--warn-border);
+  border-radius: var(--radius);
+  background: var(--warn-bg);
+  font-size: var(--font-size-small);
+}
+
+.approve-reminder p {
+  margin: 0 0 var(--space-1);
+  color: var(--warn);
+  font-weight: 600;
+}
+
+.approve-reminder ul {
+  margin: 0;
+  padding-left: var(--space-4);
+}
+
+.review-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--font-size-small);
+}
+
+.ci-passing {
+  color: var(--add);
+}
+
+.ci-failing {
+  color: var(--del);
+}
+
+.ci-running {
+  color: var(--warn);
 }
 
 @media (max-width: 800px) {

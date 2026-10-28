@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import type { Flow, Foundation, OtherGroup, Step, Tour } from '../../src/shared/tour.js';
-import { homesInOrder, nextFlowStart, previousFlowStart } from '../../src/web/homes.js';
+import {
+  homeAt,
+  homesInOrder,
+  homeTouches,
+  nextFlowStart,
+  previousFlowStart,
+  unseenForReview,
+} from '../../src/web/homes.js';
 
 function step(id: string): Step {
   return {
@@ -122,5 +129,65 @@ describe('previousFlowStart', () => {
 
   it('has nowhere to go from a foundation', () => {
     expect(previousFlowStart(full, 'f2')).toBeUndefined();
+  });
+});
+
+describe('unseenForReview', () => {
+  const risky = { ...step('F1.S2'), risk: 'read-closely' as const };
+  const reviewTour = tour({
+    foundations: [
+      { ...foundation('f1'), homes: [{ file: 'm.ts', side: 'new', start: 1, end: 2 }] },
+      foundation('f2'),
+    ],
+    flows: [{ ...flow('F1', 3), steps: [step('F1.S1'), risky, step('F1.S3')] }],
+    other: [group('tests', 'o1.1')],
+  });
+
+  it('lists reviewable homes not seen, read-closely first, then display order', () => {
+    const ids = unseenForReview(reviewTour, (id) => id === 'F1.S1').map((h) => h.id);
+    // f2 and o1.1 own no changed lines: not review work.
+    expect(ids).toEqual(['F1.S2', 'f1', 'F1.S3']);
+  });
+
+  it('is empty when everything was seen', () => {
+    expect(unseenForReview(reviewTour, () => true)).toEqual([]);
+  });
+});
+
+describe('homeAt and homeTouches', () => {
+  const t = tour({
+    flows: [
+      {
+        ...flow('F1', 1),
+        steps: [{ ...step('F1.S1'), homes: [{ file: 'a.ts', side: 'new', start: 10, end: 20 }] }],
+      },
+    ],
+    other: [
+      {
+        kind: 'generated',
+        title: 'g',
+        summary: 's',
+        items: [{ id: 'o1.1', file: 'b.png', title: 'b', homes: [{ file: 'b.png', whole: true }] }],
+      },
+    ],
+  });
+  const [s1, o1] = homesInOrder(t);
+
+  it('a range touches lines on its side and file that overlap it', () => {
+    expect(homeTouches(s1!, 'a.ts', 'new', 18, 25)).toBe(true);
+    expect(homeTouches(s1!, 'a.ts', 'old', 15, 15)).toBe(false);
+    expect(homeTouches(s1!, 'b.ts', 'new', 15, 15)).toBe(false);
+    expect(homeTouches(s1!, 'a.ts', 'new', 21, 30)).toBe(false);
+  });
+
+  it('a whole-file range touches anything on that file, file-level too', () => {
+    expect(homeTouches(o1!, 'b.png', null, 1, 1)).toBe(true);
+    // A file-level place has no lines: only a whole-file range owns it.
+    expect(homeTouches(s1!, 'a.ts', null, 1, 1)).toBe(false);
+  });
+
+  it('homeAt finds the home owning a place, or none', () => {
+    expect(homeAt(t, 'a.ts', 'new', 12, 12)?.id).toBe('F1.S1');
+    expect(homeAt(t, 'a.ts', 'new', 2, 2)).toBeUndefined();
   });
 });

@@ -43,6 +43,12 @@ export function TourView({ repo, pr }: { repo: string; pr: number }) {
     about.setOpen(false);
   }
 
+  /** Opens a home from elsewhere (the review panel); on the current one, back to its code. */
+  function openHome(homeId: string) {
+    if (homeId === current) setJump(null);
+    else goTo(homeId);
+  }
+
   const index = current === null ? -1 : ids.indexOf(current);
   const previousId = index > 0 ? ids[index - 1] : undefined;
   const previousFlowId = current === null ? undefined : previousFlowStart(homes, current);
@@ -105,6 +111,9 @@ export function TourView({ repo, pr }: { repo: string; pr: number }) {
         isSeen={isSeen}
         aboutOpen={about.open}
         onAboutChange={about.setOpen}
+        review={review}
+        onOpenHome={openHome}
+        onJump={(file, line) => setJump({ file, line })}
       />
 
       {notices && (

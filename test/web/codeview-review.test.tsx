@@ -396,6 +396,19 @@ describe('CodeView: threads and drafts in place', () => {
     const block = await screen.findByRole('region', { name: 'Comments on this file' });
     expect(within(block).getByText('Rename this')).toBeTruthy();
     expect(document.querySelector('.code-review-row')).toBeNull();
+    expect(within(block).getByText('older version')).toBeTruthy();
+    expect(
+      within(block).getByText(
+        'Made on an older version of this PR. It will be sent as a file-level comment that quotes the lines.',
+      ),
+    ).toBeTruthy();
+  });
+
+  it('a draft on the current head has no older-version label', async () => {
+    serve();
+    renderView(fakeReview({ drafts: [draft()] }));
+    await screen.findByText('Rename this');
+    expect(screen.queryByText('older version')).toBeNull();
   });
 
   it('a fold with a thread or a draft in it is shown open', async () => {

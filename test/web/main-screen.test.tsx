@@ -1,5 +1,6 @@
 import { fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { Draft, ReviewResponse, ReviewThread } from '../../src/shared/review.js';
 import type { Tour } from '../../src/shared/tour.js';
 import * as api from '../../src/web/api.js';
 import { TourView } from '../../src/web/TourView.js';
@@ -12,8 +13,7 @@ vi.mock('../../src/web/api.js', () => ({
   getPr: vi.fn(),
   buildTour: vi.fn(),
   markSeen: vi.fn(),
-  // The tour view loads the PR's review; these tests are not about it: it never arrives.
-  getReview: () => new Promise(() => {}),
+  getReview: vi.fn(),
 }));
 
 vi.mock('../../src/web/CodeView.js', () => ({
@@ -22,6 +22,7 @@ vi.mock('../../src/web/CodeView.js', () => ({
 
 const getPr = vi.mocked(api.getPr);
 const markSeen = vi.mocked(api.markSeen);
+const getReview = vi.mocked(api.getReview);
 
 function facts(): string[] {
   return within(screen.getByRole('list', { name: 'Step facts' }))
@@ -42,6 +43,8 @@ async function open(tour: Tour = baseTour) {
 
 beforeEach(() => {
   markSeen.mockResolvedValue(undefined);
+  // Most tests are not about the review: it never arrives.
+  getReview.mockReturnValue(new Promise(() => {}));
 });
 
 afterEach(() => {
@@ -295,5 +298,162 @@ describe('bottom bar', () => {
     expect(screen.getByRole('button', { name: 'Previous step' })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Next step' }).className).toContain('primary');
     expect(screen.getByText('j / k steps · [ ] flows · n / p changes · f whole file')).toBeTruthy();
+  });
+});
+
+const HEAD = 'b'.repeat(40);
+
+function reviewThread(overrides: Partial<ReviewThread> = {}): ReviewThread {
+  return {
+    id: 'T1',
+    path: 'm.sql',
+    side: 'new',
+    line: 2,
+    startLine: null,
+    outdated: false,
+    resolved: false,
+    comments: [
+      {
+        id: 'c1',
+        author: 'bob',
+        body: 'Index?',
+        createdAt: '2026-10-28T09:00:00Z',
+        url: 'https://github.com/acme/loans/pull/42#discussion_c1',
+      },
+    ],
+    ...overrides,
+  };
+}
+
+function reviewDraft(id: number, path = 'm.sql', line = 3): Draft {
+  return {
+    id,
+    kind: 'comment',
+    path,
+    side: 'new',
+    startLine: line,
+    endLine: line,
+    placement: 'line',
+    quote: 'x',
+    headSha: HEAD,
+    body: `Draft ${id}`,
+    createdAt: '2026-10-28T10:00:00Z',
+  };
+}
+
+function serveReview(overrides: Partial<ReviewResponse> = {}) {
+  getReview.mockResolvedValue({
+    viewerIsAuthor: false,
+    headSha: HEAD,
+    threads: [],
+    drafts: [],
+    ci: { state: 'none', failing: null },
+    ...overrides,
+  });
+}
+
+const reviewButton = () => screen.getByRole('button', { name: /^Review/ });
+const reviewPanel = () => screen.queryByRole('region', { name: 'Review' });
+
+describe('Review in the top bar', () => {
+  it('shows the draft count and turns primary when there are drafts', async () => {
+    serveReview({ drafts: [reviewDraft(1), reviewDraft(2), reviewDraft(3, 'src/a.ts')] });
+    await open();
+    await vi.waitFor(() => expect(reviewButton().textContent).toBe('Review · 3'));
+    expect(reviewButton().classList.contains('primary')).toBe(true);
+  });
+
+  it('is a plain "Review" button without drafts', async () => {
+    serveReview();
+    await open();
+    expect(reviewButton().textContent).toBe('Review');
+    expect(reviewButton().classList.contains('primary')).toBe(false);
+  });
+
+  it('opens the panel, with aria-expanded; Close shuts it', async () => {
+    serveReview();
+    await open();
+    expect(reviewButton().getAttribute('aria-expanded')).toBe('false');
+    fireEvent.click(reviewButton());
+    expect(reviewButton().getAttribute('aria-expanded')).toBe('true');
+    const panel = reviewPanel()!;
+    fireEvent.click(within(panel).getByRole('button', { name: 'Close' }));
+    expect(reviewPanel()).toBeNull();
+  });
+
+  it('stays open while moving through the tour; the keys keep working', async () => {
+    serveReview();
+    await open();
+    fireEvent.click(reviewButton());
+    fireEvent.keyDown(window, { key: 'j' });
+    expect(trail()).toBe('Flow 1 · step 1 of 5');
+    expect(reviewPanel()).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Next step' }));
+    expect(reviewPanel()).toBeTruthy();
+  });
+
+  it('typing j in the summary does not move', async () => {
+    serveReview();
+    await open();
+    fireEvent.click(reviewButton());
+    fireEvent.keyDown(screen.getByRole('textbox', { name: 'Summary' }), { key: 'j' });
+    expect(trail()).toBe('Foundation · migration');
+  });
+
+  it('closes on a click outside it, not inside it', async () => {
+    serveReview();
+    await open();
+    fireEvent.click(reviewButton());
+    fireEvent.mouseDown(within(reviewPanel()!).getByText('No pending comments.'));
+    expect(reviewPanel()).toBeTruthy();
+    fireEvent.mouseDown(screen.getByTestId('code-view'));
+    expect(reviewPanel()).toBeNull();
+  });
+
+  it('Esc closes it only when focus is inside it', async () => {
+    serveReview();
+    await open();
+    fireEvent.click(reviewButton());
+    fireEvent.keyDown(window, { key: 'Escape' });
+    expect(reviewPanel()).toBeTruthy();
+    fireEvent.keyDown(screen.getByRole('textbox', { name: 'Summary' }), { key: 'Escape' });
+    expect(reviewPanel()).toBeNull();
+    expect(document.activeElement).toBe(reviewButton());
+  });
+
+  it('a draft in the panel opens its home', async () => {
+    serveReview({ drafts: [reviewDraft(1, 'src/a.ts', 5)] });
+    await open();
+    await vi.waitFor(() => expect(reviewButton().textContent).toBe('Review · 1'));
+    fireEvent.click(reviewButton());
+    fireEvent.click(within(reviewPanel()!).getByRole('button', { name: 'src/a.ts:5' }));
+    expect(trail()).toBe('Flow 1 · step 1 of 5');
+    expect(reviewPanel()).toBeTruthy();
+  });
+
+  it('a thread no home owns opens its file at the line', async () => {
+    serveReview({ threads: [reviewThread({ path: 'lib/other.ts', line: 8 })] });
+    await open();
+    fireEvent.click(reviewButton());
+    fireEvent.click(await within(reviewPanel()!).findByRole('button', { name: 'lib/other.ts:8' }));
+    expect(screen.getByText('lib/other.ts')).toBeTruthy();
+    expect(screen.getByText(/Showing/).textContent).toContain('line 8');
+  });
+});
+
+describe('step header: review counts', () => {
+  it("counts the threads and drafts on the home's lines", async () => {
+    serveReview({
+      threads: [reviewThread(), reviewThread({ id: 'T2', path: 'src/a.ts' })],
+      drafts: [reviewDraft(1), reviewDraft(2, 'm.sql', 40)],
+    });
+    await open();
+    await vi.waitFor(() => expect(facts()).toEqual(['1 comment', '1 pending']));
+  });
+
+  it('says "2 comments" for two', async () => {
+    serveReview({ threads: [reviewThread(), reviewThread({ id: 'T2', line: 1 })] });
+    await open();
+    await vi.waitFor(() => expect(facts()).toEqual(['2 comments']));
   });
 });

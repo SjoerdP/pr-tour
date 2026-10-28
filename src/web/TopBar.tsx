@@ -1,6 +1,8 @@
-import { useEffect, useId, useRef } from 'react';
+import { useEffect, useId, useRef, useState, type KeyboardEvent } from 'react';
 import type { PrSummary } from '../shared/api.js';
 import { reviewableHomeIds, type Tour } from '../shared/tour.js';
+import { ReviewPanel } from './ReviewPanel.js';
+import type { ReviewState } from './useReview.js';
 
 type Props = {
   pr: PrSummary;
@@ -9,17 +11,67 @@ type Props = {
   /** "About this PR" is shown. */
   aboutOpen: boolean;
   onAboutChange: (open: boolean) => void;
+  /** The PR's review, done in the Review panel. */
+  review: ReviewState;
+  /** Opens a home, or a file at a line: where the Review panel's items jump to. */
+  onOpenHome: (homeId: string) => void;
+  onJump: (file: string, line: number) => void;
 };
 
 /**
- * One line above the tour: back to the inbox, the PR, a short status, and "About this PR",
- * which shows the tour summary and check problems. A click outside the panel closes it.
+ * One line above the tour: back to the inbox, the PR, a short status, "About this PR",
+ * which shows the tour summary and check problems, and "Review", which opens the review
+ * panel. A click outside a panel closes it.
  */
-export function TopBar({ pr, tour, isSeen, aboutOpen, onAboutChange }: Props) {
+export function TopBar({
+  pr,
+  tour,
+  isSeen,
+  aboutOpen,
+  onAboutChange,
+  review,
+  onOpenHome,
+  onJump,
+}: Props) {
   const panelId = useId();
+  const reviewPanelId = useId();
   const open = tour !== null && aboutOpen;
   const panel = useRef<HTMLElement>(null);
   const button = useRef<HTMLButtonElement>(null);
+  // Moving through the tour does not close the review panel: it lives here, not in the step.
+  const [reviewChoice, setReviewOpen] = useState(false);
+  const reviewOpen = tour !== null && reviewChoice;
+  const reviewBox = useRef<HTMLDivElement>(null);
+  const reviewButton = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    if (!reviewOpen) return;
+    function onMouseDown(event: MouseEvent) {
+      const target = event.target as Node | null;
+      if (reviewBox.current?.contains(target) || reviewButton.current?.contains(target)) return;
+      setReviewOpen(false);
+    }
+    document.addEventListener('mousedown', onMouseDown);
+    return () => document.removeEventListener('mousedown', onMouseDown);
+  }, [reviewOpen]);
+
+  /** Esc inside the panel closes it and puts focus back on the Review button. */
+  function onReviewKeyDown(event: KeyboardEvent) {
+    if (event.key !== 'Escape') return;
+    // The tour's own Esc (back from a jump) must not run as well.
+    event.stopPropagation();
+    closeReview();
+  }
+
+  function closeReview() {
+    setReviewOpen(false);
+    reviewButton.current?.focus();
+  }
+
+  function toggleReview() {
+    if (!reviewOpen) onAboutChange(false);
+    setReviewOpen(!reviewOpen);
+  }
 
   useEffect(() => {
     if (!open) return;
@@ -33,6 +85,7 @@ export function TopBar({ pr, tour, isSeen, aboutOpen, onAboutChange }: Props) {
   }, [open, onAboutChange]);
 
   const problems = tour?.check.problems ?? [];
+  const drafts = review.drafts.length;
 
   return (
     <header className="topbar">
@@ -63,6 +116,35 @@ export function TopBar({ pr, tour, isSeen, aboutOpen, onAboutChange }: Props) {
             </>
           )}
         </button>
+      )}
+      {tour && (
+        <button
+          type="button"
+          className={drafts > 0 ? 'primary review-button' : 'review-button'}
+          ref={reviewButton}
+          aria-expanded={reviewOpen}
+          aria-controls={reviewOpen ? reviewPanelId : undefined}
+          onClick={toggleReview}
+        >
+          {drafts > 0 ? `Review · ${drafts}` : 'Review'}
+        </button>
+      )}
+      {tour && reviewOpen && (
+        <div
+          ref={reviewBox}
+          id={reviewPanelId}
+          className="review-panel-box"
+          onKeyDown={onReviewKeyDown}
+        >
+          <ReviewPanel
+            review={review}
+            tour={tour}
+            isSeen={isSeen}
+            onOpenHome={onOpenHome}
+            onJump={onJump}
+            onClose={closeReview}
+          />
+        </div>
       )}
       {tour && open && (
         <section ref={panel} id={panelId} className="about-panel" aria-label="About this PR">

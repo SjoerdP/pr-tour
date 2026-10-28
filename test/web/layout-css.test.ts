@@ -37,6 +37,13 @@ describe('tour layout CSS', () => {
     expect(rule('.tour-body')['grid-template-columns']).toBe('var(--outline-width) minmax(0, 1fr)');
   });
 
+  it('step facts have the same space on both sides of the separator', () => {
+    const gap = rule('.step-facts li').gap;
+    expect(gap).toBeDefined();
+    expect(rule('.step-facts')['column-gap']).toBe(gap);
+    expect(rule('.step-facts li + li::before')['padding-right']).toBeUndefined();
+  });
+
   it('colors and outline font sizes come from tokens', () => {
     const body = css.slice(css.indexOf('*,'));
     expect(body).not.toMatch(/font-size:\s*\d+px/);

@@ -1,5 +1,6 @@
 import { useEffect, useId, useState } from 'react';
 import type { InboxPr, InboxResponse } from '../shared/api.js';
+import type { CiStatus } from '../shared/review.js';
 import { getInbox } from './api.js';
 import { errorText } from './errors.js';
 
@@ -59,6 +60,7 @@ function PrTable({ title, prs }: { title: string; prs: InboxPr[] }) {
             <tr>
               <th scope="col">PR</th>
               <th scope="col">Author</th>
+              <th scope="col">CI</th>
               <th scope="col">Size</th>
               <th scope="col">Tour</th>
               <th scope="col">Progress</th>
@@ -86,11 +88,19 @@ function PrRow({ pr }: { pr: InboxPr }) {
         {pr.isDraft && <span className="tag">draft</span>}
       </td>
       <td>{pr.author}</td>
+      <td className="ci-cell">
+        <CiCell ci={pr.ci} />
+      </td>
       <td className="num">
         <span className="size">{`+${pr.additions} / −${pr.deletions}`}</span>
       </td>
       <td>{tourText(pr)}</td>
-      <td className="num">{progressText(pr)}</td>
+      <td className="num">
+        {progressText(pr)}
+        {pr.drafts > 0 && (
+          <span className="tag drafts-tag">{`${pr.drafts} ${pr.drafts === 1 ? 'draft' : 'drafts'}`}</span>
+        )}
+      </td>
     </tr>
   );
 }
@@ -104,4 +114,37 @@ function tourText({ tour }: InboxPr): string {
 function progressText({ tour, seenCount }: InboxPr): string {
   if (!tour.exists) return '—';
   return `${seenCount} of ${tour.homes ?? 0} seen`;
+}
+
+/** The PR's checks in a word; a failing one links to the failing check when it has a URL. */
+function CiCell({ ci }: { ci: CiStatus }) {
+  switch (ci.state) {
+    case 'success':
+      return <span className="ci-passing">✓ passing</span>;
+    case 'pending':
+      return <span className="ci-running">● running</span>;
+    case 'none':
+      return <span className="muted">—</span>;
+    case 'failure': {
+      const name = ci.failing?.name;
+      if (ci.failing && ci.failing.url !== '') {
+        return (
+          <a
+            className="ci-failing"
+            href={ci.failing.url}
+            target="_blank"
+            rel="noreferrer"
+            title={`Failing check: ${ci.failing.name}`}
+          >
+            ✗ failing
+          </a>
+        );
+      }
+      return (
+        <span className="ci-failing">
+          ✗ failing{name ? <span className="muted"> · {name}</span> : null}
+        </span>
+      );
+    }
+  }
 }

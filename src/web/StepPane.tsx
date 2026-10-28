@@ -3,7 +3,7 @@ import type { Range, SideEffect, Tour } from '../shared/tour.js';
 import type { Focus as CodeFocus } from './code-lines.js';
 import { CodeView } from './CodeView.js';
 import { FlowEndNote } from './FlowEndNote.js';
-import { homeTitle, type Home } from './homes.js';
+import { homeTouches, homeTitle, type Home } from './homes.js';
 import { withKey } from './shortcuts.js';
 import type { ReviewState } from './useReview.js';
 
@@ -104,6 +104,24 @@ function facts(home: Home): Fact[] {
   return out;
 }
 
+/** "N comments" (threads on the home's lines) and "N pending" (drafts there), when non-zero. */
+function reviewFacts(home: Home, review: ReviewState): Fact[] {
+  const touching = review.threads.filter((t) =>
+    homeTouches(home, t.path, t.side, t.startLine ?? t.line ?? 1, t.line ?? 1),
+  );
+  const ids = new Set(touching.map((t) => t.id));
+  const pending = review.drafts.filter((d) =>
+    d.kind === 'reply'
+      ? ids.has(d.threadId)
+      : homeTouches(home, d.path, d.side, d.startLine, d.endLine),
+  ).length;
+  const out: Fact[] = [];
+  const n = touching.length;
+  if (n > 0) out.push({ text: `${n} ${n === 1 ? 'comment' : 'comments'}` });
+  if (pending > 0) out.push({ text: `${pending} pending` });
+  return out;
+}
+
 /** Moves through the tour, the same as the keys. An undefined move has nowhere to go. */
 export type PaneNav = {
   previousStep: (() => void) | undefined;
@@ -149,7 +167,7 @@ export function StepPane({
   const target = jump
     ? { file: jump.file, focus: { start: jump.line, end: jump.line } }
     : codeTarget(home);
-  const homeFacts = facts(home);
+  const homeFacts = [...facts(home), ...reviewFacts(home, review)];
 
   return (
     <article className="step-pane" aria-labelledby={`step-title-${home.id}`}>
