@@ -413,6 +413,25 @@ describe('Review in the top bar', () => {
     expect(reviewPanel()).toBeTruthy();
   });
 
+  it('the open panel gives the tour screen a column for it; closing takes it away', async () => {
+    serveReview();
+    const { container } = await open();
+    const app = container.querySelector('.tour-app')!;
+    expect(app.classList.contains('review-open')).toBe(false);
+    fireEvent.click(reviewButton());
+    expect(app.classList.contains('review-open')).toBe(true);
+    fireEvent.click(within(reviewPanel()!).getByRole('button', { name: 'Close' }));
+    expect(app.classList.contains('review-open')).toBe(false);
+  });
+
+  it('a mousedown in the code area takes the column away too', async () => {
+    serveReview();
+    const { container } = await open();
+    fireEvent.click(reviewButton());
+    fireEvent.mouseDown(screen.getByTestId('code-view'));
+    expect(container.querySelector('.tour-app')!.classList.contains('review-open')).toBe(false);
+  });
+
   it('closes on a mousedown in the code area', async () => {
     serveReview();
     await open();

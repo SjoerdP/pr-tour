@@ -30,6 +30,9 @@ export function TourView({ repo, pr }: { repo: string; pr: number }) {
   const [reveal, setReveal] = useState<Reveal | null>(null);
   const revealSeq = useRef(0);
   const about = useAboutPanel(repo, pr, tour !== null);
+  // Moving through the tour leaves the review panel open; the top bar opens and closes it.
+  const [reviewChoice, setReviewChoice] = useState(false);
+  const reviewOpen = tour !== null && reviewChoice;
   // One review for the PR, shared by everything that shows or adds comments.
   const review = useReview(repo, pr);
   // What the reviewer is writing, kept across moves through this PR's tour.
@@ -138,13 +141,16 @@ export function TourView({ repo, pr }: { repo: string; pr: number }) {
 
   return (
     <ComposerMemoryContext.Provider value={memory}>
-      <div className="tour-app">
+      {/* An open review panel takes a column on wide windows: see .review-open in the CSS. */}
+      <div className={reviewOpen ? 'tour-app review-open' : 'tour-app'}>
         <TopBar
           pr={summary}
           tour={tour}
           isSeen={isSeen}
           aboutOpen={about.open}
           onAboutChange={about.setOpen}
+          reviewOpen={reviewOpen}
+          onReviewChange={setReviewChoice}
           review={review}
           onOpenHome={openHome}
           onJump={(file, line, at) => {

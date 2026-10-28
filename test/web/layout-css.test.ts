@@ -4,18 +4,36 @@ import css from '../../src/web/styles.css?raw';
 // jsdom does no layout, so these check the stylesheet's contract for the tour screen:
 // the notes above the code keep their height and the code area is the part that gives way.
 
-/** The declarations of the first rule whose selector is exactly `selector`. */
-function rule(selector: string): Record<string, string> {
-  const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const match = new RegExp(`(?:^|\\n)${escaped}\\s*\\{([^}]*)\\}`).exec(css);
-  if (!match) throw new Error(`No rule for ${selector}`);
+/** `prop: value;` pairs of a rule body, comments left out. */
+function declarations(body: string): Record<string, string> {
   return Object.fromEntries(
-    match[1]!
+    body
       .replace(/\/\*[\s\S]*?\*\//g, '')
       .split(';')
       .map((d) => d.split(':').map((part) => part.trim()))
       .filter((parts): parts is [string, string] => parts.length === 2 && parts[0] !== ''),
   );
+}
+
+/** The declarations of the first rule whose selector is exactly `selector`. */
+function rule(selector: string): Record<string, string> {
+  const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const match = new RegExp(`(?:^|\\n)${escaped}\\s*\\{([^}]*)\\}`).exec(css);
+  if (!match) throw new Error(`No rule for ${selector}`);
+  return declarations(match[1]!);
+}
+
+/** The declarations of `selector` (alone or in a selector list) inside `@media <query>`. */
+function mediaRule(query: string, selector: string): Record<string, string> {
+  const start = css.indexOf(`@media ${query} {`);
+  if (start < 0) throw new Error(`No @media ${query}`);
+  // The block ends at the first line that is a lone closing brace.
+  const block = css.slice(css.indexOf('{', start) + 1, css.indexOf('\n}', start));
+  for (const [, selectors, body] of block.matchAll(/([^{}]+)\{([^}]*)\}/g)) {
+    const list = selectors!.replace(/\/\*[\s\S]*?\*\//g, '').split(',');
+    if (list.some((s) => s.trim() === selector)) return declarations(body!);
+  }
+  throw new Error(`No rule for ${selector} in @media ${query}`);
 }
 
 describe('tour layout CSS', () => {
@@ -35,6 +53,27 @@ describe('tour layout CSS', () => {
   it('the tour screen has no max-width; the outline is a fixed column on the left', () => {
     expect(rule('.tour-app')['max-width']).toBeUndefined();
     expect(rule('.tour-body')['grid-template-columns']).toBe('var(--outline-width) minmax(0, 1fr)');
+  });
+
+  it('on a wide window the open review panel is a column: the main area makes room', () => {
+    const wide = '(min-width: 1100px)';
+    expect(rule('.review-panel-box').width).toBe('min(var(--review-width), 100vw)');
+    // The notices and the outline | main grid stop short of the panel.
+    const body = mediaRule(wide, '.review-open .tour-body');
+    expect(body['margin-right']).toBe('var(--review-width)');
+    expect(mediaRule(wide, '.review-open .notices')['margin-right']).toBe('var(--review-width)');
+    // A column, not a popover: no shadow over the code.
+    expect(mediaRule(wide, '.review-open .review-panel-box')['box-shadow']).toBe('none');
+    // The outline keeps its width; the code still scrolls sideways inside its own box.
+    expect(rule('.tour-body')['grid-template-columns']).toBe('var(--outline-width) minmax(0, 1fr)');
+    expect(rule('.code')['overflow']).toBe('auto');
+  });
+
+  it('on a narrow window the review panel stays an overlay', () => {
+    expect(() => mediaRule('(max-width: 1099px)', '.review-open .tour-body')).toThrow();
+    const box = rule('.review-panel-box');
+    expect(box.position).toBe('absolute');
+    expect(box['box-shadow']).toBe('var(--shadow-popover)');
   });
 
   it('step facts have the same space on both sides of the separator', () => {

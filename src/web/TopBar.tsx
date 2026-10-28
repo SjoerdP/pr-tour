@@ -15,6 +15,12 @@ type Props = {
   /** "About this PR" is shown. */
   aboutOpen: boolean;
   onAboutChange: (open: boolean) => void;
+  /**
+   * The Review panel is shown. The tour screen keeps this, as it gives the panel a column
+   * on wide windows.
+   */
+  reviewOpen: boolean;
+  onReviewChange: (open: boolean) => void;
   /** The PR's review, done in the Review panel. */
   review: ReviewState;
   /** Opens a home, or a file at a line: where the Review panel's items jump to. */
@@ -33,6 +39,8 @@ export function TopBar({
   isSeen,
   aboutOpen,
   onAboutChange,
+  reviewOpen: reviewChoice,
+  onReviewChange: setReviewOpen,
   review,
   onOpenHome,
   onJump,
@@ -43,7 +51,6 @@ export function TopBar({
   const panel = useRef<HTMLElement>(null);
   const button = useRef<HTMLButtonElement>(null);
   // Moving through the tour does not close the review panel: it lives here, not in the step.
-  const [reviewChoice, setReviewOpen] = useState(false);
   const reviewOpen = tour !== null && reviewChoice;
   const reviewBox = useRef<HTMLDivElement>(null);
   const reviewButton = useRef<HTMLButtonElement>(null);
@@ -65,7 +72,7 @@ export function TopBar({
     }
     document.addEventListener('mousedown', onMouseDown);
     return () => document.removeEventListener('mousedown', onMouseDown);
-  }, [reviewOpen]);
+  }, [reviewOpen, setReviewOpen]);
 
   /** Esc inside the panel closes it and puts focus back on the Review button. */
   function onReviewKeyDown(event: KeyboardEvent) {

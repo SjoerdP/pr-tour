@@ -27,6 +27,8 @@
 
   /* Layout: the outline is a fixed column at the left edge; the main area takes the rest. */
   --outline-width: 320px;
+  /* The review panel: a column at the right edge on wide windows, an overlay on narrow ones. */
+  --review-width: 400px;
   --prose-width: 72ch;
   --inbox-width: 1200px;
 
@@ -1324,13 +1326,16 @@ p.why {
   color: var(--error-fg);
 }
 
-/* The review panel: a column on the right, under the top bar, above the code. */
+/*
+ * The review panel: under the top bar at the right edge. On narrow windows it lies over
+ * the code; on wide ones the main area makes room for it (see the media query below).
+ */
 .review-panel-box {
   position: absolute;
   top: 100%;
   right: 0;
   z-index: 10;
-  width: min(420px, 100vw);
+  width: min(var(--review-width), 100vw);
   height: calc(100dvh - 100% - var(--space-1));
   overflow-y: auto;
   border-left: 1px solid var(--border);
@@ -1481,6 +1486,23 @@ p.why {
 
 .ci-running {
   color: var(--warn);
+}
+
+/*
+ * Wide enough for code next to the panel: the notices and the outline | main grid stop
+ * where the panel starts, so it covers nothing. Below this, the code would get too narrow
+ * and the panel lies over it instead.
+ */
+@media (min-width: 1100px) {
+  .review-open .notices,
+  .review-open .tour-body {
+    margin-right: var(--review-width);
+  }
+
+  .review-open .review-panel-box {
+    height: calc(100dvh - 100%);
+    box-shadow: none;
+  }
 }
 
 @media (max-width: 800px) {
