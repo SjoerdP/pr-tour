@@ -14,7 +14,8 @@ export default defineConfig({
   },
   server: {
     proxy: {
-      '/api': `http://127.0.0.1:${apiPort}`,
+      // `changeOrigin` sends `Host: 127.0.0.1:<port>`; the server rejects any other Host.
+      '/api': { target: `http://127.0.0.1:${apiPort}`, changeOrigin: true },
     },
   },
 });
