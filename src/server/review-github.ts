@@ -1,8 +1,18 @@
-// Reads a PR's review state from GitHub: review threads, CI status and authorship.
+// A PR's review on GitHub: reads threads, CI status and authorship; submits reviews and
+// resolves threads.
 
-import type { CiStatus, ReviewThread, ThreadComment } from '../shared/review.js';
-import type { Runner } from './exec.js';
-import { ghGraphql, prGraphql, PrNotFoundError } from './graphql.js';
+import {
+  fileCommentBody,
+  isOlderDraft,
+  type CiStatus,
+  type Draft,
+  type DraftComment,
+  type ReviewEvent,
+  type ReviewThread,
+  type ThreadComment,
+} from '../shared/review.js';
+import { CommandError, runOk, type Runner } from './exec.js';
+import { ghGraphql, GraphqlError, prGraphql, PrNotFoundError } from './graphql.js';
 
 /** Selects the CI rollup of the PR's last commit; `commitsRollup` reads it back. */
 export const CI_FIELDS = `
@@ -36,6 +46,123 @@ const COMMENTS_QUERY = `query($id: ID!, $cursor: String) {
     ... on PullRequestReviewThread { comments(first: 100, after: $cursor) { ${COMMENT_FIELDS} } }
   }
 }`;
+
+// Mutations. Every value goes in as a variable; `-f` keeps strings (a body "123" stays a
+// string), `-F` is only for line numbers.
+const START_REVIEW = `mutation($prId: ID!, $commitOid: GitObjectID!) {
+  addPullRequestReview(input: { pullRequestId: $prId, commitOID: $commitOid }) {
+    pullRequestReview { id }
+  }
+}`;
+
+const ADD_THREAD = `mutation(
+  $reviewId: ID!, $path: String!, $body: String!,
+  $subjectType: PullRequestReviewThreadSubjectType!,
+  $line: Int, $side: DiffSide, $startLine: Int, $startSide: DiffSide
+) {
+  addPullRequestReviewThread(input: {
+    pullRequestReviewId: $reviewId, path: $path, body: $body, subjectType: $subjectType,
+    line: $line, side: $side, startLine: $startLine, startSide: $startSide
+  }) { thread { id } }
+}`;
+
+const ADD_REPLY = `mutation($reviewId: ID!, $threadId: ID!, $body: String!) {
+  addPullRequestReviewThreadReply(input: {
+    pullRequestReviewId: $reviewId, pullRequestReviewThreadId: $threadId, body: $body
+  }) { comment { id } }
+}`;
+
+const SUBMIT_REVIEW = `mutation($reviewId: ID!, $event: PullRequestReviewEvent!, $body: String) {
+  submitPullRequestReview(input: { pullRequestReviewId: $reviewId, event: $event, body: $body }) {
+    pullRequestReview { url }
+  }
+}`;
+
+const DELETE_REVIEW = `mutation($reviewId: ID!) {
+  deletePullRequestReview(input: { pullRequestReviewId: $reviewId }) { clientMutationId }
+}`;
+
+const RESOLVE_THREAD = `mutation($threadId: ID!) {
+  resolveReviewThread(input: { threadId: $threadId }) { thread { id } }
+}`;
+
+const UNRESOLVE_THREAD = `mutation($threadId: ID!) {
+  unresolveReviewThread(input: { threadId: $threadId }) { thread { id } }
+}`;
+
+/**
+ * Submitting a review failed; the pending review was deleted. `failedDraftId` is the draft
+ * GitHub refused, or null when the failure was not about one draft.
+ */
+export class ReviewSubmitError extends Error {
+  constructor(
+    message: string,
+    readonly failedDraftId: number | null,
+    options?: { cause: unknown },
+  ) {
+    super(message, options);
+    this.name = 'ReviewSubmitError';
+  }
+}
+
+/** A short message for a failed gh call, fit to show the user. */
+function shortMessage(err: unknown): string {
+  if (err instanceof CommandError) return err.shortMessage;
+  if (err instanceof Error) return err.message;
+  return String(err);
+}
+
+/**
+ * Run mutation `name` and return its result. GitHub can answer a failed mutation with a
+ * null result next to its errors, which `ghGraphql` would hand back as data; that throws
+ * `GraphqlError` with GitHub's first error message.
+ */
+async function mutate<T>(run: Runner, name: string, query: string, fields: string[]): Promise<T> {
+  const { stdout } = await runOk(run, 'gh', ['api', 'graphql', '-f', `query=${query}`, ...fields]);
+  const response = JSON.parse(stdout) as {
+    data?: Record<string, T | null> | null;
+    errors?: { message: string }[];
+  };
+  const result = response.data?.[name];
+  if (result == null) {
+    throw new GraphqlError(
+      response.errors?.[0]?.message ?? `GitHub returned no result for ${name}`,
+    );
+  }
+  return result;
+}
+
+/** The `gh api` fields that add `draft` as a thread to review `reviewId`. */
+function threadFields(reviewId: string, draft: DraftComment, commitOid: string): string[] {
+  const common = ['-f', `reviewId=${reviewId}`, '-f', `path=${draft.path}`];
+  // A draft made on an older head may not match this head's lines; quote them instead.
+  if (draft.placement === 'file' || isOlderDraft(draft, commitOid)) {
+    const { path, side, startLine, endLine, quote, body } = draft;
+    return [
+      ...common,
+      '-f',
+      `body=${fileCommentBody(path, side, startLine, endLine, quote, body)}`,
+      '-f',
+      'subjectType=FILE',
+    ];
+  }
+  const side = draft.side === 'old' ? 'LEFT' : 'RIGHT';
+  const fields = [
+    ...common,
+    '-f',
+    `body=${draft.body}`,
+    '-f',
+    'subjectType=LINE',
+    '-F',
+    `line=${draft.endLine}`,
+    '-f',
+    `side=${side}`,
+  ];
+  if (draft.startLine < draft.endLine) {
+    fields.push('-F', `startLine=${draft.startLine}`, '-f', `startSide=${side}`);
+  }
+  return fields;
+}
 
 type Page<T> = { pageInfo: { hasNextPage: boolean; endCursor: string | null }; nodes: T[] };
 
@@ -149,7 +276,7 @@ function toThread(node: ThreadNode, comments: CommentNode[]): ReviewThread {
   };
 }
 
-/** Reads review state through the user's own `gh` login. Read-only. */
+/** A PR's review on GitHub, through the user's own `gh` login. */
 export class ReviewGitHub {
   constructor(private readonly run: Runner) {}
 
@@ -205,5 +332,97 @@ export class ReviewGitHub {
       ({ hasNextPage, endCursor } = page.pageInfo);
     }
     return comments;
+  }
+
+  /**
+   * Post `drafts` in order as one review on `commitOid`, then submit it with `event` and
+   * `body`. Any failure deletes the pending review and throws `ReviewSubmitError`.
+   */
+  async submitReview(args: {
+    prId: string;
+    commitOid: string;
+    event: ReviewEvent;
+    body: string;
+    drafts: Draft[];
+  }): Promise<{ url: string }> {
+    let reviewId: string;
+    try {
+      const result = await mutate<{ pullRequestReview: { id: string } }>(
+        this.run,
+        'addPullRequestReview',
+        START_REVIEW,
+        ['-f', `prId=${args.prId}`, '-f', `commitOid=${args.commitOid}`],
+      );
+      reviewId = result.pullRequestReview.id;
+    } catch (err) {
+      throw new ReviewSubmitError(`Couldn't start your review: ${shortMessage(err)}`, null, {
+        cause: err,
+      });
+    }
+
+    for (const draft of args.drafts) {
+      try {
+        if (draft.kind === 'comment') {
+          await mutate(
+            this.run,
+            'addPullRequestReviewThread',
+            ADD_THREAD,
+            threadFields(reviewId, draft, args.commitOid),
+          );
+        } else {
+          await mutate(this.run, 'addPullRequestReviewThreadReply', ADD_REPLY, [
+            '-f',
+            `reviewId=${reviewId}`,
+            '-f',
+            `threadId=${draft.threadId}`,
+            '-f',
+            `body=${draft.body}`,
+          ]);
+        }
+      } catch (err) {
+        await this.deleteReview(reviewId);
+        const what = draft.kind === 'comment' ? `your comment on ${draft.path}` : 'your reply';
+        throw new ReviewSubmitError(`Couldn't add ${what}: ${shortMessage(err)}`, draft.id, {
+          cause: err,
+        });
+      }
+    }
+
+    try {
+      const result = await mutate<{ pullRequestReview: { url: string } }>(
+        this.run,
+        'submitPullRequestReview',
+        SUBMIT_REVIEW,
+        ['-f', `reviewId=${reviewId}`, '-f', `event=${args.event}`, '-f', `body=${args.body}`],
+      );
+      return { url: result.pullRequestReview.url };
+    } catch (err) {
+      await this.deleteReview(reviewId);
+      throw new ReviewSubmitError(`Couldn't submit your review: ${shortMessage(err)}`, null, {
+        cause: err,
+      });
+    }
+  }
+
+  /** Resolve or unresolve review thread `threadId`. */
+  async setResolved(threadId: string, resolved: boolean): Promise<void> {
+    const [name, query] = resolved
+      ? ['resolveReviewThread', RESOLVE_THREAD]
+      : ['unresolveReviewThread', UNRESOLVE_THREAD];
+    await mutate(this.run, name, query, ['-f', `threadId=${threadId}`]);
+  }
+
+  /** Delete pending review `reviewId` after a failed submit. */
+  private async deleteReview(reviewId: string): Promise<void> {
+    try {
+      await mutate(this.run, 'deletePullRequestReview', DELETE_REVIEW, [
+        '-f',
+        `reviewId=${reviewId}`,
+      ]);
+    } catch (err) {
+      // The submit error matters more to the user; a pending review left behind only shows
+      // to them on GitHub, so log it and go on.
+      console.error(`Deleting pending review ${reviewId} failed: ${String(err)}`);
+    }
   }
 }
