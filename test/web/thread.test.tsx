@@ -92,6 +92,16 @@ describe('Thread: comments', () => {
     expect(screen.getByText('Thanks')).toBeTruthy();
   });
 
+  it('a comment URL that is not https is plain text, not a link', () => {
+    renderThread({
+      thread: thread({ comments: [comment('c1', { url: 'javascript:alert(1)' })] }),
+    });
+    const item = screen.getByRole('article');
+    expect(within(item).queryByRole('link')).toBeNull();
+    expect(within(item).getByText('view on GitHub')).toBeTruthy();
+    expect(item.innerHTML).not.toContain('javascript:');
+  });
+
   it('labels an outdated thread', () => {
     renderThread({ thread: thread({ outdated: true }) });
     expect(screen.getByText('Outdated')).toBeTruthy();

@@ -3,6 +3,7 @@ import type { InboxPr, InboxResponse } from '../shared/api.js';
 import type { CiStatus } from '../shared/review.js';
 import { getInbox } from './api.js';
 import { errorText } from './errors.js';
+import { safeHref } from './safe-href.js';
 
 type State =
   | { status: 'loading' }
@@ -116,7 +117,7 @@ function progressText({ tour, seenCount }: InboxPr): string {
   return `${seenCount} of ${tour.homes ?? 0} seen`;
 }
 
-/** The PR's checks in a word; a failing one links to the failing check when it has a URL. */
+/** The PR's checks in a word; a failing one links to the failing check when it has a safe URL. */
 function CiCell({ ci }: { ci: CiStatus }) {
   switch (ci.state) {
     case 'success':
@@ -127,11 +128,13 @@ function CiCell({ ci }: { ci: CiStatus }) {
       return <span className="muted">—</span>;
     case 'failure': {
       const name = ci.failing?.name;
-      if (ci.failing && ci.failing.url !== '') {
+      // The URL comes from a third-party status target: only an https link is made.
+      const href = ci.failing ? safeHref(ci.failing.url) : null;
+      if (ci.failing && href !== null) {
         return (
           <a
             className="ci-failing"
-            href={ci.failing.url}
+            href={href}
             target="_blank"
             rel="noreferrer"
             title={`Failing check: ${ci.failing.name}`}

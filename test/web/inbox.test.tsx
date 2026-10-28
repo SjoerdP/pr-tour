@@ -130,6 +130,21 @@ describe('Inbox', () => {
     expect(link.getAttribute('title')).toContain('test');
   });
 
+  it('a failing check with a javascript: URL is not a link', async () => {
+    serve(200, {
+      reviewRequested: [
+        pr({ ci: { state: 'failure', failing: { name: 'lint', url: 'javascript:alert(1)' } } }),
+      ],
+      mine: [],
+    });
+    render(<Inbox />);
+
+    const review = await tableNamed('Waiting for my review');
+    expect(within(review).getByText(/✗ failing/)).toBeTruthy();
+    expect(within(review).queryByRole('link', { name: /failing/ })).toBeNull();
+    expect(review.innerHTML).not.toContain('javascript:');
+  });
+
   it('a failing check without a URL is not a link', async () => {
     serve(200, {
       reviewRequested: [pr({ ci: { state: 'failure', failing: { name: 'lint', url: '' } } })],

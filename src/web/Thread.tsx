@@ -3,6 +3,7 @@ import type { Draft, DraftReply, ReviewThread, ThreadComment } from '../shared/r
 import { Composer } from './Composer.js';
 import { useComposerMemory } from './composer-memory.js';
 import { errorText } from './errors.js';
+import { safeHref } from './safe-href.js';
 
 type Props = {
   thread: ReviewThread;
@@ -132,6 +133,8 @@ export function Thread({
 }
 
 function Comment({ comment, now }: { comment: ThreadComment; now: Date | undefined }) {
+  // The URL comes from GitHub's answer; it is linked only when it is https.
+  const href = safeHref(comment.url);
   return (
     <article className="thread-comment" aria-label={`Comment by ${comment.author}`}>
       <header className="comment-head">
@@ -139,9 +142,13 @@ function Comment({ comment, now }: { comment: ThreadComment; now: Date | undefin
         <time dateTime={comment.createdAt} title={comment.createdAt}>
           {relativeTime(comment.createdAt, now ?? new Date())}
         </time>
-        <a href={comment.url} target="_blank" rel="noreferrer">
-          view on GitHub
-        </a>
+        {href === null ? (
+          <span>view on GitHub</span>
+        ) : (
+          <a href={href} target="_blank" rel="noreferrer">
+            view on GitHub
+          </a>
+        )}
       </header>
       <CommentBody body={comment.body} />
     </article>
