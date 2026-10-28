@@ -46,7 +46,7 @@ src/server/      Everything that runs under Node, flat, one module per concern.
   check.ts       checkTour: every changed line has exactly one home
   prompt.ts      tourPrompt text
   build.ts       TourBuilder: run claude, validate, assign ids, check, store
-  store.ts       Store: SQLite (tours, seen marks)
+  store.ts       Store: SQLite (tours, seen marks, review drafts)
   jobs.ts        Jobs: in-memory build jobs
   app.ts         createApp: Hono routes, localhost guard, static web app
 src/cli.ts       pr-tour binary: parseArgs + wiring of real dependencies

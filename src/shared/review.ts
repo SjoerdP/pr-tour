@@ -59,6 +59,10 @@ export type NewDraft =
   | Omit<DraftComment, 'id' | 'createdAt' | 'placement' | 'quote' | 'headSha'>
   | Omit<DraftReply, 'id' | 'createdAt'>;
 
+/** What the store saves: a comment with placement, quote and headSha filled in, or a reply. */
+export type StoredNewDraft =
+  Omit<DraftComment, 'id' | 'createdAt'> | Omit<DraftReply, 'id' | 'createdAt'>;
+
 /** True for a comment draft made on another head than the tour's (an "older version"). */
 export function isOlderDraft(d: Draft, headSha: string): boolean {
   return d.kind === 'comment' && d.headSha !== headSha;

@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import Database from 'better-sqlite3';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { Store, StoreError } from '../../src/server/store.js';
+import type { StoredNewDraft } from '../../src/shared/review.js';
 import type { Step, Tour } from '../../src/shared/tour.js';
 
 function step(id: string): Step {
@@ -278,5 +279,130 @@ describe('Store on disk', () => {
     db.pragma('user_version = 99');
     db.close();
     expect(() => new Store(path)).toThrow(/newer/);
+  });
+});
+
+const comment: StoredNewDraft = {
+  kind: 'comment',
+  path: 'src/a.ts',
+  side: 'new',
+  startLine: 3,
+  endLine: 5,
+  placement: 'line',
+  quote: '',
+  headSha: 'b'.repeat(40),
+  body: 'Why this?',
+};
+const reply: StoredNewDraft = { kind: 'reply', threadId: 'PRRT_1', body: 'Agreed.' };
+
+describe('Store drafts', () => {
+  it('add then list returns both kinds in order', () => {
+    const store = new Store(':memory:');
+    const c = store.addDraft('acme/loans', 7, comment);
+    const r = store.addDraft('acme/loans', 7, reply);
+
+    expect(c).toEqual({ ...comment, id: c.id, createdAt: c.createdAt });
+    expect(r).toEqual({ ...reply, id: r.id, createdAt: r.createdAt });
+    expect(r.id).toBeGreaterThan(c.id);
+    expect(store.drafts('acme/loans', 7)).toEqual([c, r]);
+    expect(store.drafts('acme/loans', 8)).toEqual([]);
+  });
+
+  it('update changes body', () => {
+    const store = new Store(':memory:');
+    const c = store.addDraft('acme/loans', 7, comment);
+    const updated = store.updateDraft('acme/loans', 7, c.id, 'New text');
+    expect(updated).toEqual({ ...c, body: 'New text' });
+    expect(store.drafts('acme/loans', 7)).toEqual([updated]);
+  });
+
+  it("update of another PR's draft throws", () => {
+    const store = new Store(':memory:');
+    const c = store.addDraft('acme/loans', 7, comment);
+    expect(() => store.updateDraft('acme/loans', 8, c.id, 'x')).toThrow(StoreError);
+    expect(() => store.updateDraft('acme/other', 7, c.id, 'x')).toThrow(StoreError);
+    expect(() => store.updateDraft('acme/loans', 7, c.id + 99, 'x')).toThrow(StoreError);
+    expect(store.drafts('acme/loans', 7)).toEqual([c]);
+  });
+
+  it('delete removes one', () => {
+    const store = new Store(':memory:');
+    const c = store.addDraft('acme/loans', 7, comment);
+    const r = store.addDraft('acme/loans', 7, reply);
+    store.deleteDraft('acme/loans', 7, c.id);
+    store.deleteDraft('acme/loans', 7, 12345);
+    store.deleteDraft('acme/loans', 8, r.id);
+    expect(store.drafts('acme/loans', 7)).toEqual([r]);
+  });
+
+  it('clearDrafts removes only the given ids', () => {
+    const store = new Store(':memory:');
+    const a = store.addDraft('acme/loans', 7, comment);
+    const b = store.addDraft('acme/loans', 7, reply);
+    const c = store.addDraft('acme/loans', 7, { ...reply, body: 'Third' });
+    const other = store.addDraft('acme/loans', 8, reply);
+    store.clearDrafts('acme/loans', 7, [a.id, c.id, other.id]);
+    store.clearDrafts('acme/loans', 7, []);
+    expect(store.drafts('acme/loans', 7)).toEqual([b]);
+    expect(store.drafts('acme/loans', 8)).toEqual([other]);
+  });
+
+  it('draftCount', () => {
+    const store = new Store(':memory:');
+    expect(store.draftCount('acme/loans', 7)).toBe(0);
+    store.addDraft('acme/loans', 7, comment);
+    store.addDraft('acme/loans', 7, reply);
+    store.addDraft('acme/loans', 8, reply);
+    expect(store.draftCount('acme/loans', 7)).toBe(2);
+  });
+
+  it('repo case is ignored', () => {
+    const store = new Store(':memory:');
+    const c = store.addDraft('Acme/Loans', 7, comment);
+    expect(store.drafts('acme/loans', 7)).toEqual([c]);
+    expect(store.draftCount('ACME/LOANS', 7)).toBe(1);
+    expect(store.updateDraft('acme/LOANS', 7, c.id, 'x').body).toBe('x');
+    store.clearDrafts('ACME/loans', 7, [c.id]);
+    expect(store.draftCount('acme/loans', 7)).toBe(0);
+  });
+});
+
+describe('Store migration', () => {
+  let dir: string | undefined;
+  afterEach(() => {
+    if (dir) rmSync(dir, { recursive: true, force: true });
+    dir = undefined;
+  });
+
+  it('an existing version-1 database migrates and keeps tours and seen marks', () => {
+    dir = mkdtempSync(join(tmpdir(), 'pr-tour-store-'));
+    const path = join(dir, 'pr-tour.db');
+    const t = tour();
+    const db = new Database(path);
+    db.exec(`CREATE TABLE tours (
+       repo TEXT NOT NULL, pr INTEGER NOT NULL, head_sha TEXT NOT NULL, source TEXT NOT NULL,
+       json TEXT NOT NULL, created_at TEXT NOT NULL, PRIMARY KEY (repo, pr));
+     CREATE TABLE seen (
+       repo TEXT NOT NULL, pr INTEGER NOT NULL, home_id TEXT NOT NULL,
+       content_hash TEXT NOT NULL, seen_at TEXT NOT NULL, PRIMARY KEY (repo, pr, home_id));`);
+    db.prepare(
+      `INSERT INTO tours (repo, pr, head_sha, source, json, created_at) VALUES (?, ?, ?, ?, ?, ?)`,
+    ).run('acme/loans', 7, t.headSha, t.source, JSON.stringify(t), t.createdAt);
+    db.prepare(
+      `INSERT INTO seen (repo, pr, home_id, content_hash, seen_at) VALUES (?, ?, ?, ?, ?)`,
+    ).run('acme/loans', 7, 'f1', 'h-f1', '2026-10-28T12:00:00.000Z');
+    db.pragma('user_version = 1');
+    db.close();
+
+    const store = new Store(path);
+    expect(store.getTour('acme/loans', 7)).toEqual(t);
+    expect(store.seen('acme/loans', 7)).toEqual({ f1: 'h-f1' });
+    const c = store.addDraft('acme/loans', 7, comment);
+    expect(store.drafts('acme/loans', 7)).toEqual([c]);
+    store.close();
+
+    const check = new Database(path);
+    expect(check.pragma('user_version', { simple: true })).toBe(2);
+    check.close();
   });
 });
