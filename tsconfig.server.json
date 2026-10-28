@@ -1,0 +1,11 @@
+{
+  // Typecheck for everything that runs under Node: server, shared, cli,
+  // their tests, and the tool config files. No DOM lib on purpose.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "lib": ["ES2023"],
+    "types": ["node"]
+  },
+  "include": ["src", "test", "vite.config.ts", "vitest.config.ts"],
+  "exclude": ["src/web", "test/web"]
+}

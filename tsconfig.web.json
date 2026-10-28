@@ -1,0 +1,10 @@
+{
+  // Typecheck for everything that runs in the browser: web, shared, and the
+  // jsdom tests. DOM lib, no node types, so `fs`/`path` do not typecheck here.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "types": ["vite/client"]
+  },
+  "include": ["src/web", "src/shared", "test/web"]
+}

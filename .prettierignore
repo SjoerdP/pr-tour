@@ -1,0 +1,9 @@
+dist/
+node_modules/
+coverage/
+package-lock.json
+# Planning documents are managed by hand; don't reformat them.
+docs/superpowers/
+.superpowers/
+# Test fixtures must stay byte-exact (real diffs, canned JSON).
+test/fixtures/

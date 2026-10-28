@@ -1,0 +1,14 @@
+{
+  // Emit the Node side to dist/ (dist/cli.js, dist/server/, dist/shared/).
+  // The web bundle is built by Vite into dist/web/.
+  "extends": "./tsconfig.server.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "rootDir": "src",
+    "outDir": "dist",
+    "sourceMap": true
+  },
+  // `files: []` keeps tsc from failing with "no inputs" while src/ is still empty.
+  "files": [],
+  "include": ["src/server", "src/shared", "src/cli.ts"]
+}

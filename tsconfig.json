@@ -1,0 +1,27 @@
+{
+  // Base compiler options for the whole repo, plus the list of projects.
+  // This file compiles nothing itself (`files: []`); editors use it to find
+  // the project that owns a file. Each project extends it and sets `include`.
+  //
+  //   tsconfig.server.json  typecheck: src/server, src/shared, src/cli.ts, node tests, configs
+  //   tsconfig.web.json     typecheck: src/web, src/shared, web tests (DOM lib, no node types)
+  //   tsconfig.build.json   emit:      src/server, src/shared, src/cli.ts -> dist/
+  "compilerOptions": {
+    "target": "ES2023",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "jsx": "react-jsx",
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "noImplicitOverride": true,
+    "noFallthroughCasesInSwitch": true,
+    "verbatimModuleSyntax": true,
+    "isolatedModules": true,
+    "esModuleInterop": true,
+    "forceConsistentCasingInFileNames": true,
+    "skipLibCheck": true,
+    "noEmit": true
+  },
+  "files": [],
+  "references": [{ "path": "./tsconfig.server.json" }, { "path": "./tsconfig.web.json" }]
+}
