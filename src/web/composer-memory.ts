@@ -4,7 +4,7 @@
 import { createContext, useContext } from 'react';
 import type { DiffSide } from '../shared/review.js';
 
-/** Lines picked for a comment: from the first one clicked to the last one (shift+)clicked. */
+/** Lines picked for a comment: the line pressed to the last one dragged to or shift+clicked. */
 export type Selection = { side: DiffSide; anchor: number; line: number };
 
 /** A new comment being written on a file: its picked lines and the text typed so far. */

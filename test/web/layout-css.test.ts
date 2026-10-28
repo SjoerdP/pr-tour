@@ -76,6 +76,10 @@ describe('tour layout CSS', () => {
     expect(box['box-shadow']).toBe('var(--shadow-popover)');
   });
 
+  it('a drag over line numbers selects no text in the code', () => {
+    expect(rule('.code-dragging')['user-select']).toBe('none');
+  });
+
   it('step facts have the same space on both sides of the separator', () => {
     const gap = rule('.step-facts li').gap;
     expect(gap).toBeDefined();

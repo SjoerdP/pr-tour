@@ -224,6 +224,33 @@ function FileCode({
     );
   }
 
+  // A drag over line numbers, like GitHub: the range shows while the button is down, and
+  // becomes the selection (opening the composer) only on release, so nothing moves under
+  // the pointer while picking. A press and release on one line is a plain click.
+  const [drag, setDrag] = useState<Selection | null>(null);
+  const lineDrag: LineDrag = {
+    start: (side, line) => setDrag({ side, anchor: line, line }),
+    // Over the other side's numbers the range stays as it was.
+    over: (side, line) => setDrag((d) => (d && d.side === side ? { ...d, line } : d)),
+  };
+  useEffect(() => {
+    if (!drag) return;
+    // On the document: the button may be released anywhere, even off the numbers.
+    function onUp() {
+      setSelection(drag);
+      setDrag(null);
+    }
+    document.addEventListener('mouseup', onUp);
+    return () => document.removeEventListener('mouseup', onUp);
+  }, [drag]);
+  // What the rows show as picked: the drag while it lasts, else the selection.
+  const marked = drag ?? selection;
+  const markedRange = marked && {
+    side: marked.side,
+    start: Math.min(marked.anchor, marked.line),
+    end: Math.max(marked.anchor, marked.line),
+  };
+
   // The row a jump from the review panel asked for: -1 for the comments on the file, null
   // when the jump is not about this file.
   const revealRow = useMemo((): number | null => {
@@ -376,7 +403,7 @@ function FileCode({
           Whole file
         </button>
       </div>
-      <div className="code" ref={container} style={gutter}>
+      <div className={drag ? 'code code-dragging' : 'code'} ref={container} style={gutter}>
         <FileComments
           path={file.path}
           headSha={tour.headSha}
@@ -404,9 +431,12 @@ function FileCode({
               const inFocus = focusRange !== null && i >= focusRange[0] && i <= focusRange[1];
               const rowThreads = threadsAt.get(i);
               const rowDrafts = draftsAt.get(i);
-              const no = picked?.side === 'new' ? row.newNo : row.oldNo;
+              const no = markedRange?.side === 'new' ? row.newNo : row.oldNo;
               const selected =
-                picked !== null && no !== undefined && no >= picked.start && no <= picked.end;
+                markedRange !== null &&
+                no !== undefined &&
+                no >= markedRange.start &&
+                no <= markedRange.end;
               return (
                 <Fragment key={i}>
                   <CodeRow
@@ -419,6 +449,7 @@ function FileCode({
                     calls={inFocus && row.newNo !== undefined ? calls : NO_CALLS}
                     label={label}
                     onPick={diff ? pick : null}
+                    drag={lineDrag}
                     onJump={onJump}
                     onOpenHome={onOpenHome}
                   />
@@ -541,19 +572,32 @@ type CodeRowProps = {
   label: Owner | null;
   /** Picks a line for a comment (`extend` on shift+click); null when comments are not possible. */
   onPick: ((side: DiffSide, line: number, extend: boolean) => void) | null;
+  drag: LineDrag;
   onJump: (file: string, line: number) => void;
   onOpenHome: (homeId: string) => void;
 };
 
-/** A line number; a button that picks the line for a comment when `onPick` is given. */
+/** A drag over line numbers: pressed on a line, then moved over others. */
+type LineDrag = {
+  start: (side: DiffSide, line: number) => void;
+  over: (side: DiffSide, line: number) => void;
+};
+
+/**
+ * A line number; a button that picks the line for a comment when `onPick` is given. A click
+ * (or Enter/Space) picks it, shift+click extends the selection, and a press dragged over
+ * other numbers picks the range.
+ */
 function LineNo({
   no,
   side,
   onPick,
+  drag,
 }: {
   no: number | undefined;
   side: DiffSide;
   onPick: CodeRowProps['onPick'];
+  drag: LineDrag;
 }) {
   if (no === undefined || !onPick) return <span className="code-no">{no ?? ''}</span>;
   const label = side === 'new' ? `Comment on line ${no}` : `Comment on old line ${no}`;
@@ -562,7 +606,13 @@ function LineNo({
       type="button"
       className="code-no code-no-button"
       aria-label={label}
-      title={`${label} (Shift+click to select a range)`}
+      title={`${label} (drag or Shift+click to select a range)`}
+      onMouseDown={(event: MouseEvent) => {
+        // Shift+click extends in onClick; other buttons do not pick.
+        if (event.button === 0 && !event.shiftKey) drag.start(side, no);
+      }}
+      onMouseEnter={() => drag.over(side, no)}
+      // After a drag released on this same line, this picks that line again: no change.
       onClick={(event: MouseEvent) => onPick(side, no, event.shiftKey)}
     >
       {no}
@@ -580,6 +630,7 @@ function CodeRow({
   calls,
   label,
   onPick,
+  drag,
   onJump,
   onOpenHome,
 }: CodeRowProps) {
@@ -593,8 +644,10 @@ function CodeRow({
       data-row={index}
     >
       {/* Deleted lines are commented on the old side, all others on the new side. */}
-      {showOld && <LineNo no={row.oldNo} side="old" onPick={row.kind === 'del' ? onPick : null} />}
-      <LineNo no={row.newNo} side="new" onPick={onPick} />
+      {showOld && (
+        <LineNo no={row.oldNo} side="old" onPick={row.kind === 'del' ? onPick : null} drag={drag} />
+      )}
+      <LineNo no={row.newNo} side="new" onPick={onPick} drag={drag} />
       <span className="code-marker">{MARKERS[row.kind]}</span>
       <code className="code-text">{lineContent(parts, row.text.length, matches, onJump)}</code>
       {label && (

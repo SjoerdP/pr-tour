@@ -1124,6 +1124,12 @@ p.why {
   background: var(--accent-soft);
 }
 
+/* While a range is dragged over the line numbers, the code's text is not selected. */
+.code-dragging {
+  cursor: default;
+  user-select: none;
+}
+
 /* The row (or comments block) a jump from the review panel showed: flashes, then fades. */
 .reveal-flash {
   animation: reveal-flash 1.6s ease-out;

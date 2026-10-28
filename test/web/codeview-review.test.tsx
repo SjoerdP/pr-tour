@@ -340,6 +340,160 @@ describe('CodeView: commenting on lines', () => {
   });
 });
 
+/** The text of the rows picked for a comment. */
+const selectedTexts = () =>
+  [...document.querySelectorAll('.code-selected')].map(
+    (row) => row.querySelector('.code-text')!.textContent,
+  );
+
+describe('CodeView: dragging over line numbers', () => {
+  it('a drag picks a range; the composer opens on mouse up under the last row', async () => {
+    serve();
+    renderView();
+    await screen.findByText('new five');
+
+    fireEvent.mouseDown(lineButton(4));
+    fireEvent.mouseEnter(lineButton(5));
+    fireEvent.mouseEnter(lineButton(6));
+    // While dragging: the range shows, nothing opens or pushes rows down.
+    expect(selectedTexts()).toEqual(['line 4', 'new five', 'line 6']);
+    expect(screen.queryByRole('textbox')).toBeNull();
+    expect(document.querySelector('.code-review-row')).toBeNull();
+
+    fireEvent.mouseUp(lineButton(6));
+    expect(rowAbove(field()).textContent).toContain('line 6');
+    expect(selectedTexts()).toEqual(['line 4', 'new five', 'line 6']);
+  });
+
+  it('the range is sent as dragged', async () => {
+    serve();
+    const review = renderView();
+    await screen.findByText('new five');
+
+    fireEvent.mouseDown(lineButton(4));
+    fireEvent.mouseEnter(lineButton(6));
+    fireEvent.mouseUp(lineButton(6));
+    fireEvent.change(field(), { target: { value: 'These three' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Add comment' }));
+
+    await vi.waitFor(() =>
+      expect(review.add).toHaveBeenCalledWith(
+        expect.objectContaining({ side: 'new', startLine: 4, endLine: 6 }),
+      ),
+    );
+  });
+
+  it('a drag upwards picks the same range, with the composer under its last row', async () => {
+    serve();
+    renderView();
+    await screen.findByText('new five');
+
+    fireEvent.mouseDown(lineButton(7));
+    fireEvent.mouseEnter(lineButton(5));
+    fireEvent.mouseUp(lineButton(5));
+    expect(selectedTexts()).toEqual(['new five', 'line 6', 'line 7']);
+    expect(rowAbove(field()).textContent).toContain('line 7');
+  });
+
+  it('a plain click (press and release on one line) opens the composer there', async () => {
+    serve();
+    renderView();
+    await screen.findByText('new five');
+
+    fireEvent.mouseDown(lineButton(5));
+    fireEvent.mouseUp(lineButton(5));
+    fireEvent.click(lineButton(5), { detail: 1 });
+    expect(selectedTexts()).toEqual(['new five']);
+    expect(rowAbove(field()).textContent).toContain('new five');
+  });
+
+  it('shift+click after a drag extends it and keeps the typed text', async () => {
+    serve();
+    renderView();
+    await screen.findByText('new five');
+
+    fireEvent.mouseDown(lineButton(4));
+    fireEvent.mouseEnter(lineButton(5));
+    fireEvent.mouseUp(lineButton(5));
+    fireEvent.change(field(), { target: { value: 'Half a thought' } });
+
+    fireEvent.mouseDown(lineButton(7), { shiftKey: true });
+    fireEvent.mouseUp(lineButton(7), { shiftKey: true });
+    fireEvent.click(lineButton(7), { shiftKey: true, detail: 1 });
+    expect(selectedTexts()).toEqual(['line 4', 'new five', 'line 6', 'line 7']);
+    expect(rowAbove(field()).textContent).toContain('line 7');
+    expect((field() as HTMLTextAreaElement).value).toBe('Half a thought');
+  });
+
+  it('a new drag moves the open composer and keeps the typed text', async () => {
+    serve();
+    renderView();
+    await screen.findByText('new five');
+
+    fireEvent.click(lineButton(4));
+    fireEvent.change(field(), { target: { value: 'Moving' } });
+    fireEvent.mouseDown(lineButton(6));
+    fireEvent.mouseEnter(lineButton(7));
+    fireEvent.mouseUp(lineButton(7));
+    expect(selectedTexts()).toEqual(['line 6', 'line 7']);
+    expect((field() as HTMLTextAreaElement).value).toBe('Moving');
+  });
+
+  it('Enter or Space on a line number opens the composer for that line', async () => {
+    serve();
+    renderView();
+    await screen.findByText('new five');
+
+    const button = lineButton(6);
+    expect(button.tagName).toBe('BUTTON');
+    // A keyboard press activates the button with a click that has no mouse press before it.
+    fireEvent.keyDown(button, { key: 'Enter' });
+    fireEvent.click(button, { detail: 0 });
+    expect(selectedTexts()).toEqual(['line 6']);
+    expect(rowAbove(field()).textContent).toContain('line 6');
+  });
+
+  it('dragging onto the other side or off the numbers keeps the last same-side range', async () => {
+    serve();
+    renderView();
+    await screen.findByText('new five');
+
+    fireEvent.mouseDown(lineButton(4));
+    fireEvent.mouseEnter(lineButton(6));
+    const oldFive = screen.getByRole('button', { name: 'Comment on old line 5' });
+    fireEvent.mouseEnter(oldFive);
+    fireEvent.mouseEnter(screen.getByText('line 7'));
+    expect(selectedTexts()).toEqual(['line 4', 'new five', 'line 6']);
+    fireEvent.mouseUp(oldFive);
+    expect(selectedTexts()).toEqual(['line 4', 'new five', 'line 6']);
+    expect(rowAbove(field()).textContent).toContain('line 6');
+  });
+
+  it('while dragging, text in the code is not selected', async () => {
+    serve();
+    renderView();
+    await screen.findByText('new five');
+
+    const code = document.querySelector('.code')!;
+    fireEvent.mouseDown(lineButton(4));
+    expect(code.classList.contains('code-dragging')).toBe(true);
+    fireEvent.mouseUp(lineButton(4));
+    expect(code.classList.contains('code-dragging')).toBe(false);
+  });
+
+  it('a right-button press does not start a drag', async () => {
+    serve();
+    renderView();
+    await screen.findByText('new five');
+
+    fireEvent.mouseDown(lineButton(4), { button: 2 });
+    fireEvent.mouseEnter(lineButton(6));
+    fireEvent.mouseUp(lineButton(6), { button: 2 });
+    expect(selectedTexts()).toEqual([]);
+    expect(screen.queryByRole('textbox')).toBeNull();
+  });
+});
+
 describe('CodeView: threads and drafts in place', () => {
   it('shows a new-side thread after its row', async () => {
     serve();
