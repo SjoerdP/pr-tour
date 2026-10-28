@@ -1,6 +1,6 @@
 // The tour's homes in the order the web shows them (outline and j/k).
 
-import type { Flow, Foundation, OtherGroup, OtherItem, Step, Tour } from '../shared/tour.js';
+import type { Flow, Foundation, OtherGroup, OtherItem, Range, Step, Tour } from '../shared/tour.js';
 
 /** One place a changed line can live: a foundation, a flow step or an other-changes item. */
 export type Home =
@@ -34,4 +34,27 @@ export function homesInOrder(tour: Tour): Home[] {
       group.items.map((item): Home => ({ kind: 'other', id: item.id, item, group })),
     ),
   ];
+}
+
+export function homeTitle(home: Home): string {
+  switch (home.kind) {
+    case 'foundation':
+      return home.foundation.title;
+    case 'step':
+      return home.step.title;
+    case 'other':
+      return home.item.title;
+  }
+}
+
+/** The changed-line ranges a home owns. */
+export function homeRanges(home: Home): Range[] {
+  switch (home.kind) {
+    case 'foundation':
+      return home.foundation.homes;
+    case 'step':
+      return home.step.homes;
+    case 'other':
+      return home.item.homes;
+  }
 }

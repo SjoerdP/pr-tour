@@ -40,6 +40,8 @@ export function TourView({ repo, pr }: { repo: string; pr: number }) {
   useKeys({
     j: () => goTo(ids[index + 1]),
     k: () => goTo(index > 0 ? ids[index - 1] : undefined),
+    // Back from a followed call to the step's own code.
+    ...(jump ? { Escape: () => setJump(null) } : {}),
   });
 
   if (load.status === 'loading') {
@@ -124,6 +126,7 @@ export function TourView({ repo, pr }: { repo: string; pr: number }) {
             jump={jump}
             onJump={(file, line) => setJump({ file, line })}
             onBack={() => setJump(null)}
+            onOpenHome={goTo}
           />
         </div>
       )}

@@ -12,9 +12,31 @@ vi.mock('../../src/web/api.js', () => ({
 }));
 
 // The real code view loads files from the server; these tests are about the tour around it.
+// It shows which file and focus it was given, and offers its two ways out of the step.
 vi.mock('../../src/web/CodeView.js', () => ({
-  CodeView: ({ file, homeId }: { file: string; homeId: string }) => (
-    <div data-testid="code-view">{`${homeId} ${file}`}</div>
+  CodeView: ({
+    file,
+    focus,
+    homeId,
+    onJump,
+    onOpenHome,
+  }: {
+    file: string;
+    focus: { start: number } | null;
+    homeId: string;
+    onJump: (file: string, line: number) => void;
+    onOpenHome: (homeId: string) => void;
+  }) => (
+    <div>
+      <div data-testid="code-view">{`${homeId} ${file}`}</div>
+      <div data-testid="code-focus">{focus?.start}</div>
+      <button type="button" onClick={() => onJump('src/fees.ts', 12)}>
+        follow chargeFee
+      </button>
+      <button type="button" onClick={() => onOpenHome('o1.1')}>
+        open o1.1
+      </button>
+    </div>
   ),
 }));
 
@@ -430,5 +452,31 @@ describe('TourView', () => {
 
     expect(await screen.findByText('repayments(id uuid pk, amount_cents bigint)')).toBeTruthy();
     expect(screen.getByText(/Additive only\./).textContent).toBe('Compatible: Additive only.');
+  });
+
+  it('following a traced call shows that file without marking the step seen', async () => {
+    getPr.mockResolvedValue(response());
+    render(<TourView repo="acme/loans" pr={42} />);
+    fireEvent.click(await screen.findByRole('button', { name: /Validate and record/ }));
+    markSeen.mockClear();
+
+    fireEvent.click(screen.getByRole('button', { name: 'follow chargeFee' }));
+    expect(screen.getByTestId('code-view').textContent).toBe('F1.S1 src/fees.ts');
+    expect(screen.getByTestId('code-focus').textContent).toBe('12');
+    expect(markSeen).not.toHaveBeenCalled();
+
+    fireEvent.keyDown(window, { key: 'Escape' });
+    expect(screen.getByTestId('code-view').textContent).toBe('F1.S1 src/loans/repay.ts');
+    expect(screen.getByTestId('code-focus').textContent).toBe('10');
+  });
+
+  it('a belongs-to label in the code opens that item', async () => {
+    getPr.mockResolvedValue(response());
+    render(<TourView repo="acme/loans" pr={42} />);
+    await screen.findByRole('navigation', { name: 'Tour outline' });
+
+    fireEvent.click(screen.getByRole('button', { name: 'open o1.1' }));
+    expect(outlineItem('Repay tests').getAttribute('aria-current')).toBe('step');
+    expect(markSeen).toHaveBeenCalledWith('acme/loans', 42, 'f1', 'h-f1');
   });
 });

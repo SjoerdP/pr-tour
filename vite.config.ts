@@ -11,6 +11,9 @@ export default defineConfig({
   build: {
     outDir: 'dist/web',
     emptyOutDir: true,
+    // Shiki's grammars are big chunks (up to ~800 kB), each loaded only when a file in that
+    // language is opened. The app chunk itself is far below this.
+    chunkSizeWarningLimit: 1000,
   },
   server: {
     proxy: {

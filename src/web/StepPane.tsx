@@ -1,13 +1,21 @@
 import type { Foundation, Range, Step, Tour } from '../shared/tour.js';
+import type { Focus as CodeFocus } from './code-lines.js';
 import { CodeView } from './CodeView.js';
-import type { Home } from './homes.js';
+import { homeTitle, type Home } from './homes.js';
 
-type Focus = { start: number; end: number } | null;
+type Focus = CodeFocus | null;
 
-/** The first head-side range of `file` in `homes`: what the code view opens on. */
-function firstNewRange(homes: Range[], file: string): Focus {
-  for (const r of homes) {
-    if ('side' in r && r.side === 'new' && r.file === file) return { start: r.start, end: r.end };
+/**
+ * What the code view opens on: the first head-side range of `file` in `homes`, else the
+ * first base-side one (a home of only deleted lines).
+ */
+function firstRange(homes: Range[], file: string): Focus {
+  for (const side of ['new', 'old'] as const) {
+    for (const r of homes) {
+      if ('side' in r && r.side === side && r.file === file) {
+        return { start: r.start, end: r.end, side };
+      }
+    }
   }
   return null;
 }
@@ -22,21 +30,10 @@ function codeTarget(home: Home): { file: string; focus: Focus } {
     case 'foundation':
       return {
         file: home.foundation.file,
-        focus: firstNewRange(home.foundation.homes, home.foundation.file),
+        focus: firstRange(home.foundation.homes, home.foundation.file),
       };
     case 'other':
-      return { file: home.item.file, focus: firstNewRange(home.item.homes, home.item.file) };
-  }
-}
-
-function homeTitle(home: Home): string {
-  switch (home.kind) {
-    case 'foundation':
-      return home.foundation.title;
-    case 'step':
-      return home.step.title;
-    case 'other':
-      return home.item.title;
+      return { file: home.item.file, focus: firstRange(home.item.homes, home.item.file) };
   }
 }
 
@@ -60,10 +57,11 @@ type Props = {
   jump: { file: string; line: number } | null;
   onJump: (file: string, line: number) => void;
   onBack: () => void;
+  onOpenHome: (homeId: string) => void;
 };
 
 /** The current home: its notes, then its code. */
-export function StepPane({ repo, pr, tour, home, jump, onJump, onBack }: Props) {
+export function StepPane({ repo, pr, tour, home, jump, onJump, onBack, onOpenHome }: Props) {
   const why =
     home.kind === 'foundation'
       ? home.foundation.why
@@ -104,7 +102,8 @@ export function StepPane({ repo, pr, tour, home, jump, onJump, onBack }: Props) 
           Showing <code>{jump.file}</code> line {jump.line}.{' '}
           <button type="button" className="link-button" onClick={onBack}>
             Back to this step
-          </button>
+          </button>{' '}
+          <span className="muted">(Esc)</span>
         </p>
       )}
       <CodeView
@@ -115,6 +114,7 @@ export function StepPane({ repo, pr, tour, home, jump, onJump, onBack }: Props) 
         focus={target.focus}
         homeId={home.id}
         onJump={onJump}
+        onOpenHome={onOpenHome}
       />
     </article>
   );

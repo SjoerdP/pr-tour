@@ -452,3 +452,121 @@ pre {
   margin: 0 0 var(--space-2);
   font-size: 12px;
 }
+
+/* Code view */
+
+.code-view {
+  margin-top: var(--space-3);
+}
+
+.code-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  margin-bottom: var(--space-2);
+  font-size: 12px;
+}
+
+.code-path {
+  font-weight: 600;
+}
+
+.code-counter {
+  margin-left: auto;
+}
+
+.code-toolbar button[aria-pressed='true'] {
+  border-color: var(--focus);
+}
+
+.code {
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 20px;
+}
+
+.code-row {
+  display: flex;
+  min-width: max-content;
+}
+
+.code-no {
+  flex: 0 0 4.5em;
+  padding-right: var(--space-2);
+  color: var(--fg-muted);
+  text-align: right;
+  user-select: none;
+}
+
+.code-marker {
+  flex: 0 0 1.5em;
+  text-align: center;
+  user-select: none;
+}
+
+.code-text {
+  flex: 1 0 auto;
+  padding-right: var(--space-4);
+  white-space: pre;
+}
+
+.code-add {
+  background: color-mix(in srgb, var(--add) 14%, transparent);
+}
+
+.code-add .code-marker {
+  color: var(--add);
+}
+
+.code-del {
+  background: color-mix(in srgb, var(--del) 14%, transparent);
+}
+
+.code-del .code-marker {
+  color: var(--del);
+}
+
+.code-focus {
+  box-shadow: inset 3px 0 0 var(--focus);
+}
+
+.fold-bar {
+  display: block;
+  width: 100%;
+  padding: 0 var(--space-3);
+  border: none;
+  border-block: 1px solid var(--border);
+  border-radius: 0;
+  background: var(--bg-subtle);
+  color: var(--fg-muted);
+  font-family: var(--font-sans);
+  font-size: 12px;
+  text-align: center;
+}
+
+.owner-label {
+  position: sticky;
+  right: 0;
+  flex: 0 0 auto;
+  margin: 1px var(--space-2);
+  padding: 0 var(--space-1);
+  border-color: var(--tag-border);
+  background: var(--bg);
+  color: var(--tag-fg);
+  font-family: var(--font-sans);
+  font-size: 11px;
+  line-height: 16px;
+}
+
+.call-link {
+  padding: 0;
+  border: none;
+  border-radius: 0;
+  background: none;
+  font: inherit;
+  text-decoration: underline dotted;
+}
