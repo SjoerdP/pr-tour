@@ -147,16 +147,15 @@ export function createApp(deps: AppDeps): Hono {
   }
 
   function inboxPr(pr: PrSummary) {
-    let tour;
     try {
-      tour = store.tourStatus(pr.repo, pr.number);
+      const tour = store.tourStatus(pr.repo, pr.number);
+      return { ...pr, tour, seenCount: store.seenCount(pr.repo, pr.number) };
     } catch (err) {
       // One unreadable tour must not hide the whole inbox; show it as missing.
       if (!(err instanceof StoreError)) throw err;
       console.error(logDetail(err));
-      tour = { exists: false };
+      return { ...pr, tour: { exists: false }, seenCount: 0 };
     }
-    return { ...pr, tour, seenCount: store.seenCount(pr.repo, pr.number) };
   }
 
   // Guard: other web pages in the user's browser can send requests here too.

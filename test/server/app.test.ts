@@ -276,6 +276,21 @@ describe('GET /api/inbox', () => {
     expect(log).toHaveBeenCalled();
   });
 
+  it('inbox counts a corrupt stored tour as 0 seen instead of failing', async () => {
+    const log = captureErrorLog();
+    fakes.github.inbox.mockResolvedValue({ reviewRequested: [summary('acme/other', 3)], mine: [] });
+    vi.spyOn(fakes.store, 'getTour').mockImplementation(() => {
+      throw new StoreError('Stored tour for acme/other#3 is invalid');
+    });
+
+    const res = await api('/api/inbox');
+
+    expect(res.status).toBe(200);
+    const body = await json<InboxResponse>(res);
+    expect(body.reviewRequested[0]).toMatchObject({ tour: { exists: false }, seenCount: 0 });
+    expect(log).toHaveBeenCalled();
+  });
+
   it('gh failure is 502 with a short message, not the command', async () => {
     const log = captureErrorLog();
     fakes.github.inbox.mockRejectedValue(

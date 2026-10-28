@@ -115,6 +115,7 @@ describe('Store', () => {
 
   it('markSeen is idempotent and seen returns the hash', () => {
     const store = new Store(':memory:');
+    store.saveTour(tour());
     store.markSeen('acme/loans', 7, 'F1.S1', 'h-s1');
     store.markSeen('acme/loans', 7, 'F1.S1', 'h-s1');
     store.markSeen('acme/loans', 7, 'f1', 'h-f1');
@@ -145,6 +146,44 @@ describe('Store', () => {
   });
 });
 
+describe('Store progress counts only reviewable homes', () => {
+  /** The default tour with an unchanged step F1.S3 at the end of flow F1. */
+  function tourWithUnchangedStep(): Tour {
+    const t = tour();
+    const unchanged: Step = { ...step('F1.S3'), changed: false, homes: [] };
+    t.flows[0]!.steps.push(unchanged);
+    t.hashes['F1.S3'] = 'h-s1-3';
+    return t;
+  }
+
+  it('tourStatus leaves unchanged steps out of homes', () => {
+    const store = new Store(':memory:');
+    store.saveTour(tourWithUnchangedStep());
+    expect(store.tourStatus('acme/loans', 7).homes).toBe(5);
+  });
+
+  it('seenCount ignores a seen mark on an unchanged step', () => {
+    const store = new Store(':memory:');
+    store.saveTour(tourWithUnchangedStep());
+    store.markSeen('acme/loans', 7, 'F1.S1', 'h-s1');
+    store.markSeen('acme/loans', 7, 'F1.S3', 'h-s1-3');
+    expect(store.seenCount('acme/loans', 7)).toBe(1);
+  });
+
+  it('seenCount ignores marks of homes that are not in the tour', () => {
+    const store = new Store(':memory:');
+    store.saveTour(tour());
+    store.markSeen('acme/loans', 7, 'F9.S9', 'gone');
+    expect(store.seenCount('acme/loans', 7)).toBe(0);
+  });
+
+  it('seenCount is 0 without a tour', () => {
+    const store = new Store(':memory:');
+    store.markSeen('acme/loans', 7, 'f1', 'h-f1');
+    expect(store.seenCount('acme/loans', 7)).toBe(0);
+  });
+});
+
 describe('Store repo keys', () => {
   it('a tour saved as Acme/Loans is found as acme/loans', () => {
     const store = new Store(':memory:');
@@ -158,6 +197,7 @@ describe('Store repo keys', () => {
 
   it('seen marks ignore the case of the repo', () => {
     const store = new Store(':memory:');
+    store.saveTour(tour());
     store.markSeen('Acme/Loans', 7, 'f1', 'h1');
 
     expect(store.seen('acme/loans', 7)).toEqual({ f1: 'h1' });

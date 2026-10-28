@@ -1,6 +1,6 @@
 import Database from 'better-sqlite3';
 import type { TourStatus } from '../shared/api.js';
-import { homeIds, TourSchema, type Tour } from '../shared/tour.js';
+import { reviewableHomeIds, TourSchema, type Tour } from '../shared/tour.js';
 
 export type { TourStatus } from '../shared/api.js';
 
@@ -102,7 +102,7 @@ export class Store {
       exists: true,
       source: tour.source,
       headSha: tour.headSha,
-      homes: homeIds(tour).length,
+      homes: reviewableHomeIds(tour).length,
       flows: tour.flows.length,
     };
   }
@@ -126,11 +126,15 @@ export class Store {
     return Object.fromEntries(rows.map((r) => [r.home_id, r.content_hash]));
   }
 
+  /**
+   * How many of the stored tour's reviewable homes have a seen mark (0 without a tour).
+   * Marks on unchanged steps, or on homes no longer in the tour, do not count.
+   */
   seenCount(repo: string, pr: number): number {
-    const row = this.db
-      .prepare(`SELECT COUNT(*) AS n FROM seen WHERE repo = ? AND pr = ?`)
-      .get(repoKey(repo), pr) as { n: number };
-    return row.n;
+    const tour = this.getTour(repo, pr);
+    if (!tour) return 0;
+    const seen = this.seen(repo, pr);
+    return reviewableHomeIds(tour).filter((id) => Object.hasOwn(seen, id)).length;
   }
 
   private migrate(): void {
