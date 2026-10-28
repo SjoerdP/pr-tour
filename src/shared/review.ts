@@ -111,9 +111,10 @@ export const DraftPatchSchema = z.object({ body });
 export type SubmitBody = z.infer<typeof SubmitBodySchema>;
 export type DraftPatch = z.infer<typeof DraftPatchSchema>;
 
+/** Both placements keep the selected lines; a file-level one also has the quoted code. */
 export type CommentTarget =
   | { placement: 'line'; side: DiffSide; startLine: number; endLine: number }
-  | { placement: 'file'; quote: string };
+  | { placement: 'file'; side: DiffSide; startLine: number; endLine: number; quote: string };
 
 const MAX_QUOTE_LINES = 10;
 
@@ -134,7 +135,13 @@ export function commentTarget(
     return true;
   });
   if (inOneHunk) return { placement: 'line', side, startLine, endLine };
-  return { placement: 'file', quote: quoteLines(startLine, endLine, lineText) };
+  return {
+    placement: 'file',
+    side,
+    startLine,
+    endLine,
+    quote: quoteLines(startLine, endLine, lineText),
+  };
 }
 
 /** Lines `startLine..endLine`, one per line; past the first 10 the rest is `…`. */

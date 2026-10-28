@@ -54,6 +54,14 @@
   --error-fg: #a40e26;
   --error-bg: #ffebe9;
   --error-border: #ffcecb;
+
+  /* Review: a thread card, and a pending (not yet sent) comment. */
+  --thread-bg: var(--bg-subtle);
+  --pending: #8a6100;
+  --pending-bg: #fff8e1;
+  --pending-border: #ecd9a0;
+  --suggestion-bg: color-mix(in srgb, var(--add) 8%, transparent);
+  --composer-min-height: 72px;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -80,6 +88,11 @@
     --error-fg: #ffa198;
     --error-bg: #2d1214;
     --error-border: #6e2b2b;
+
+    --pending: #d29922;
+    --pending-bg: #241d0d;
+    --pending-border: #5c4813;
+    --suggestion-bg: color-mix(in srgb, var(--add) 12%, transparent);
   }
 }
 
@@ -1073,6 +1086,147 @@ p.why {
 }
 
 /* Narrow windows: stack the outline above the step and let the page scroll. */
+
+/* Review threads and the comment composer */
+
+.thread {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border-faint);
+  border-radius: var(--radius);
+  background: var(--thread-bg);
+  font-size: var(--font-size-small);
+}
+
+.thread-head,
+.comment-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-2);
+}
+
+.thread-toggle {
+  color: var(--fg-muted);
+}
+
+.thread-label,
+.pending-label {
+  padding: 0 var(--space-1);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-small);
+  color: var(--fg-muted);
+  font-size: var(--font-size-tiny);
+  line-height: 16px;
+}
+
+.pending-label {
+  border-color: var(--pending-border);
+  background: var(--pending-bg);
+  color: var(--pending);
+}
+
+.thread-comment + .thread-comment {
+  padding-top: var(--space-2);
+  border-top: 1px solid var(--border-faint);
+}
+
+.comment-author {
+  font-weight: 600;
+}
+
+.comment-head time {
+  color: var(--fg-muted);
+}
+
+.comment-head a {
+  margin-left: auto;
+  font-size: var(--font-size-tiny);
+}
+
+.comment-text {
+  margin: var(--space-1) 0 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.suggestion {
+  margin: var(--space-2) 0 0;
+  border: 1px solid var(--border-faint);
+  border-radius: var(--radius-small);
+  overflow: hidden;
+}
+
+.suggestion figcaption {
+  padding: 2px var(--space-2);
+  border-bottom: 1px solid var(--border-faint);
+  color: var(--fg-muted);
+  font-size: var(--font-size-tiny);
+}
+
+.suggestion pre {
+  margin: 0;
+  padding: var(--space-1) var(--space-2);
+  overflow-x: auto;
+  background: var(--suggestion-bg);
+  font-size: var(--font-size-code);
+}
+
+.draft-card {
+  padding: var(--space-2);
+  border: 1px dashed var(--pending-border);
+  border-radius: var(--radius-small);
+  background: var(--bg);
+}
+
+.thread-actions,
+.composer-actions {
+  display: flex;
+  gap: var(--space-2);
+  margin-top: var(--space-1);
+}
+
+.composer {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.composer-field {
+  width: 100%;
+  min-height: var(--composer-min-height);
+  padding: var(--space-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg);
+  color: var(--fg);
+  font: inherit;
+  font-size: var(--font-size);
+  resize: vertical;
+}
+
+.composer-notice,
+.composer-confirm {
+  margin: 0;
+  color: var(--fg-muted);
+  font-size: var(--font-size-small);
+}
+
+.composer-notice {
+  color: var(--warn);
+}
+
+.composer-error {
+  margin: 0;
+  color: var(--error-fg);
+  font-size: var(--font-size-small);
+}
+
+.composer-spacer {
+  flex: 1;
+}
 
 @media (max-width: 800px) {
   .tour-app {

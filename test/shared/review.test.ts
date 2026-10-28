@@ -67,6 +67,9 @@ describe('commentTarget', () => {
   it('line outside every hunk → file placement with quote', () => {
     expect(commentTarget(file, 'new', 10, 11, lineText)).toEqual({
       placement: 'file',
+      side: 'new',
+      startLine: 10,
+      endLine: 11,
       quote: 'text 10\ntext 11',
     });
   });
@@ -89,7 +92,13 @@ describe('commentTarget', () => {
   it('quote is cut at 10 lines with …', () => {
     const target = commentTarget(file, 'new', 30, 45, lineText);
     const expected = [...Array.from({ length: 10 }, (_, i) => `text ${30 + i}`), '…'].join('\n');
-    expect(target).toEqual({ placement: 'file', quote: expected });
+    expect(target).toEqual({
+      placement: 'file',
+      side: 'new',
+      startLine: 30,
+      endLine: 45,
+      quote: expected,
+    });
   });
 });
 
