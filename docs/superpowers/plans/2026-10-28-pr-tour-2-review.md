@@ -22,6 +22,8 @@ This is plan 2 of 3. "Changes since your last review" and keeping notes/seen mar
 - Every new keyboard shortcut also has a button with the key in its tooltip (`withKey` from `src/web/shortcuts.ts`). This plan adds no new shortcuts except `Esc` inside a composer (cancel), which is local to the text field.
 - Server guard stays: exact Host match, `X-PR-Tour: 1` on every non-GET, frame headers. Add for non-GET: reject when `Origin` is present and not `http://<host>`, and when `Sec-Fetch-Site` is present and not `same-origin`/`none`.
 - GitHub values go in as `gh api` `-f`/`-F` fields, never into query text.
+- Every draft comment remembers the tour `headSha` it was made on. A draft made on an older head than the tour being submitted ("older version") is always sent as a file-level comment quoting the lines it was about, never as a line comment, so it can never land on the wrong line. The UI labels such drafts before submit.
+- Replacing a tour while the PR has unsent drafts needs a confirmation (CLI `--replace`, web confirm). Without drafts, replacing stays silent (seen marks carry over by content hash).
 - Follow `docs/architecture.md` (web imports only `src/shared`; named `<Thing>Error`s; short user-facing errors via `CommandError.shortMessage`).
 
 ## Review Focus
@@ -31,6 +33,7 @@ This is plan 2 of 3. "Changes since your last review" and keeping notes/seen mar
 3. **The PR got new commits after drafting:** the review is posted with `commitOID = tour.headSha`; threads made on newer commits show as "outdated" where GitHub says so. Tests in Task 4 and Task 5.
 4. **A cross-site request to submit** (other site in the same browser): rejected by Host/header/Origin/Sec-Fetch-Site checks. Tests in Task 5.
 5. **A PR with more than 100 review threads or more than 100 comments in a thread:** all are fetched (pagination), not silently cut. Test in Task 3.
+6. **The user runs /tour again with unsent drafts, on a newer head:** the import stops and asks; after `--replace`, the drafts are kept, labeled "older version", and sent as file-level comments with a quote. Tests in Tasks 4, 5, 9 and 10.
 
 ---
 
@@ -53,6 +56,7 @@ src/web/CodeView.tsx        line selection, inline threads/drafts/composer
 src/web/TopBar.tsx          "Review" button with draft count
 src/web/StepPane.tsx        fact line: comments / drafts count
 src/web/Inbox.tsx           CI column + draft count
+src/cli.ts, skill/tour/SKILL.md   import refuses to replace a tour with drafts unless --replace
 ```
 
 ---
@@ -69,13 +73,14 @@ src/web/Inbox.tsx           CI column + draft count
   - `DiffSide = 'new' | 'old'`
   - `ThreadComment = { id: string; author: string; body: string; createdAt: string; url: string }`
   - `ReviewThread = { id: string; path: string; side: DiffSide | null; line: number | null; startLine: number | null; outdated: boolean; resolved: boolean; comments: ThreadComment[] }` — `side`/`line` null means a file-level thread.
-  - `DraftComment = { id: number; kind: 'comment'; path: string; side: DiffSide; startLine: number; endLine: number; placement: 'line' | 'file'; quote: string | null; body: string; createdAt: string }`
+  - `DraftComment = { id: number; kind: 'comment'; path: string; side: DiffSide; startLine: number; endLine: number; placement: 'line' | 'file'; quote: string; headSha: string; body: string; createdAt: string }` — `quote` is always set (the server computes it at creation, for line and file placement alike); `headSha` is the tour head it was made on.
   - `DraftReply = { id: number; kind: 'reply'; threadId: string; body: string; createdAt: string }`
   - `Draft = DraftComment | DraftReply`
-  - `NewDraft = Omit<DraftComment, 'id' | 'createdAt'> | Omit<DraftReply, 'id' | 'createdAt'>`
+  - `NewDraft = Omit<DraftComment, 'id' | 'createdAt' | 'placement' | 'quote' | 'headSha'> | Omit<DraftReply, 'id' | 'createdAt'>` — what the client sends; the server adds placement, quote and headSha.
+  - `isOlderDraft(d: Draft, headSha: string): boolean` — true for a comment draft whose `headSha !== headSha`.
   - `ReviewEvent = 'COMMENT' | 'APPROVE' | 'REQUEST_CHANGES'`
   - `CiStatus = { state: 'success' | 'failure' | 'pending' | 'none'; failing: { name: string; url: string } | null }`
-  - `ReviewResponse = { viewerIsAuthor: boolean; threads: ReviewThread[]; drafts: Draft[]; ci: CiStatus }`
+  - `ReviewResponse = { viewerIsAuthor: boolean; headSha: string | null; threads: ReviewThread[]; drafts: Draft[]; ci: CiStatus }` — `headSha` of the current tour (null without a tour).
   - zod: `NewDraftSchema`, `SubmitBodySchema = { event: ReviewEvent; body: string (max 65536) }`, `DraftPatchSchema = { body: string }`
   - `CommentTarget = { placement: 'line'; side: DiffSide; startLine: number; endLine: number } | { placement: 'file'; quote: string }`
   - `commentTarget(file: FileDiff, side: DiffSide, startLine: number, endLine: number, lineText: (n: number) => string): CommentTarget` — `'line'` only when every line `startLine..endLine` on `side` lies inside ONE hunk of `file` (context or changed); otherwise `'file'` with `quote` = those lines joined by `\n`, max 10 lines then `…`.
@@ -98,6 +103,7 @@ src/web/Inbox.tsx           CI column + draft count
   - `quote is cut at 10 lines with …`.
   - `fileCommentBody formats single line, range, and old side` — three exact-string assertions.
   - `NewDraftSchema rejects endLine < startLine and empty body`.
+  - `isOlderDraft: comment on another head → true; same head → false; reply → false`.
 - [ ] **Step 2: Run** `npx vitest run test/shared/review.test.ts` — Expected: FAIL (module missing).
 - [ ] **Step 3: Implement** `src/shared/review.ts`.
 - [ ] **Step 4: Run** — Expected: PASS.
@@ -114,13 +120,14 @@ src/web/Inbox.tsx           CI column + draft count
 **Interfaces:**
 - Consumes: `Draft`, `NewDraft` (Task 1).
 - Produces on `Store`:
-  - `addDraft(repo: string, pr: number, draft: NewDraft): Draft`
+  - `addDraft(repo: string, pr: number, draft: StoredNewDraft): Draft`
   - `updateDraft(repo: string, pr: number, id: number, body: string): Draft` — throws `StoreError` when the draft does not belong to that PR.
   - `deleteDraft(repo: string, pr: number, id: number): void` (no-op if missing)
   - `drafts(repo: string, pr: number): Draft[]` — oldest first
   - `draftCount(repo: string, pr: number): number`
   - `clearDrafts(repo: string, pr: number, ids: number[]): void`
-- Migration 2 (append to `MIGRATIONS`): `CREATE TABLE drafts (id INTEGER PRIMARY KEY AUTOINCREMENT, repo TEXT NOT NULL, pr INTEGER NOT NULL, kind TEXT NOT NULL, path TEXT, side TEXT, start_line INTEGER, end_line INTEGER, placement TEXT, quote TEXT, thread_id TEXT, body TEXT NOT NULL, created_at TEXT NOT NULL); CREATE INDEX drafts_pr ON drafts(repo, pr);` Repo keys lowercased like the other tables.
+- `addDraft` takes the stored form: `addDraft(repo, pr, draft: StoredNewDraft)` where `StoredNewDraft = Omit<DraftComment, 'id' | 'createdAt'> | Omit<DraftReply, 'id' | 'createdAt'>` (export it from `src/shared/review.ts` in this task).
+- Migration 2 (append to `MIGRATIONS`): `CREATE TABLE drafts (id INTEGER PRIMARY KEY AUTOINCREMENT, repo TEXT NOT NULL, pr INTEGER NOT NULL, kind TEXT NOT NULL, path TEXT, side TEXT, start_line INTEGER, end_line INTEGER, placement TEXT, quote TEXT, head_sha TEXT, thread_id TEXT, body TEXT NOT NULL, created_at TEXT NOT NULL); CREATE INDEX drafts_pr ON drafts(repo, pr);` Repo keys lowercased like the other tables.
 
 - [ ] **Step 1: Write the failing tests:** `add then list returns both kinds in order`; `update changes body`; `update of another PR's draft throws`; `delete removes one`; `clearDrafts removes only the given ids`; `draftCount`; `repo case is ignored`; `an existing version-1 database migrates and keeps tours and seen marks` (create a v1 DB file with the old schema, open with Store, assert data intact and drafts work).
 - [ ] **Step 2: Run** `npx vitest run test/server/store.test.ts` — Expected: FAIL.
@@ -166,9 +173,9 @@ src/web/Inbox.tsx           CI column + draft count
   - `submitReview(args: { prId: string; commitOid: string; event: ReviewEvent; body: string; drafts: Draft[] }): Promise<{ url: string }>`
   - `setResolved(threadId: string, resolved: boolean): Promise<void>` (`resolveReviewThread` / `unresolveReviewThread`)
   - `class ReviewSubmitError extends Error { failedDraftId: number | null }` — short message, e.g. `Couldn't add your comment on src/a.ts: <gh short message>`.
-- Order (GraphQL mutations, values as fields): `addPullRequestReview(input: { pullRequestId, commitOID })` → review id; for each draft in order: comments → `addPullRequestReviewThread(input: { pullRequestReviewId, path, body, subjectType: LINE|FILE, line, side: RIGHT|LEFT, startLine?, startSide? })` (line placement; `startLine` only when `startLine < endLine`), file placement → `subjectType: FILE`, `body = fileCommentBody(...)`; replies → `addPullRequestReviewThreadReply(input: { pullRequestReviewId, pullRequestReviewThreadId, body })`; then `submitPullRequestReview(input: { pullRequestReviewId, event, body })` → review url. On any failure after the pending review exists: `deletePullRequestReview(input: { pullRequestReviewId })` (ignore its own failure, log it), then throw `ReviewSubmitError`.
+- Order (GraphQL mutations, values as fields): `addPullRequestReview(input: { pullRequestId, commitOID })` → review id; for each draft in order: comments → `addPullRequestReviewThread(input: { pullRequestReviewId, path, body, subjectType: LINE|FILE, line, side: RIGHT|LEFT, startLine?, startSide? })` (line placement; `startLine` only when `startLine < endLine`), file placement → `subjectType: FILE`, `body = fileCommentBody(...)`; a comment draft with `isOlderDraft(d, commitOid)` is sent as file placement whatever its stored placement; replies → `addPullRequestReviewThreadReply(input: { pullRequestReviewId, pullRequestReviewThreadId, body })`; then `submitPullRequestReview(input: { pullRequestReviewId, event, body })` → review url. On any failure after the pending review exists: `deletePullRequestReview(input: { pullRequestReviewId })` (ignore its own failure, log it), then throw `ReviewSubmitError`.
 
-- [ ] **Step 1: Write the failing tests:** `submits drafts in order then the event` (assert the exact mutation sequence and fields: line, range with startLine, old side LEFT, file-level body text, reply); `uses commitOID from args`; `failure on the 2nd draft deletes the pending review and reports that draft`; `failure on submit deletes the pending review`; `body text never interpolated into query` (query strings contain no draft text); `setResolved true/false uses the right mutation`.
+- [ ] **Step 1: Write the failing tests:** `submits drafts in order then the event` (assert the exact mutation sequence and fields: line, range with startLine, old side LEFT, file-level body text, reply); `uses commitOID from args`; `older-version line draft is sent as a FILE comment with its quote`; `failure on the 2nd draft deletes the pending review and reports that draft`; `failure on submit deletes the pending review`; `body text never interpolated into query` (query strings contain no draft text); `setResolved true/false uses the right mutation`.
 - [ ] **Step 2: Run** `npx vitest run test/server/review-github.test.ts` — Expected: FAIL.
 - [ ] **Step 3: Implement.**
 - [ ] **Step 4: Run** — Expected: PASS.
@@ -186,15 +193,15 @@ src/web/Inbox.tsx           CI column + draft count
 **Interfaces:**
 - Consumes: Tasks 1–4; existing `prParams`, `HttpError`, `requireTour`.
 - Produces: `registerReviewRoutes(app: Hono, deps: { review: ReviewGitHub; store: Store; github: GitHub }): void` with routes under `/api/pr/:owner/:name/:pr`:
-  - `GET /review` → `ReviewResponse` (drafts from store).
-  - `POST /drafts` body `NewDraftSchema` → `201 Draft`. For `kind: 'comment'` the server re-checks placement with `commentTarget` against the tour's diff and the head/base file text (the client's placement is not trusted); `quote` comes from the server.
+  - `GET /review` → `ReviewResponse` (drafts from store; `headSha` from the stored tour).
+  - `POST /drafts` body `NewDraftSchema` → `201 Draft`. Requires a tour (404) for `kind: 'comment'`. The server computes placement with `commentTarget` against the tour's diff and the head/base file text, always stores the quote of the selected lines (max 10 lines then `…`), and stores `headSha = tour.headSha`.
   - `PATCH /drafts/:id` body `DraftPatchSchema` → `Draft`; `DELETE /drafts/:id` → `204`.
   - `POST /review/submit` body `SubmitBodySchema` → `{ url }`. Requires a tour (404). Own PR + event ≠ `COMMENT` → 400 `"You can't approve or request changes on your own PR."`. `body` empty and no drafts and event `COMMENT` → 400 `"Nothing to send."`. Uses `commitOid = tour.headSha`. On success clears exactly the submitted drafts. `ReviewSubmitError` → 502 with its message and `failedDraftId`.
   - `POST /threads/:threadId/resolve` body `{ resolved: boolean }` → `204`.
 - Guard (all non-GET): existing checks plus `Origin` (if present) must equal `http://` + the request Host, and `Sec-Fetch-Site` (if present) must be `same-origin` or `none`; else 403.
 - Inbox rows gain `ci` (from the inbox query) and `drafts` (`store.draftCount`).
 
-- [ ] **Step 1: Write the failing tests:** `GET review returns threads, drafts, ci`; `POST draft recomputes placement server-side` (client says line, server says file + quote); `PATCH/DELETE drafts`; `submit own PR with APPROVE → 400`; `submit with nothing → 400`; `submit uses tour headSha and clears only submitted drafts`; `submit failure → 502 with failedDraftId, drafts kept`; `resolve`; `cross-origin POST → 403`; `Sec-Fetch-Site cross-site → 403`; `same-origin POST with header → OK`; `inbox has ci and drafts`.
+- [ ] **Step 1: Write the failing tests:** `GET review returns threads, drafts, ci`; `POST draft computes placement, quote and headSha server-side`; `PATCH/DELETE drafts`; `submit own PR with APPROVE → 400`; `submit with nothing → 400`; `submit uses tour headSha and clears only submitted drafts`; `submit failure → 502 with failedDraftId, drafts kept`; `resolve`; `cross-origin POST → 403`; `Sec-Fetch-Site cross-site → 403`; `same-origin POST with header → OK`; `inbox has ci and drafts`.
 - [ ] **Step 2: Run** `npx vitest run test/server/review-routes.test.ts test/server/app.test.ts` — Expected: FAIL.
 - [ ] **Step 3: Implement.**
 - [ ] **Step 4: Run** — Expected: PASS.
@@ -274,16 +281,35 @@ src/web/Inbox.tsx           CI column + draft count
   - Event radio: Comment / Approve / Request changes; Approve and Request changes disabled on own PR with "You can't approve your own PR on GitHub."
   - Approve reminder (only when Approve is chosen and something is unseen): "You haven't seen N items" with read-closely items first, each a "Go to it" link; the Submit button then reads "Approve anyway".
   - Submit → `review.submit(event, body)`; on success shows "Review sent" with a link to the review URL and closes after the user clicks it or Close; on failure shows the error and, if `failedDraftId`, highlights that draft.
+- Older-version drafts (`isOlderDraft(d, review.headSha)`) get an "older version" label in the panel and inline, with the notice: "Made on an older version of this PR. It will be sent as a file-level comment that quotes the lines." Inline they show in the file's top block, not at a line.
 - Fact line in the step header adds "N comments" (threads touching the step's homes) and "N pending" (drafts in them) when non-zero.
 - Inbox (`Inbox.tsx`): CI column — "✓ passing" / "✗ failing" (link to `ci.failing.url`, opens in a new tab with `rel="noreferrer"`) / "● running" / "—", and "N drafts" next to progress when > 0.
 
-- [ ] **Step 1: Write the failing tests:** panel lists drafts and threads; own PR disables Approve/Request changes with the reason; reminder lists unseen read-closely first and switches the button label; submit success / failure (+ highlighted draft); top bar count; fact line counts; inbox CI states and failing link; drafts count in inbox.
+- [ ] **Step 1: Write the failing tests:** panel lists drafts and threads; own PR disables Approve/Request changes with the reason; reminder lists unseen read-closely first and switches the button label; submit success / failure (+ highlighted draft); older-version draft label and notice; top bar count; fact line counts; inbox CI states and failing link; drafts count in inbox.
 - [ ] **Step 2–4:** run (FAIL), implement, run (PASS).
 - [ ] **Step 5: Commit** `feat: review panel with approve reminder, ci and draft counts`
 
 ---
 
-### Task 10: Docs and a read-only real check
+### Task 10: Warn before replacing a tour that has drafts
+
+**Files:**
+- Modify: `src/cli.ts` (import `--replace`), `src/server/build.ts` or `src/server/app.ts` (POST /tour check), `src/web/BuildStatus.tsx` / `src/web/TourView.tsx` (confirm), `src/web/api.ts`, `skill/tour/SKILL.md`
+- Test: `test/cli.test.ts`, `test/server/app.test.ts`, `test/web/` (the build-button test file)
+
+**Interfaces:**
+- `class ReplaceNeedsConfirmError extends Error { drafts: number }` (server side, `src/server/build.ts`), message: `This PR has N unsent drafts. Run again with --replace to replace the tour. The drafts are kept; drafts made on an older version will be sent as file-level comments.`
+- `pr-tour import ... [--replace]`: when a tour exists for the PR and `store.draftCount > 0` and `--replace` is not given → prints the message, exits 2, stores nothing. Otherwise unchanged.
+- `POST /api/pr/.../tour` body gains optional `replace: boolean`; same condition without `replace: true` → 409 `{ error, drafts }`. Web: the build/rebuild button, on 409, shows an inline confirm ("You have N unsent drafts. Rebuild anyway?" with "Rebuild" / "Cancel"; Rebuild re-posts with `replace: true`). No browser `confirm()` dialogs.
+- `SKILL.md`: if import exits with this message, tell the user how many drafts there are and ask before re-running with `--replace`. Never pass `--replace` without the user's yes. After editing, copy the skill to `~/.claude/skills/tour/` is NOT part of this task (the controller does it after merge).
+
+- [ ] **Step 1: Write the failing tests:** `import refuses with drafts and no --replace (exit 2, tour unchanged)`; `import with --replace keeps drafts`; `import without drafts replaces silently`; `POST tour with drafts → 409 with count`; `POST tour with replace: true → 202`; web: `409 shows inline confirm; Rebuild re-posts with replace`.
+- [ ] **Step 2–4:** run (FAIL), implement, run (PASS).
+- [ ] **Step 5: Commit** `feat: ask before replacing a tour that has unsent drafts`
+
+---
+
+### Task 11: Docs and a read-only real check
 
 **Files:**
 - Modify: `README.md` (review usage), `docs/architecture.md` (review module, drafts table, write guard)
