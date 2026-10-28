@@ -16,7 +16,7 @@ export type Hunk = {
 };
 
 export type FileDiff = {
-  /** New path. For deleted files this equals `oldPath`. */
+  /** New path. For added and deleted files this equals `oldPath`. */
   path: string;
   oldPath: string;
   status: 'added' | 'deleted' | 'modified' | 'renamed';

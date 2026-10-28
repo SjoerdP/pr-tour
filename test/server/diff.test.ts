@@ -67,7 +67,7 @@ describe('parseDiff', () => {
   it('added: status added, all changed lines are new', () => {
     const files = fixture('added');
     expect(files).toHaveLength(1);
-    expect(files[0]).toMatchObject({ path: 'math.js', status: 'added' });
+    expect(files[0]).toMatchObject({ path: 'math.js', oldPath: 'math.js', status: 'added' });
     expect(changedLines(files)).toEqual([
       { file: 'math.js', side: 'new', line: 1 },
       { file: 'math.js', side: 'new', line: 2 },
@@ -81,6 +81,52 @@ describe('parseDiff', () => {
       { path: 'logo.png', oldPath: 'logo.png', status: 'modified', binary: true, hunks: [] },
     ]);
     expect(changedLines(files)).toEqual([{ file: 'logo.png', side: 'new', line: 0 }]);
+  });
+
+  it('pure rename: no hunks, one whole-file changed line', () => {
+    const files = fixture('renamed-pure');
+    expect(files).toEqual([
+      {
+        path: 'new-name.txt',
+        oldPath: 'old-name.txt',
+        status: 'renamed',
+        binary: false,
+        hunks: [],
+      },
+    ]);
+    expect(changedLines(files)).toEqual([{ file: 'new-name.txt', side: 'new', line: 0 }]);
+  });
+
+  it('empty added file: no hunks, one whole-file changed line', () => {
+    const files = fixture('added-empty');
+    expect(files).toEqual([
+      { path: 'empty.txt', oldPath: 'empty.txt', status: 'added', binary: false, hunks: [] },
+    ]);
+    expect(changedLines(files)).toEqual([{ file: 'empty.txt', side: 'new', line: 0 }]);
+  });
+
+  it('mode-only change: no hunks, one whole-file changed line', () => {
+    const files = fixture('mode-only');
+    expect(files).toEqual([
+      { path: 'run.sh', oldPath: 'run.sh', status: 'modified', binary: false, hunks: [] },
+    ]);
+    expect(changedLines(files)).toEqual([{ file: 'run.sh', side: 'new', line: 0 }]);
+  });
+
+  it('several files: only the binary one is marked binary', () => {
+    const files = fixture('multi');
+    expect(files.map((f) => [f.path, f.binary, f.hunks.length])).toEqual([
+      ['a.txt', false, 1],
+      ['icon.png', true, 0],
+      ['z.txt', false, 1],
+    ]);
+    expect(changedLines(files)).toEqual([
+      { file: 'a.txt', side: 'old', line: 2 },
+      { file: 'a.txt', side: 'new', line: 2 },
+      { file: 'icon.png', side: 'new', line: 0 },
+      { file: 'z.txt', side: 'old', line: 2 },
+      { file: 'z.txt', side: 'new', line: 2 },
+    ]);
   });
 
   it('no newline at end of file: the marker is not a line', () => {

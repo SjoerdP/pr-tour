@@ -29,11 +29,15 @@ export function parseDiff(text: string): FileDiff[] {
   });
 }
 
-/** Every added line (new side) and deleted line (old side). A binary file counts as one line 0. */
+/**
+ * Every added line (new side) and deleted line (old side).
+ * A file with no hunks (binary, pure rename, mode-only change, empty added or deleted file)
+ * counts as one whole-file line: `{ file: path, side: 'new', line: 0 }`, so it still needs a home.
+ */
 export function changedLines(files: FileDiff[]): ChangedLine[] {
   const out: ChangedLine[] = [];
   for (const file of files) {
-    if (file.binary) {
+    if (file.hunks.length === 0) {
       out.push({ file: file.path, side: 'new', line: 0 });
       continue;
     }
