@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { BuildStatus } from './BuildStatus.js';
-import { homesInOrder } from './homes.js';
+import { homesInOrder, nextFlowStart, previousFlowStart } from './homes.js';
 import { Outline } from './Outline.js';
 import { StepPane } from './StepPane.js';
 import { useKeys } from './useKeys.js';
@@ -37,14 +37,30 @@ export function TourView({ repo, pr }: { repo: string; pr: number }) {
   }
 
   const index = current === null ? -1 : ids.indexOf(current);
+  const previousId = index > 0 ? ids[index - 1] : undefined;
+  const previousFlowId = current === null ? undefined : previousFlowStart(homes, current);
+  const nextFlowId = current === null ? undefined : nextFlowStart(homes, current);
+
+  function nextStep() {
+    const next = ids[index + 1];
+    if (next !== undefined) goTo(next);
+    // On the last home there is nowhere to go; j still says "done with this one".
+    else if (current !== null) markLeft(current);
+  }
+
+  // Keys and the step pane's buttons do the same moves; undefined means nowhere to go.
+  const nav = {
+    previousStep: previousId === undefined ? undefined : () => goTo(previousId),
+    nextStep,
+    previousFlow: previousFlowId === undefined ? undefined : () => goTo(previousFlowId),
+    nextFlow: nextFlowId === undefined ? undefined : () => goTo(nextFlowId),
+  };
+
   useKeys({
-    j: () => {
-      const next = ids[index + 1];
-      if (next !== undefined) goTo(next);
-      // On the last home there is nowhere to go; j still says "done with this one".
-      else if (current !== null) markLeft(current);
-    },
-    k: () => goTo(index > 0 ? ids[index - 1] : undefined),
+    j: nextStep,
+    k: () => nav.previousStep?.(),
+    '[': () => nav.previousFlow?.(),
+    ']': () => nav.nextFlow?.(),
     // Back from a followed call to the step's own code.
     ...(jump ? { Escape: () => setJump(null) } : {}),
   });
@@ -132,6 +148,7 @@ export function TourView({ repo, pr }: { repo: string; pr: number }) {
             onJump={(file, line) => setJump({ file, line })}
             onBack={() => setJump(null)}
             onOpenHome={goTo}
+            nav={nav}
           />
         </div>
       )}

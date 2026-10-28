@@ -11,6 +11,7 @@ import {
 } from './code-lines.js';
 import type { HighlightedLine, Token } from './highlight.js';
 import { homesInOrder } from './homes.js';
+import { withKey } from './shortcuts.js';
 import { useCodeFile, type CodeFile, type Tokens } from './useCodeFile.js';
 import { useKeys } from './useKeys.js';
 
@@ -152,7 +153,7 @@ function FileCode({ tour, file, tokens, focus, homeId, onJump, onOpenHome }: Fil
           type="button"
           onClick={() => goToChange(current - 1)}
           disabled={current <= 0}
-          title="p"
+          title={withKey('Prev change', 'p')}
         >
           Prev change
         </button>
@@ -160,11 +161,16 @@ function FileCode({ tour, file, tokens, focus, homeId, onJump, onOpenHome }: Fil
           type="button"
           onClick={() => goToChange(current + 1)}
           disabled={current >= blocks.length - 1}
-          title="n"
+          title={withKey('Next change', 'n')}
         >
           Next change
         </button>
-        <button type="button" aria-pressed={whole} onClick={() => setWhole((w) => !w)} title="f">
+        <button
+          type="button"
+          aria-pressed={whole}
+          onClick={() => setWhole((w) => !w)}
+          title={withKey('Whole file', 'f')}
+        >
           Whole file
         </button>
       </div>

@@ -177,6 +177,20 @@ describe('CodeView', () => {
     expect(screen.getByText('change 1 of 2 in this file')).toBeTruthy();
   });
 
+  it('the toolbar buttons name their keys in their tooltips', async () => {
+    serve(modified('src/repay.ts', [replaceHunk(5, 'old five', 'new five')]), {
+      [`${HEAD}:src/repay.ts`]: lines(10, { 5: 'new five' }),
+      [`${BASE}:src/repay.ts`]: lines(10, { 5: 'old five' }),
+    });
+    renderView();
+
+    await screen.findByText('change 1 of 1 in this file');
+    const titles = ['Prev change', 'Next change', 'Whole file'].map(
+      (name) => screen.getByRole('button', { name }).title,
+    );
+    expect(titles).toEqual(['Prev change (p)', 'Next change (n)', 'Whole file (f)']);
+  });
+
   it('f shows the whole file', async () => {
     serve(modified('src/repay.ts', [replaceHunk(20, 'old twenty', 'new twenty')]), {
       [`${HEAD}:src/repay.ts`]: lines(30, { 20: 'new twenty' }),

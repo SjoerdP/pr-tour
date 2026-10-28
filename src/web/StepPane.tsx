@@ -1,7 +1,9 @@
 import type { Foundation, Range, Step, Tour } from '../shared/tour.js';
 import type { Focus as CodeFocus } from './code-lines.js';
 import { CodeView } from './CodeView.js';
+import { FlowEndNote } from './FlowEndNote.js';
 import { homeTitle, type Home } from './homes.js';
+import { withKey } from './shortcuts.js';
 
 type Focus = CodeFocus | null;
 
@@ -48,6 +50,14 @@ function contextLine(home: Home): string {
   }
 }
 
+/** Moves through the tour, the same as the keys. An undefined move has nowhere to go. */
+export type PaneNav = {
+  previousStep: (() => void) | undefined;
+  nextStep: () => void;
+  previousFlow: (() => void) | undefined;
+  nextFlow: (() => void) | undefined;
+};
+
 type Props = {
   repo: string;
   pr: number;
@@ -58,10 +68,11 @@ type Props = {
   onJump: (file: string, line: number) => void;
   onBack: () => void;
   onOpenHome: (homeId: string) => void;
+  nav: PaneNav;
 };
 
 /** The current home: its notes, then its code. */
-export function StepPane({ repo, pr, tour, home, jump, onJump, onBack, onOpenHome }: Props) {
+export function StepPane({ repo, pr, tour, home, jump, onJump, onBack, onOpenHome, nav }: Props) {
   const why =
     home.kind === 'foundation'
       ? home.foundation.why
@@ -80,7 +91,32 @@ export function StepPane({ repo, pr, tour, home, jump, onJump, onBack, onOpenHom
 
   return (
     <article className="step-pane" aria-labelledby={`step-title-${home.id}`}>
-      <p className="muted step-context">{contextLine(home)}</p>
+      {home.kind === 'step' && (
+        <FlowEndNote flow={home.flow} step={home.step} onSkip={nav.nextFlow} />
+      )}
+      <div className="step-context-row">
+        <p className="muted step-context">{contextLine(home)}</p>
+        {home.kind === 'step' && (
+          <span className="flow-nav">
+            <button
+              type="button"
+              onClick={nav.previousFlow}
+              disabled={nav.previousFlow === undefined}
+              title={withKey('Previous flow', '[')}
+            >
+              Previous flow
+            </button>
+            <button
+              type="button"
+              onClick={nav.nextFlow}
+              disabled={nav.nextFlow === undefined}
+              title={withKey('Next flow', ']')}
+            >
+              Next flow
+            </button>
+          </span>
+        )}
+      </div>
       <h2 className="step-title" id={`step-title-${home.id}`}>
         {homeTitle(home)}
         {risk === 'read-closely' && <span className="tag tag-warn">read closely</span>}
@@ -100,7 +136,12 @@ export function StepPane({ repo, pr, tour, home, jump, onJump, onBack, onOpenHom
       {jump && (
         <p className="jump-bar">
           Showing <code>{jump.file}</code> line {jump.line}.{' '}
-          <button type="button" className="link-button" onClick={onBack}>
+          <button
+            type="button"
+            className="link-button"
+            onClick={onBack}
+            title={withKey('Back to this step', 'Esc')}
+          >
             Back to this step
           </button>{' '}
           <span className="muted">(Esc)</span>
@@ -117,6 +158,19 @@ export function StepPane({ repo, pr, tour, home, jump, onJump, onBack, onOpenHom
         onJump={onJump}
         onOpenHome={onOpenHome}
       />
+      <div className="step-nav">
+        <button
+          type="button"
+          onClick={nav.previousStep}
+          disabled={nav.previousStep === undefined}
+          title={withKey('Previous step', 'k')}
+        >
+          Previous step
+        </button>
+        <button type="button" onClick={nav.nextStep} title={withKey('Next step', 'j')}>
+          Next step
+        </button>
+      </div>
     </article>
   );
 }

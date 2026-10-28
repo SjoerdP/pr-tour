@@ -1,5 +1,11 @@
-import { useId, useState } from 'react';
-import type { OtherGroup, Risk, SideEffect, Tour } from '../shared/tour.js';
+import { Fragment, useId, useState } from 'react';
+import {
+  lastChangedStepIndex,
+  type OtherGroup,
+  type Risk,
+  type SideEffect,
+  type Tour,
+} from '../shared/tour.js';
 import { otherGroupsInOrder } from './homes.js';
 
 type Props = {
@@ -37,25 +43,39 @@ export function Outline({ tour, currentId, isSeen, onSelect }: Props) {
       {tour.flows.length > 0 && (
         <section>
           <h2>Flows</h2>
-          {tour.flows.map((flow) => (
-            <div key={flow.id} className="outline-flow">
-              <h3>{flow.title}</h3>
-              <p className="muted entry">{flow.entry.label}</p>
-              <ul>
-                {flow.steps.map((step) => (
-                  <Item
-                    key={step.id}
-                    id={step.id}
-                    title={step.title}
-                    changed={step.changed}
-                    risk={step.risk}
-                    sideEffects={step.sideEffects}
-                    {...itemProps}
-                  />
-                ))}
-              </ul>
-            </div>
-          ))}
+          {tour.flows.map((flow) => {
+            // Steps after the last change are context: dimmed, below a divider.
+            const lastChanged = lastChangedStepIndex(flow);
+            return (
+              <div key={flow.id} className="outline-flow">
+                <h3>{flow.title}</h3>
+                <p className="muted entry">{flow.entry.label}</p>
+                {lastChanged === -1 && flow.steps.length > 0 && (
+                  <p className="flow-end-note">No changes in this flow</p>
+                )}
+                <ul>
+                  {flow.steps.map((step, i) => (
+                    <Fragment key={step.id}>
+                      <Item
+                        id={step.id}
+                        title={step.title}
+                        changed={step.changed}
+                        risk={step.risk}
+                        sideEffects={step.sideEffects}
+                        afterChanges={i > lastChanged}
+                        {...itemProps}
+                      />
+                      {i === lastChanged && i < flow.steps.length - 1 && (
+                        <li role="separator" className="flow-end-divider">
+                          No more changes in this flow
+                        </li>
+                      )}
+                    </Fragment>
+                  ))}
+                </ul>
+              </div>
+            );
+          })}
         </section>
       )}
 
@@ -138,6 +158,7 @@ function Item({
   changed,
   risk,
   sideEffects = [],
+  afterChanges = false,
   currentId,
   isSeen,
   onSelect,
@@ -147,10 +168,12 @@ function Item({
   changed?: boolean;
   risk?: Risk;
   sideEffects?: SideEffect[];
+  /** A flow step after the flow's last change: shown dimmed. */
+  afterChanges?: boolean;
 } & ItemProps) {
   const current = id === currentId;
   return (
-    <li>
+    <li className={afterChanges ? 'after-changes' : undefined}>
       <button
         type="button"
         className="outline-item"

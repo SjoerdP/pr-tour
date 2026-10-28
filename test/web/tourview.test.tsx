@@ -492,6 +492,9 @@ describe('TourView', () => {
     expect(screen.getByTestId('code-view').textContent).toBe('F1.S1 src/fees.ts');
     expect(screen.getByTestId('code-focus').textContent).toBe('12');
     expect(markSeen).not.toHaveBeenCalled();
+    expect(screen.getByRole('button', { name: 'Back to this step' }).title).toBe(
+      'Back to this step (Esc)',
+    );
 
     fireEvent.keyDown(window, { key: 'Escape' });
     expect(screen.getByTestId('code-view').textContent).toBe('F1.S1 src/loans/repay.ts');

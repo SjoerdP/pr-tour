@@ -357,6 +357,30 @@ pre {
   min-width: 0;
 }
 
+/* Where a flow's changes end: the steps below are context. */
+.flow-end-divider,
+.flow-end-note {
+  margin: var(--space-1) 0;
+  padding: var(--space-1) var(--space-2);
+  color: var(--fg-muted);
+  font-size: 12px;
+  font-style: italic;
+}
+
+.flow-end-divider {
+  border-top: 1px dashed var(--border);
+}
+
+.outline li.after-changes {
+  opacity: 0.6;
+}
+
+.outline li.after-changes:hover,
+.outline li.after-changes:focus-within,
+.outline li.after-changes:has([aria-current='step']) {
+  opacity: 1;
+}
+
 .group-toggle {
   padding: 0;
   border: none;
@@ -403,9 +427,45 @@ pre {
   min-width: 0;
 }
 
+.step-context-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
 .step-context {
   margin: 0;
   font-size: 12px;
+}
+
+.flow-nav {
+  display: flex;
+  gap: var(--space-1);
+}
+
+.flow-nav button {
+  padding: 0 var(--space-2);
+  font-size: 12px;
+}
+
+.flow-end-banner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+  margin-bottom: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-subtle);
+}
+
+.step-nav {
+  display: flex;
+  justify-content: space-between;
+  margin-top: var(--space-3);
 }
 
 .step-title {
