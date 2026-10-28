@@ -5,7 +5,11 @@ import {
   TourBodySchema,
   TourSchema,
   homeIds,
+  lastChangedStepIndex,
+  reviewableHomeIds,
   tourBodyJsonSchema,
+  type Flow,
+  type Step,
   type TourBodyInput,
 } from '../../src/shared/tour.js';
 
@@ -115,5 +119,51 @@ describe('homeIds', () => {
       hashes: {},
     });
     expect(homeIds(tour)).toEqual(['f1', 'F1.S1', 'F1.S2', 'o1.1']);
+  });
+});
+
+describe('reviewableHomeIds', () => {
+  it('leaves out unchanged steps: they have no changed lines', () => {
+    expect(reviewableHomeIds(TourBodySchema.parse(bodyWithIds()))).toEqual(['f1', 'F1.S1', 'o1.1']);
+  });
+
+  it('leaves out any home without changed-line ranges', () => {
+    const body = bodyWithIds();
+    body.foundations[0]!.homes = [];
+    body.other[0]!.items[0]!.homes = [];
+    expect(reviewableHomeIds(TourBodySchema.parse(body))).toEqual(['F1.S1']);
+  });
+});
+
+describe('lastChangedStepIndex', () => {
+  function flowOf(...changed: boolean[]): Flow {
+    const steps = changed.map((c, i): Step => ({
+      id: `F1.S${i + 1}`,
+      title: `step ${i + 1}`,
+      file: 'a.ts',
+      startLine: 1,
+      endLine: 2,
+      changed: c,
+      why: 'w',
+      risk: 'skim',
+      sideEffects: [],
+      tests: [],
+      calls: [],
+      homes: c ? [{ file: 'a.ts', side: 'new', start: 1, end: 2 }] : [],
+    }));
+    return { id: 'F1', title: 'Flow', entry: { kind: 'http', label: 'GET /' }, steps };
+  }
+
+  it('is the index of the last step with homes', () => {
+    expect(lastChangedStepIndex(flowOf(true, false, true, false, false))).toBe(2);
+  });
+
+  it('is the last index when the last step is changed', () => {
+    expect(lastChangedStepIndex(flowOf(false, true))).toBe(1);
+  });
+
+  it('is -1 when no step has homes', () => {
+    expect(lastChangedStepIndex(flowOf(false, false))).toBe(-1);
+    expect(lastChangedStepIndex(flowOf())).toBe(-1);
   });
 });

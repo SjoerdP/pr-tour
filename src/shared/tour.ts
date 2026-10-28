@@ -144,3 +144,20 @@ export function homeIds(tour: TourBody): string[] {
     ...tour.other.flatMap((g) => g.items.map((item) => item.id)),
   ];
 }
+
+/**
+ * Ids of the homes a reviewer has to review: those with at least one changed-line range.
+ * Unchanged flow steps (no homes) are context, not review work, so progress leaves them out.
+ */
+export function reviewableHomeIds(tour: TourBody): string[] {
+  return [
+    ...tour.foundations.filter((f) => f.homes.length > 0).map((f) => f.id),
+    ...tour.flows.flatMap((flow) => flow.steps.filter((s) => s.homes.length > 0).map((s) => s.id)),
+    ...tour.other.flatMap((g) => g.items.filter((item) => item.homes.length > 0).map((i) => i.id)),
+  ];
+}
+
+/** Index of the flow's last step with changed lines; -1 if none has any. Later steps are context. */
+export function lastChangedStepIndex(flow: Flow): number {
+  return flow.steps.findLastIndex((s) => s.homes.length > 0);
+}
