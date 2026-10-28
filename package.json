@@ -19,7 +19,7 @@
     "dev:server": "PR_TOUR_NO_OPEN=1 tsx watch src/cli.ts",
     "dev:web": "vite",
     "clean": "node -e \"fs.rmSync('dist', { recursive: true, force: true })\"",
-    "build": "npm run clean && tsc -p tsconfig.build.json && vite build",
+    "build": "npm run clean && tsc -p tsconfig.build.json && chmod +x dist/cli.js && vite build",
     "test": "vitest run",
     "test:watch": "vitest",
     "lint": "eslint .",
