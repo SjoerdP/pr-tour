@@ -1,0 +1,72 @@
+{
+  "summary": "Adds early repayment of loans: a new repayments table and a repay endpoint that records the payment and lowers the outstanding balance.",
+  "foundations": [
+    {
+      "kind": "migration",
+      "title": "Create repayments table",
+      "file": "migrations/0042_repayments.sql",
+      "why": "Stores each repayment so the balance can be rebuilt from history.",
+      "risk": "read-closely",
+      "homes": [{ "file": "migrations/0042_repayments.sql", "side": "new", "start": 1, "end": 12 }],
+      "schemaAfter": "repayments(id uuid pk, loan_id uuid fk loans, amount_cents bigint, paid_at timestamptz)",
+      "deployCompat": { "ok": true, "note": "Additive only; old code ignores the new table." }
+    }
+  ],
+  "flows": [
+    {
+      "title": "Repay a loan",
+      "entry": { "kind": "http", "label": "POST /loans/{id}/repay" },
+      "steps": [
+        {
+          "title": "Validate and record the repayment",
+          "symbol": "repayLoan",
+          "file": "src/loans/repay.ts",
+          "startLine": 10,
+          "endLine": 41,
+          "changed": true,
+          "why": "Rejects amounts above the outstanding balance, then inserts the repayment.",
+          "risk": "read-closely",
+          "riskReason": "Balance check and insert are not in one transaction.",
+          "sideEffects": [
+            { "kind": "db-write", "label": "INSERT repayments" },
+            { "kind": "event", "label": "loan.repaid" }
+          ],
+          "tests": [{ "file": "test/loans/repay.test.ts", "name": "rejects overpayment" }],
+          "calls": [{ "symbol": "outstandingBalance", "file": "src/loans/balance.ts", "line": 5 }],
+          "homes": [
+            { "file": "src/loans/repay.ts", "side": "new", "start": 10, "end": 41 },
+            { "file": "src/loans/repay.ts", "side": "old", "start": 8, "end": 15 }
+          ]
+        },
+        {
+          "title": "Compute the outstanding balance",
+          "symbol": "outstandingBalance",
+          "file": "src/loans/balance.ts",
+          "startLine": 5,
+          "endLine": 20,
+          "changed": false,
+          "why": "Unchanged, but the new check depends on it.",
+          "risk": "skim",
+          "sideEffects": [],
+          "tests": [],
+          "calls": [],
+          "homes": []
+        }
+      ]
+    }
+  ],
+  "other": [
+    {
+      "kind": "tests",
+      "title": "Tests",
+      "summary": "Tests for the repay endpoint.",
+      "items": [
+        {
+          "file": "test/loans/repay.test.ts",
+          "title": "Repay tests",
+          "homes": [{ "file": "test/loans/repay.test.ts", "side": "new", "start": 1, "end": 60 }]
+        }
+      ]
+    }
+  ]
+}
