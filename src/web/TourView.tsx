@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { BuildStatus } from './BuildStatus.js';
 import { homesInOrder, nextFlowStart, previousFlowStart } from './homes.js';
 import { Outline } from './Outline.js';
@@ -27,6 +27,15 @@ export function TourView({ repo, pr }: { repo: string; pr: number }) {
   const about = useAboutPanel(repo, pr, tour !== null);
   // One review for the PR, shared by everything that shows or adds comments.
   const review = useReview(repo, pr);
+  // A rebuild swaps in a tour on another head: load the review again for it.
+  const head = tour?.headSha ?? null;
+  const shownHead = useRef(head);
+  const { reload } = review;
+  useEffect(() => {
+    const before = shownHead.current;
+    shownHead.current = head;
+    if (before !== null && head !== null && before !== head) void reload();
+  }, [head, reload]);
 
   // The outline's order is the reading order: j/k walk the same list.
   const homes = useMemo(() => (tour ? homesInOrder(tour) : []), [tour]);

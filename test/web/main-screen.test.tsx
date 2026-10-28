@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Draft, ReviewResponse, ReviewThread } from '../../src/shared/review.js';
 import type { Tour } from '../../src/shared/tour.js';
@@ -48,6 +48,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  vi.useRealTimers();
   vi.resetAllMocks();
 });
 
@@ -325,7 +326,7 @@ function reviewThread(overrides: Partial<ReviewThread> = {}): ReviewThread {
   };
 }
 
-function reviewDraft(id: number, path = 'm.sql', line = 3): Draft {
+function reviewDraft(id: number, path = 'm.sql', line = 3, headSha = HEAD): Draft {
   return {
     id,
     kind: 'comment',
@@ -335,7 +336,7 @@ function reviewDraft(id: number, path = 'm.sql', line = 3): Draft {
     endLine: line,
     placement: 'line',
     quote: 'x',
-    headSha: HEAD,
+    headSha,
     body: `Draft ${id}`,
     createdAt: '2026-10-28T10:00:00Z',
   };
@@ -509,5 +510,49 @@ describe('step header: review counts', () => {
     serveReview({ threads: [reviewThread(), reviewThread({ id: 'T2', line: 1 })] });
     await open();
     await vi.waitFor(() => expect(facts()).toEqual(['2 comments']));
+  });
+});
+
+describe('review after a rebuild', () => {
+  const NEW_HEAD = 'c'.repeat(40);
+
+  it('labels drafts by the new tour head and reloads the review', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const getPr = vi.mocked(api.getPr);
+    const buildTour = vi.mocked(api.buildTour);
+    getPr.mockResolvedValueOnce(response({ outdated: true })).mockResolvedValueOnce(
+      response({
+        tour: { ...baseTour, headSha: NEW_HEAD },
+        job: { state: 'done', log: ['Saved'] },
+      }),
+    );
+    buildTour.mockResolvedValue({ job: { state: 'running', log: ['Cloning'] } });
+    // The first load knows the old head; the reload after the rebuild never answers, so the
+    // labels can only come from the tour.
+    getReview
+      .mockResolvedValueOnce({
+        viewerIsAuthor: false,
+        headSha: HEAD,
+        threads: [],
+        drafts: [reviewDraft(1), reviewDraft(2, 'm.sql', 3, NEW_HEAD)],
+        ci: { state: 'none', failing: null },
+      })
+      .mockReturnValue(new Promise(() => {}));
+    render(<TourView repo="acme/loans" pr={42} />);
+    await screen.findByText('New commits since this tour was built');
+    await vi.waitFor(() => expect(reviewButton().textContent).toBe('Review · 2'));
+
+    fireEvent.click(screen.getByRole('button', { name: 'Rebuild tour' }));
+    await screen.findByText('Cloning');
+    await act(() => vi.advanceTimersByTimeAsync(2000));
+    await vi.waitFor(() => expect(screen.queryByText('Cloning')).toBeNull());
+
+    expect(getReview).toHaveBeenCalledTimes(2);
+    fireEvent.click(reviewButton());
+    const items = within(screen.getByRole('list', { name: 'Pending comments' })).getAllByRole(
+      'listitem',
+    );
+    expect(within(items[0]!).queryByText('older version')).toBeTruthy();
+    expect(within(items[1]!).queryByText('older version')).toBeNull();
   });
 });

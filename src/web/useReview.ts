@@ -29,7 +29,10 @@ export type ReviewState = {
    */
   error?: string;
   viewerIsAuthor: boolean;
-  /** Head of the current tour; null without a tour (or before loading). */
+  /**
+   * Head of the stored tour when the review was loaded; null without a tour (or before
+   * loading). It can lag behind a rebuild: views label drafts by the tour they show.
+   */
   headSha: string | null;
   threads: ReviewThread[];
   drafts: Draft[];

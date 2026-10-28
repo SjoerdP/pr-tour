@@ -432,6 +432,14 @@ describe('CodeView: threads and drafts in place', () => {
     expect(screen.queryByText('older version')).toBeNull();
   });
 
+  it("the older-version label follows the tour's head, not the review's", async () => {
+    serve();
+    // The review still knows an older head (it has not reloaded since a rebuild).
+    renderView(fakeReview({ headSha: 'c'.repeat(40), drafts: [draft()] }));
+    await screen.findByText('Rename this');
+    expect(screen.queryByText('older version')).toBeNull();
+  });
+
   it('a fold with a thread or a draft in it is shown open', async () => {
     serve();
     renderView(

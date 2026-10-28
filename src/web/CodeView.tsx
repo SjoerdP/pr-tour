@@ -84,6 +84,7 @@ export function CodeView({
       <>
         <FileComments
           path={file}
+          headSha={tour.headSha}
           threads={threadsOn(review.threads, file)}
           drafts={draftsOn(review.drafts, file)}
           review={review}
@@ -328,6 +329,7 @@ function FileCode({
       <div className="code" ref={container} style={gutter}>
         <FileComments
           path={file.path}
+          headSha={tour.headSha}
           threads={threadsAt.get(-1) ?? NO_THREADS}
           drafts={draftsAt.get(-1) ?? NO_DRAFTS}
           review={review}
@@ -373,6 +375,7 @@ function FileCode({
                   {(rowThreads || rowDrafts || composerRow === i) && (
                     <ReviewRow
                       path={file.path}
+                      headSha={tour.headSha}
                       threads={rowThreads ?? NO_THREADS}
                       drafts={rowDrafts ?? NO_DRAFTS}
                       review={review}

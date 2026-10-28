@@ -274,6 +274,23 @@ describe('ReviewPanel: approve reminder', () => {
   });
 });
 
+describe('ReviewPanel: older-version label', () => {
+  it("follows the tour's head, not the head the review was loaded with", () => {
+    // The review still knows an older head (it has not reloaded since a rebuild).
+    renderPanel(
+      fakeReview({
+        headSha: 'c'.repeat(40),
+        drafts: [comment(), comment({ id: 8, headSha: 'c'.repeat(40) })],
+      }),
+    );
+    const items = within(screen.getByRole('list', { name: 'Pending comments' })).getAllByRole(
+      'listitem',
+    );
+    expect(within(items[0]!).queryByText('older version')).toBeNull();
+    expect(within(items[1]!).queryByText('older version')).toBeTruthy();
+  });
+});
+
 describe('ReviewPanel: submit', () => {
   it('sends the event and the summary', async () => {
     const review = fakeReview({ drafts: [comment()] });

@@ -8,12 +8,14 @@ import type { ReviewState } from './useReview.js';
 
 type ItemsProps = {
   path: string;
+  /** Head of the tour shown; drafts made on another head are labeled "older version". */
+  headSha: string;
   threads: ReviewThread[];
   drafts: DraftComment[];
   review: ReviewState;
 };
 
-function Items({ path, threads, drafts, review }: ItemsProps) {
+function Items({ path, headSha, threads, drafts, review }: ItemsProps) {
   return (
     <>
       {threads.map((thread) => (
@@ -33,7 +35,7 @@ function Items({ path, threads, drafts, review }: ItemsProps) {
           key={draft.id}
           draft={draft}
           path={path}
-          older={review.headSha !== null && isOlderDraft(draft, review.headSha)}
+          older={isOlderDraft(draft, headSha)}
           onEdit={(body) => review.update(draft.id, body)}
           onDelete={() => review.remove(draft.id)}
         />

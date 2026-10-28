@@ -184,7 +184,9 @@ export function ReviewPanel({
         <ul className="review-list" aria-label="Pending comments">
           {drafts.map((draft) => {
             const { text, place } = draftPlace(draft);
-            const older = review.headSha !== null && isOlderDraft(draft, review.headSha);
+            // By the tour shown, like the code view places drafts: the review may still know
+            // the head from before a rebuild.
+            const older = isOlderDraft(draft, tour.headSha);
             const failed = submitError?.failedDraftId === draft.id;
             return (
               <li key={draft.id} className={failed ? 'failed' : undefined}>
