@@ -2,12 +2,17 @@
 
 import type { InboxResponse, Job, PrResponse } from '../shared/api.js';
 import type { FileDiff } from '../shared/diff.js';
+import type { Draft, NewDraft, ReviewEvent, ReviewResponse } from '../shared/review.js';
 
-/** A failed API call: the server's short `error` message and the HTTP status. */
+/**
+ * A failed API call: the server's short `error` message and the HTTP status.
+ * `failedDraftId` is the draft GitHub refused, when a review submit names one.
+ */
 export class ApiError extends Error {
   constructor(
     readonly status: number,
     message: string,
+    readonly failedDraftId?: number,
   ) {
     super(message);
     this.name = 'ApiError';
@@ -26,20 +31,37 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   // The server refuses writes without this header (cross-site request guard).
   if (method !== 'GET') headers.set('X-PR-Tour', '1');
   const res = await fetch(path, { ...init, method, headers });
-  if (!res.ok) throw new ApiError(res.status, await errorMessage(res));
+  if (!res.ok) {
+    const { message, failedDraftId } = await errorBody(res);
+    throw new ApiError(res.status, message, failedDraftId);
+  }
   if (res.status === 204) return undefined as T;
   return (await res.json()) as T;
 }
 
-/** The server answers errors as `{ error }`; anything else (a proxy page, say) gets a generic message. */
-async function errorMessage(res: Response): Promise<string> {
+/**
+ * The server answers errors as `{ error, failedDraftId? }`; anything else (a proxy page, say)
+ * gets a generic message.
+ */
+async function errorBody(res: Response): Promise<{ message: string; failedDraftId?: number }> {
+  let message = `Request failed (HTTP ${res.status})`;
+  let failedDraftId: number | undefined;
   try {
-    const body = (await res.json()) as { error?: unknown };
-    if (typeof body.error === 'string' && body.error !== '') return body.error;
+    const body = (await res.json()) as { error?: unknown; failedDraftId?: unknown };
+    if (typeof body.error === 'string' && body.error !== '') message = body.error;
+    if (typeof body.failedDraftId === 'number') failedDraftId = body.failedDraftId;
   } catch {
-    // Not JSON: fall through to the generic message below.
+    // Not JSON: keep the generic message.
   }
-  return `Request failed (HTTP ${res.status})`;
+  return { message, failedDraftId };
+}
+
+function withJson(method: string, body: unknown): RequestInit {
+  return {
+    method,
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  };
 }
 
 export function getInbox(): Promise<InboxResponse> {
@@ -80,9 +102,46 @@ export function markSeen(
   homeId: string,
   contentHash: string,
 ): Promise<void> {
-  return request(`${prPath(repo, pr)}/seen`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ homeId, contentHash }),
-  });
+  return request(`${prPath(repo, pr)}/seen`, withJson('POST', { homeId, contentHash }));
+}
+
+/** Threads, drafts, CI and authorship for the PR's review. */
+export function getReview(repo: string, pr: number): Promise<ReviewResponse> {
+  return request(`${prPath(repo, pr)}/review`);
+}
+
+/** Saves a draft locally (nothing goes to GitHub); returns it as the server stored it. */
+export function addDraft(repo: string, pr: number, draft: NewDraft): Promise<Draft> {
+  return request(`${prPath(repo, pr)}/drafts`, withJson('POST', draft));
+}
+
+export function updateDraft(repo: string, pr: number, id: number, body: string): Promise<Draft> {
+  return request(`${prPath(repo, pr)}/drafts/${id}`, withJson('PATCH', { body }));
+}
+
+export function deleteDraft(repo: string, pr: number, id: number): Promise<void> {
+  return request(`${prPath(repo, pr)}/drafts/${id}`, { method: 'DELETE' });
+}
+
+/** Sends the review with all drafts to GitHub; returns the review's URL. */
+export function submitReview(
+  repo: string,
+  pr: number,
+  event: ReviewEvent,
+  body: string,
+): Promise<{ url: string }> {
+  return request(`${prPath(repo, pr)}/review/submit`, withJson('POST', { event, body }));
+}
+
+/** Resolves or unresolves a thread on GitHub. */
+export function setResolved(
+  repo: string,
+  pr: number,
+  threadId: string,
+  resolved: boolean,
+): Promise<void> {
+  return request(
+    `${prPath(repo, pr)}/threads/${encodeURIComponent(threadId)}/resolve`,
+    withJson('POST', { resolved }),
+  );
 }
