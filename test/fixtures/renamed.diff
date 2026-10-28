@@ -1,0 +1,16 @@
+diff --git a/config.txt b/settings.txt
+similarity index 87%
+rename from config.txt
+rename to settings.txt
+index 73e96e6..d1d3a69 100644
+--- a/config.txt
++++ b/settings.txt
+@@ -2,7 +2,7 @@ line one
+ line two
+ line three
+ line four
+-line five
++line 5
+ line six
+ line seven
+ line eight

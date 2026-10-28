@@ -1,0 +1,14 @@
+diff --git a/greet.js b/greet.js
+index 4066ba8..78c9327 100644
+--- a/greet.js
++++ b/greet.js
+@@ -1,6 +1,7 @@
+ export function greet(name) {
+-  const prefix = "Hello";
+-  const sep = ", ";
++  const greeting = "Hi";
++  const separator = ": ";
++  const suffix = "!";
+   return prefix + sep + name;
+ }
+ 

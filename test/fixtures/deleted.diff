@@ -1,0 +1,8 @@
+diff --git a/legacy.js b/legacy.js
+deleted file mode 100644
+index f96e77e..0000000
+--- a/legacy.js
++++ /dev/null
+@@ -1,2 +0,0 @@
+-export const OLD = 1;
+-export const KEEP = 2;
