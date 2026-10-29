@@ -110,6 +110,12 @@ describe('tour layout CSS', () => {
     expect(rule('.code-row:has(.code-no-button:hover)')['box-shadow']).toContain('var(--accent)');
   });
 
+  it('a mark only the tour claims keeps full muted colour and has a dashed border', () => {
+    const claude = rule('.mark-claude');
+    expect(claude.opacity).toBeUndefined();
+    expect(claude['border-style']).toBe('dashed');
+  });
+
   it('colors and outline font sizes come from tokens', () => {
     const body = css.slice(css.indexOf('*,'));
     expect(body).not.toMatch(/font-size:\s*\d+px/);

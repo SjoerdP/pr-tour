@@ -368,6 +368,36 @@ describe('CodeView', () => {
     expect(onJump).toHaveBeenCalledWith('src/fees.ts', 12, null);
   });
 
+  it('with an empty list of call sites (checked, no calls), no call is clickable', async () => {
+    const text = '  chargeFee(x);';
+    serve(modified('src/repay.ts', [replaceHunk(5, 'old five', text)]), {
+      [`${HEAD}:src/repay.ts`]: lines(10, { 5: text }),
+      [`${BASE}:src/repay.ts`]: lines(10, { 5: 'old five' }),
+    });
+    const tour = makeTour();
+    const step = tour.flows[0]!.steps[0]!;
+    step.calls = [{ symbol: 'chargeFee', file: 'src/fees.ts', line: 12 }];
+    step.callSites = [];
+    renderView({ tour });
+    expect(await screen.findByText(text.trim(), { exact: false })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'chargeFee' })).toBeNull();
+  });
+
+  it('without call sites (not checked), calls are matched by name', async () => {
+    const text = '  chargeFee(x);';
+    serve(modified('src/repay.ts', [replaceHunk(5, 'old five', text)]), {
+      [`${HEAD}:src/repay.ts`]: lines(10, { 5: text }),
+      [`${BASE}:src/repay.ts`]: lines(10, { 5: 'old five' }),
+    });
+    const tour = makeTour();
+    const step = tour.flows[0]!.steps[0]!;
+    step.calls = [{ symbol: 'chargeFee', file: 'src/fees.ts', line: 12 }];
+    step.marks = [];
+    delete step.callSites;
+    renderView({ tour });
+    expect(await screen.findByRole('button', { name: 'chargeFee' })).toBeTruthy();
+  });
+
   it('places a button by Go byte columns, past non-ASCII text, and drops a wrong column', async () => {
     // "é" is two bytes: ping starts at string index 27 but byte 28, so Go columns 29 and 33.
     const text = '\tr.Handle("/é", func() { h.ping() })';

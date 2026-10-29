@@ -249,19 +249,29 @@ function CodeCheck({ analysis }: { analysis: Analysis }) {
   const { coverage, engine, problems, review } = analysis;
   const changes = review?.changes ?? [];
   const reviewProblems = review?.problems ?? [];
+  // No engine ran: one line says why, and there are no numbers to show.
+  const notRun = engine === 'none';
+  const why = problems[0];
+  const listed = [
+    ...new Set([...(notRun ? problems.slice(1) : problems), ...reviewProblems]),
+  ].filter((problem) => !(notRun && problem === why));
   return (
     <div className="code-check">
       <h2>Code check</h2>
-      <p>
-        {coverage.anchored} of {coverage.functionSteps} steps on their function, {coverage.proven}{' '}
-        of {coverage.links} links proven
-      </p>
+      {notRun ? (
+        <p>The code check did not run{why !== undefined ? `: ${why}` : '.'}</p>
+      ) : (
+        <p>
+          {coverage.anchored} of {coverage.functionSteps} steps on their function, {coverage.proven}{' '}
+          of {coverage.links} links proven
+        </p>
+      )}
       {engine === 'go-syntax' && (
         <p>The project did not load with types: links are matched by name.</p>
       )}
-      {(problems.length > 0 || reviewProblems.length > 0) && (
+      {listed.length > 0 && (
         <ul>
-          {[...new Set([...problems, ...reviewProblems])].map((problem, i) => (
+          {listed.map((problem, i) => (
             <li key={i}>{problem}</li>
           ))}
         </ul>

@@ -115,6 +115,21 @@ describe('About: code check', () => {
     );
   });
 
+  it('says the check did not run, without coverage numbers, when no engine ran', async () => {
+    const none: NonNullable<Tour['analysis']> = {
+      engine: 'none',
+      ms: 0,
+      degraded: false,
+      coverage: { functionSteps: 0, anchored: 0, links: 0, proven: 0, foundByCode: 0 },
+      problems: ['no Go files in this PR'],
+    };
+    await open({ ...baseTour, analysis: none });
+    const text = screen.getByRole('region', { name: 'About this PR' }).textContent ?? '';
+    expect(text).toContain('The code check did not run: no Go files in this PR');
+    expect(text).not.toContain('steps on their function');
+    expect(text.split('no Go files in this PR')).toHaveLength(2);
+  });
+
   it('is left out for a tour without an analysis', async () => {
     await open();
     expect(screen.getByRole('region', { name: 'About this PR' }).textContent).not.toContain(

@@ -275,6 +275,19 @@ describe('called from, with the code check', () => {
     expect(screen.getByTestId('came-from').className).not.toContain('warn');
   });
 
+  it('a link into a step that is no function (unchecked by the checker) has no warning colour', async () => {
+    await reopen([
+      link(1, 2, {
+        source: 'claude',
+        check: 'unchecked',
+        line: 20,
+        note: 'the called step is not a function',
+      }),
+    ]);
+    expect(cameFrom()).toBe('Called from Handle the repay request (step 1), line 20.');
+    expect(screen.getByTestId('came-from').className).not.toContain('warn');
+  });
+
   it("puts Claude's reason in the tooltip of an unproven link", async () => {
     await reopen([
       link(1, 2, {

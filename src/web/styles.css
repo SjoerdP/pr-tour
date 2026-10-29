@@ -1748,8 +1748,10 @@ p.why {
   line-height: 16px;
 }
 
+/* Claimed by the tour, not found in the code: a dashed border, at full muted colour. */
 .mark-claude {
-  opacity: 0.55;
+  border-style: dashed;
+  border-color: var(--fg-muted);
 }
 
 .code-check h2 {
