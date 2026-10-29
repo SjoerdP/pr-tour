@@ -10,10 +10,11 @@ import console from 'node:console';
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const argv = process.argv.slice(2);
 const outIdx = argv.indexOf('--out');
-const out =
-  outIdx >= 0 && argv[outIdx + 1]
-    ? resolve(argv[outIdx + 1])
-    : resolve(root, 'dist/bin/pr-tour-check-go');
+if (outIdx >= 0 && (!argv[outIdx + 1] || argv[outIdx + 1].startsWith('--'))) {
+  console.error('--out needs a path');
+  process.exit(2);
+}
+const out = outIdx >= 0 ? resolve(argv[outIdx + 1]) : resolve(root, 'dist/bin/pr-tour-check-go');
 const env = { ...process.env, GOTOOLCHAIN: 'local' };
 
 const skip = (why) => {
@@ -22,7 +23,12 @@ const skip = (why) => {
 };
 
 const ver = spawnSync('go', ['env', 'GOVERSION'], { env, encoding: 'utf8' });
-if (ver.error || ver.status !== 0) skip('go not found');
+if (ver.error?.code === 'ENOENT') skip('go not found');
+if (ver.error || ver.status !== 0) {
+  const line =
+    (ver.stderr ?? '').trim().split('\n')[0] || ver.error?.message || `exit ${ver.status}`;
+  skip(`go env failed: ${line}`);
+}
 const m = /^go(\d+)\.(\d+)/.exec(ver.stdout.trim());
 if (!m) skip(`go version "${ver.stdout.trim()}" not understood`);
 const [major, minor] = [Number(m[1]), Number(m[2])];
