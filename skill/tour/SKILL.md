@@ -30,8 +30,9 @@ as a pr-tour tour: the reviewer reads it next to the code, in the order the code
    `pr-tour import --repo <owner/name> --pr <number> --file <path>`.
    - A zod error means the JSON does not match the schema: fix it and import again.
    - Each `problem: ...` line is a home that is wrong (it overlaps another home, covers
-     no changed line, or points at a file outside the PR). Each `unexplained: ...` line
-     is a run of changed lines that no home covers. Fix those homes and import again.
+     no changed line, or points at a file outside the PR), or a step whose `"from"` line
+     is not inside the step it names. Each `unexplained: ...` line is a run of changed
+     lines that no home covers. Fix those and import again.
    - Retry at most 2 times. If problems remain, keep the last import and tell the
      user which problems are left.
    - Exit code 2 with `This PR has N unsent drafts. Run again with --replace ...` means

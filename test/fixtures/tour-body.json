@@ -46,6 +46,7 @@
           "endLine": 20,
           "changed": false,
           "why": "Unchanged, but the new check depends on it.",
+          "from": { "step": 1, "line": 18, "how": "call" },
           "risk": "skim",
           "sideEffects": [],
           "tests": [],

@@ -9,6 +9,7 @@ type Home = { id: string; range: Range };
  * Check that every changed line in the diff has exactly one home in the tour.
  * Lines without a home become the "Unexplained" group; everything else that is
  * wrong (double homes, homes that cover nothing, homes outside the PR) is a problem.
+ * So is a step's "from" line that is not in the step it names.
  */
 export function checkTour(body: TourBody, files: FileDiff[]): CheckResult {
   const homes = allHomes(body);
@@ -39,7 +40,22 @@ export function checkTour(body: TourBody, files: FileDiff[]): CheckResult {
     }
   }
 
+  problems.push(...fromProblems(body));
   return { problems, unexplained: unexplainedGroup(unhomed) };
+}
+
+/** Steps whose "from" line lies outside the calling step's lines. */
+function fromProblems(body: TourBody): string[] {
+  return body.flows.flatMap((flow) =>
+    flow.steps.flatMap((s) => {
+      const caller = s.from && flow.steps[s.from.step - 1];
+      if (!s.from || !caller) return [];
+      const { line } = s.from;
+      if (caller.startLine <= line && line <= caller.endLine) return [];
+      const where = `${caller.file}:${caller.startLine}-${caller.endLine}`;
+      return [`${s.id} "from" line ${line} is not in step ${s.from.step} (${where})`];
+    }),
+  );
 }
 
 function allHomes(body: TourBody): Home[] {

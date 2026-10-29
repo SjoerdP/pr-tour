@@ -1,6 +1,15 @@
 // The tour's homes in the order the web shows them (outline and j/k).
 
-import type { Flow, Foundation, OtherGroup, OtherItem, Range, Step, Tour } from '../shared/tour.js';
+import type {
+  Flow,
+  Foundation,
+  OtherGroup,
+  OtherItem,
+  Range,
+  Step,
+  StepFrom,
+  Tour,
+} from '../shared/tour.js';
 
 /** One place a changed line can live: a foundation, a flow step or an other-changes item. */
 export type Home =
@@ -65,6 +74,49 @@ export function homeRanges(home: Home): Range[] {
  */
 export function flowStepAt(flow: Flow, file: string, line: number): Step | undefined {
   return flow.steps.find((s) => s.file === file && s.startLine <= line && line <= s.endLine);
+}
+
+/** How the flow gets to a step: the calling step, the line of the call, and how. */
+export type CameFrom = {
+  caller: Step;
+  /** The caller's 1-based number in the flow. */
+  callerNo: number;
+  /** Null when worked out from the calls, which say where a function is, not where it is called. */
+  line: number | null;
+  how: StepFrom['how'];
+  via: string | undefined;
+  /** Steps between the caller and this one, which returned before the call: [first, last]. */
+  returned: [number, number] | null;
+};
+
+/**
+ * Where `step` is called from, by its `from`. A tour from before `from` existed has only the
+ * calls each step lists: then the nearest earlier step that calls into this one. Null for a
+ * flow's first step, or when nothing says.
+ */
+export function cameFrom(flow: Flow, step: Step): CameFrom | null {
+  const no = flow.steps.indexOf(step) + 1;
+  const link = step.from ? fromLink(flow, step.from) : callLink(flow, step, no);
+  if (!link) return null;
+  const { callerNo } = link;
+  return { ...link, returned: callerNo < no - 1 ? [callerNo + 1, no - 1] : null };
+}
+
+function fromLink(flow: Flow, from: StepFrom): Omit<CameFrom, 'returned'> | null {
+  const caller = flow.steps[from.step - 1];
+  if (!caller) return null;
+  return { caller, callerNo: from.step, line: from.line, how: from.how, via: from.via };
+}
+
+function callLink(flow: Flow, step: Step, no: number): Omit<CameFrom, 'returned'> | null {
+  for (let i = no - 2; i >= 0; i--) {
+    const caller = flow.steps[i]!;
+    const calls = caller.calls.some(
+      (c) => c.file === step.file && step.startLine <= c.line && c.line <= step.endLine,
+    );
+    if (calls) return { caller, callerNo: i + 1, line: null, how: 'call', via: undefined };
+  }
+  return null;
 }
 
 /** True for the first step of a flow: where `[` and `]` land. */

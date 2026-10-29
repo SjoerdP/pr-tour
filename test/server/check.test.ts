@@ -110,6 +110,22 @@ describe('checkTour', () => {
     for (const i of items ?? []) expect(i.title).not.toBe('');
   });
 
+  it('a from line outside the calling step → problem', () => {
+    // modified.diff: all lines homed by F1.S1, so only the from lines can be wrong.
+    const caller = { ...step('F1.S1', [lines('greet.js', 'new', 2, 4)]), file: 'greet.js' };
+    caller.startLine = 1;
+    caller.endLine = 10;
+    const inside = { ...step('F1.S2', []), from: { step: 1, line: 10, how: 'call' as const } };
+    const outside = { ...step('F1.S3', []), from: { step: 1, line: 11, how: 'call' as const } };
+    const tour = body({
+      foundations: [foundation('f1', [lines('greet.js', 'old', 2, 3)])],
+      steps: [caller, inside, outside],
+    });
+    expect(checkTour(tour, fixture('modified')).problems).toEqual([
+      'F1.S3 "from" line 11 is not in step 1 (greet.js:1-10)',
+    ]);
+  });
+
   it('double home → problem naming both ids', () => {
     const tour = body({
       foundations: [foundation('f1', [lines('greet.js', 'new', 2, 4)])],

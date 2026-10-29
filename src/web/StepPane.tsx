@@ -1,16 +1,9 @@
-import {
-  useEffect,
-  useId,
-  useRef,
-  useState,
-  type KeyboardEvent,
-  type ReactNode,
-} from 'react';
-import type { Flow, Range, SideEffect, Tour } from '../shared/tour.js';
+import { useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
+import type { Flow, Range, SideEffect, Step, Tour } from '../shared/tour.js';
 import type { Focus as CodeFocus, Reveal } from './code-lines.js';
 import { CodeView } from './CodeView.js';
 import { FlowEndNote } from './FlowEndNote.js';
-import { homeTouches, homeTitle, type Home } from './homes.js';
+import { cameFrom, homeTouches, homeTitle, type CameFrom, type Home } from './homes.js';
 import { keepsReviewOpen } from './keep-review-open.js';
 import { withKey } from './shortcuts.js';
 import type { ReviewState } from './useReview.js';
@@ -151,6 +144,8 @@ type Props = {
   /** A place to bring into view in the code, after a jump from the review panel. */
   reveal: Reveal | null;
   onJump: (file: string, line: number) => void;
+  /** Shows a line of code from this step, with a way back: a look, not a move. */
+  onShowLine: (file: string, line: number) => void;
   onBack: () => void;
   onOpenHome: (homeId: string) => void;
   nav: PaneNav;
@@ -167,6 +162,7 @@ export function StepPane({
   jump,
   reveal,
   onJump,
+  onShowLine,
   onBack,
   onOpenHome,
   nav,
@@ -209,6 +205,9 @@ export function StepPane({
           )}
         </div>
 
+        {home.kind === 'step' && (
+          <CameFromLine flow={home.flow} step={home.step} onShowLine={onShowLine} />
+        )}
         {why !== undefined && (
           <section className="why">
             <h3 className="why-label">
@@ -253,6 +252,7 @@ export function StepPane({
         onOpenHome={onOpenHome}
         review={review}
       />
+      {home.kind === 'step' && <NextFrom flow={home.flow} step={home.step} />}
       <div className="step-nav" {...keepsReviewOpen}>
         <button
           type="button"
@@ -273,6 +273,74 @@ export function StepPane({
         </button>
       </div>
     </article>
+  );
+}
+
+const CAME_FROM_VERB: Record<CameFrom['how'], string> = {
+  call: 'Called from',
+  service: 'Request from',
+  event: 'Event from',
+};
+
+/**
+ * How the flow gets to this step: "Called from Handle the request (step 1), line 14. Step 2
+ * returned first." The line shows the call. Left out for a flow's first step, and for tours
+ * from before steps said where they are called from.
+ */
+function CameFromLine({
+  flow,
+  step,
+  onShowLine,
+}: {
+  flow: Flow;
+  step: Step;
+  onShowLine: (file: string, line: number) => void;
+}) {
+  const from = cameFrom(flow, step);
+  if (!from) return null;
+  const { caller, callerNo, line, how, via, returned } = from;
+  return (
+    <p className="came-from" data-testid="came-from">
+      {CAME_FROM_VERB[how]} <strong>{caller.title}</strong> (step {callerNo})
+      {line !== null && (
+        <>
+          ,{' '}
+          <button
+            type="button"
+            className="link-button"
+            onClick={() => onShowLine(caller.file, line)}
+            title={`Show line ${line} of ${caller.file}`}
+          >
+            line {line}
+          </button>
+        </>
+      )}
+      {via !== undefined && <>, through {via}</>}.
+      {returned && (
+        <span className="muted">
+          {' '}
+          {returned[0] === returned[1]
+            ? `Step ${returned[0]} returned first.`
+            : `Steps ${returned[0]} to ${returned[1]} returned first.`}
+        </span>
+      )}
+    </p>
+  );
+}
+
+/**
+ * Above the step buttons, when the next step of the flow is not called from this one: where
+ * it is called from, so the jump back up the flow does not come as a surprise.
+ */
+function NextFrom({ flow, step }: { flow: Flow; step: Step }) {
+  const next = flow.steps[flow.steps.indexOf(step) + 1];
+  const from = next && cameFrom(flow, next);
+  if (!from || from.caller === step) return null;
+  return (
+    <p className="next-from" data-testid="next-from">
+      Next step is called from <strong>{from.caller.title}</strong> (step {from.callerNo}), not from
+      this step.
+    </p>
   );
 }
 
