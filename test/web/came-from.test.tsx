@@ -314,8 +314,10 @@ describe('called from, with the code check', () => {
         note: 'the called step is not a function',
       }),
     ]);
-    expect(cameFrom()).toBe('Called from Handle the repay request (step 1), line 20.');
+    expect(rows()).toEqual(['Called from: Step 1 · Handle the repay request line 20 ↗']);
+    expect(tag()).toBeNull();
     expect(screen.getByTestId('came-from').className).not.toContain('warn');
+    expect(screen.getByTestId('came-from').querySelector('.came-from-warn')).toBeNull();
   });
 
   it("puts Claude's reason in the tooltip of an unproven link", async () => {
