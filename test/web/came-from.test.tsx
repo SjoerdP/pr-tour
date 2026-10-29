@@ -279,6 +279,19 @@ describe('called from, with the code check', () => {
     expect(tag()).toBeNull();
   });
 
+  it('a not-found link has no previous-step row: the code does not show that call', async () => {
+    await reopen(
+      [link(1, 3, { source: 'claude', check: 'not-found' })],
+      undefined,
+      'Record the repayment',
+    );
+    expect(rows()).toEqual([
+      'Called from: The tour says Handle the repay request (step 1) calls this, but the code does not show it.',
+    ]);
+    expect(screen.getByTestId('came-from').querySelector('.came-from-warn')).toBeTruthy();
+    expect(screen.queryByTestId('came-from-previous')).toBeNull();
+  });
+
   it('an unchecked link has no tag; a name-matched one is matched by name', async () => {
     await reopen([link(1, 2, { source: 'claude', check: 'unchecked' })]);
     expect(rows()).toEqual(['Called from: Step 1 · Handle the repay request line 12 ↗']);

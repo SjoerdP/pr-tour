@@ -398,7 +398,8 @@ function CameFromLine({
             )}
           </div>
         </div>
-        {returned && (
+        {/* After a not-found warning, "then step N calls this step" would contradict it. */}
+        {returned && check !== 'not-found' && (
           <div className="came-from-row" data-testid="came-from-previous">
             <span className="came-from-label">Previous step</span>
             <div className="came-from-body">
