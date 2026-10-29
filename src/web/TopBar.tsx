@@ -261,7 +261,7 @@ function CodeCheck({ analysis }: { analysis: Analysis }) {
       )}
       {(problems.length > 0 || reviewProblems.length > 0) && (
         <ul>
-          {[...problems, ...reviewProblems].map((problem, i) => (
+          {[...new Set([...problems, ...reviewProblems])].map((problem, i) => (
             <li key={i}>{problem}</li>
           ))}
         </ul>

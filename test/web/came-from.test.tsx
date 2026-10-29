@@ -275,6 +275,29 @@ describe('called from, with the code check', () => {
     expect(screen.getByTestId('came-from').className).not.toContain('warn');
   });
 
+  it("puts Claude's reason in the tooltip of an unproven link", async () => {
+    await reopen([
+      link(1, 2, {
+        how: 'service',
+        source: 'claude',
+        check: 'unchecked',
+        reason: 'HTTP call to the ledger service',
+      }),
+    ]);
+    expect(screen.getByTestId('came-from').title).toBe('HTTP call to the ledger service');
+  });
+
+  it('a name-matched code link is not said to be found in the code', async () => {
+    await reopen([link(1, 2, { source: 'code', check: 'name-match' })]);
+    expect(cameFrom()).toBe('Called from Handle the repay request (step 1), line 12.');
+  });
+
+  it('no next-step note when this step is a secondary caller of the next', async () => {
+    // Step 3 is called by step 1 (proven first) and also by step 2.
+    await reopen([link(1, 3), link(2, 3, { line: 7 })]);
+    expect(nextNote()).toBeNull();
+  });
+
   it('lists the other callers', async () => {
     await reopen([link(1, 3), link(2, 3, { line: 7 })], undefined, 'Record the repayment');
     expect(cameFrom()).toContain('Called from Handle the repay request (step 1), line 12.');

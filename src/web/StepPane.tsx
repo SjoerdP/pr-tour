@@ -333,7 +333,8 @@ function CameFromLine({
 }) {
   const from = cameFrom(flow, step);
   if (!from) return null;
-  const { caller, callerNo, line, how, via, returned, check, source, others, claimedNo } = from;
+  const { caller, callerNo, line, how, via, returned, check, source, others, claimedNo, reason } =
+    from;
   if (check === 'not-found') {
     return (
       <p className="came-from came-from-warn" data-testid="came-from">
@@ -344,7 +345,11 @@ function CameFromLine({
   }
   return (
     <>
-      <p className="came-from" data-testid="came-from">
+      <p
+        className="came-from"
+        data-testid="came-from"
+        title={check !== 'proven' ? reason : undefined}
+      >
         {CAME_FROM_VERB[how]} <strong>{caller.title}</strong> (step {callerNo})
         {line !== null && (
           <>
@@ -360,7 +365,7 @@ function CameFromLine({
           </>
         )}
         {via !== undefined && <>, through {via}</>}
-        {source === 'code' && <>, found in the code</>}.
+        {source === 'code' && check === 'proven' && <>, found in the code</>}.
         {returned && (
           <span className="muted">
             {' '}

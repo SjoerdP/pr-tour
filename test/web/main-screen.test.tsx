@@ -92,6 +92,29 @@ describe('About: code check', () => {
     expect(text).toContain('Moved step 2 — it runs first');
   });
 
+  it('shows a pass C problem once, even when both lists hold it', async () => {
+    const both = {
+      ...analysis,
+      problems: ['review failed'],
+      review: { ran: false, ms: 1, changes: [], problems: ['review failed'] },
+    };
+    await open({ ...baseTour, analysis: both });
+    const text = screen.getByRole('region', { name: 'About this PR' }).textContent ?? '';
+    expect(text.split('review failed')).toHaveLength(2);
+  });
+
+  it('shows review problems when only that list has them', async () => {
+    const only = {
+      ...analysis,
+      problems: [],
+      review: { ran: false, ms: 1, changes: [], problems: ['review dropped a change'] },
+    };
+    await open({ ...baseTour, analysis: only });
+    expect(screen.getByRole('region', { name: 'About this PR' }).textContent).toContain(
+      'review dropped a change',
+    );
+  });
+
   it('is left out for a tour without an analysis', async () => {
     await open();
     expect(screen.getByRole('region', { name: 'About this PR' }).textContent).not.toContain(
