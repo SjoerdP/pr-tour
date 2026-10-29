@@ -1,6 +1,6 @@
 import type { CheckInput, CheckOutput } from './contract.js';
 import type { CheckerResult } from './runner.js';
-import type { Step, Tour } from '../../shared/tour.js';
+import type { FlowLink as Link, Step, Tour } from '../../shared/tour.js';
 
 type Analysis = NonNullable<Tour['analysis']>;
 
@@ -63,6 +63,23 @@ function cleared(tour: Tour): Tour {
 }
 
 /**
+ * Links Claude explained in pass C (with a `reason`) keep Claude's `how` and reason, as
+ * `unchecked`, while the code still cannot prove them. A link the code now proves keeps the
+ * code's result. Each explained link patches the first unproven link with the same ends.
+ */
+function keepReasons(before: Link[] | undefined, after: Link[]): Link[] {
+  const links = after.map((l) => ({ ...l }));
+  for (const old of before ?? []) {
+    if (old.reason === undefined) continue;
+    const match = links.find(
+      (l) => l.from === old.from && l.to === old.to && l.check !== 'proven' && !l.reason,
+    );
+    if (match) Object.assign(match, { how: old.how, check: 'unchecked', reason: old.reason });
+  }
+  return links;
+}
+
+/**
  * Puts the checker's results on the tour: anchors, marks and call sites on steps by id, links on
  * flows by id, and `analysis`. `null` means no checker ran (`engineMissing` says why). Pure.
  */
@@ -72,6 +89,8 @@ export function applyCheck(
   engineMissing?: string,
 ): Tour {
   const base = cleared(tour);
+  // Pass C's record stays with the tour whatever this check finds.
+  const review = tour.analysis?.review ? { review: tour.analysis.review } : {};
   if (result === null || !result.ok) {
     const problem = result === null ? (engineMissing ?? 'no checker ran') : result.problem;
     const analysis: Analysis = {
@@ -80,6 +99,7 @@ export function applyCheck(
       degraded: false,
       coverage: coverage(base),
       problems: [problem],
+      ...review,
     };
     return { ...base, analysis };
   }
@@ -98,20 +118,24 @@ export function applyCheck(
 
   const merged: Tour = {
     ...base,
-    flows: base.flows.map((flow) => ({
-      ...flow,
-      ...(out.links[flow.id] ? { links: out.links[flow.id] } : {}),
-      steps: flow.steps.map((s) => {
-        const r = out.steps[s.id];
-        if (!r) return s;
-        return {
-          ...s,
-          ...(r.anchor ? { anchor: r.anchor } : {}),
-          marks: r.marks,
-          callSites: r.callSites,
-        };
-      }),
-    })),
+    flows: base.flows.map((flow) => {
+      const links = out.links[flow.id];
+      const before = tour.flows.find((f) => f.id === flow.id)?.links;
+      return {
+        ...flow,
+        ...(links ? { links: keepReasons(before, links) } : {}),
+        steps: flow.steps.map((s) => {
+          const r = out.steps[s.id];
+          if (!r) return s;
+          return {
+            ...s,
+            ...(r.anchor ? { anchor: r.anchor } : {}),
+            marks: r.marks,
+            callSites: r.callSites,
+          };
+        }),
+      };
+    }),
   };
   const analysis: Analysis = {
     engine: out.engine,
@@ -120,7 +144,7 @@ export function applyCheck(
     degraded: out.degraded,
     coverage: coverage(merged),
     problems,
-    ...(tour.analysis?.review ? { review: tour.analysis.review } : {}),
+    ...review,
   };
   return { ...merged, analysis };
 }

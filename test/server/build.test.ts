@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -331,7 +331,7 @@ function builder(...answers: ((call: RunCall) => RunResult)[]) {
 }
 
 function builderWith(
-  opts: { diff: string; checker?: ReturnType<typeof fakeChecker> },
+  opts: { diff: string; checker?: ReturnType<typeof fakeChecker>; worktree?: string },
   ...answers: ((call: RunCall) => RunResult)[]
 ) {
   const fake = opts.checker ?? fakeChecker();
@@ -343,6 +343,8 @@ function builderWith(
   });
   /** Every GitHub and git call the checkout made, by method name. */
   const checkoutCalls: string[] = [];
+  /** The SHAs the worktree and the diff were made for: `base..head`. */
+  const checkoutShas: string[] = [];
   const github = {
     pr: () => {
       checkoutCalls.push('pr');
@@ -350,12 +352,14 @@ function builderWith(
     },
   };
   const repos = {
-    ensureWorktree: () => {
+    ensureWorktree: (_repo: string, _pr: number, baseSha: string, headSha: string) => {
       checkoutCalls.push('ensureWorktree');
-      return Promise.resolve(WORKTREE);
+      checkoutShas.push(`worktree ${baseSha}..${headSha}`);
+      return Promise.resolve(opts.worktree ?? WORKTREE);
     },
-    diffText: () => {
+    diffText: (_repo: string, baseSha: string, headSha: string) => {
       checkoutCalls.push('diffText');
+      checkoutShas.push(`diff ${baseSha}..${headSha}`);
       return Promise.resolve(opts.diff);
     },
     mergeBase: (_repo: string, baseSha: string, headSha: string) => {
@@ -366,7 +370,7 @@ function builderWith(
     },
   };
   const tours = new TourBuilder({ run, repos, github, store, home, checker: fake.checker });
-  return { tours, calls, checkoutCalls, fake };
+  return { tours, calls, checkoutCalls, checkoutShas, fake };
 }
 
 const answer = (result: string) => () => claudeAnswer(result);
@@ -644,6 +648,38 @@ describe('code check passes', () => {
     expect(store.getTour('acme/greet', 7)).toEqual(again);
   });
 
+  it('recheck checks out the stored tour’s own commits, even when the PR moved on', async () => {
+    const old = finishTour(
+      GO_BODY,
+      { ...meta, baseSha: 'd'.repeat(40), headSha: 'c'.repeat(40) },
+      parseDiff(GO_DIFF),
+    );
+    store.saveTour(old);
+    const { tours, checkoutShas, fake } = builderWith({ diff: GO_DIFF });
+
+    const again = await tours.recheck('acme/greet', 7);
+
+    expect(checkoutShas).toEqual([
+      `worktree ${'d'.repeat(40)}..${'c'.repeat(40)}`,
+      `diff ${'d'.repeat(40)}..${'c'.repeat(40)}`,
+    ]);
+    expect(fake.log).toEqual([`check ${WORKTREE}`]);
+    expect(again.headSha).toBe('c'.repeat(40));
+    expect(again.analysis?.engine).toBe('go-types');
+  });
+
+  it('a pass A checker that throws never fails the build', async () => {
+    const fake = fakeChecker();
+    fake.checker.functions = () => Promise.reject(new Error('spawn EACCES'));
+    const { tours, calls } = builderWith({ diff: GO_DIFF, checker: fake }, goAnswer);
+
+    const tour = await tours.build('acme/greet', 7);
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0]!.opts?.input).not.toContain('.functions.json');
+    expect(tour.analysis?.engine).toBe('go-types');
+  });
+
   it('recheck without a stored tour says so', async () => {
     const { tours } = builder();
     await expect(tours.recheck('acme/greet', 7)).rejects.toThrow('No tour is stored');
@@ -652,5 +688,198 @@ describe('code check passes', () => {
   it('functionsOf returns the table, or null without Go files', async () => {
     expect(await builderWith({ diff: GO_DIFF }).tours.functionsOf('acme/greet', 7)).toEqual(TABLE);
     expect(await builder().tours.functionsOf('acme/greet', 7)).toBeNull();
+  });
+});
+
+describe('pass C: Claude reviews the findings', () => {
+  // One Go step whose symbol the code does not have: pinned by range to Pay.
+  const FLOW_BODY: TourBodyInput = {
+    summary: 'Adds Pay.',
+    foundations: [],
+    flows: [
+      {
+        title: 'Pay',
+        entry: { kind: 'http', label: 'POST /pay' },
+        steps: [
+          {
+            title: 'Take the payment',
+            symbol: 'Payy',
+            file: 'x/pay.go',
+            startLine: 3,
+            endLine: 3,
+            changed: true,
+            why: 'Takes it.',
+            risk: 'skim',
+            sideEffects: [],
+            tests: [],
+            calls: [],
+            homes: [lines('x/pay.go', 'new', 3, 3)],
+          },
+        ],
+      },
+    ],
+    other: [],
+  };
+  const flowAnswer = answer(JSON.stringify(FLOW_BODY));
+  const SYMBOL_CHANGE = {
+    kind: 'symbol',
+    step: 'F1.S1',
+    symbol: 'Pay',
+    reason: 'the function is called Pay',
+  };
+  const reviewAnswer = (changes: unknown[]) => answer(JSON.stringify({ changes }));
+
+  /** A checker that anchors F1.S1 by symbol only when its symbol is `Pay`. */
+  function anchoringChecker() {
+    const fake = fakeChecker();
+    const symbols: (string | undefined)[] = [];
+    fake.checker.check = (_run, root, input) => {
+      fake.log.push(`check ${root}`);
+      const symbol = input.flows[0]?.steps[0]?.symbol;
+      symbols.push(symbol);
+      const source = symbol === 'Pay' ? ('symbol' as const) : ('range' as const);
+      return Promise.resolve({
+        ok: true as const,
+        ms: 5,
+        output: {
+          ...CHECK_OUT,
+          problems: [],
+          steps: {
+            'F1.S1': {
+              anchor: { name: 'Pay', startLine: 3, endLine: 3, source },
+              marks: [],
+              callSites: [],
+            },
+          },
+        },
+      });
+    };
+    return { ...fake, symbols };
+  }
+
+  let worktree: string;
+  beforeEach(() => {
+    worktree = mkdtempSync(join(tmpdir(), 'pr-tour-wt-'));
+    mkdirSync(join(worktree, 'x'));
+    writeFileSync(
+      join(worktree, 'x/pay.go'),
+      'package x\n\nfunc Pay() { charge() }\nfunc Old() {}\n',
+    );
+  });
+  afterEach(() => rmSync(worktree, { recursive: true, force: true }));
+
+  it('asks Claude once more, applies its changes and runs pass B again', async () => {
+    const checker = anchoringChecker();
+    const { tours, calls } = builderWith(
+      { diff: GO_DIFF, checker, worktree },
+      flowAnswer,
+      reviewAnswer([SYMBOL_CHANGE]),
+    );
+
+    const tour = await tours.build('acme/greet', 7);
+
+    expect(calls).toHaveLength(2);
+    const prompt = calls[1]!.opts?.input ?? '';
+    expect(prompt).toContain('the code has no function Payy in x/pay.go');
+    expect(prompt).toContain('func Pay() { charge() }');
+    expect(prompt).not.toContain('func Old');
+    const { args, opts } = calls[1]!;
+    expect(args.join(' ')).toContain('--tools Read,Grep,Glob');
+    expect(args.join(' ')).toContain('--allowedTools Read Grep Glob');
+    expect(opts?.cwd).toBe(worktree);
+    expect(opts?.timeoutMs).toBe(180_000);
+    expect(checker.symbols).toEqual(['Payy', 'Pay']);
+    expect(tour.flows[0]!.steps[0]!.symbol).toBe('Pay');
+    expect(tour.flows[0]!.steps[0]!.anchor?.source).toBe('symbol');
+    expect(tour.analysis?.review?.ms).toBeGreaterThanOrEqual(0);
+    expect(tour.analysis?.review).toMatchObject({
+      ran: true,
+      changes: [
+        {
+          step: 'F1.S1',
+          what: 'Step 1 in "Pay" now points at Pay, not Payy',
+          reason: 'the function is called Pay',
+        },
+      ],
+    });
+    expect(tour.analysis?.problems).toEqual([]);
+    expect(store.getTour('acme/greet', 7)).toEqual(tour);
+  });
+
+  it('lists a dropped change as a problem, not as a change', async () => {
+    const checker = anchoringChecker();
+    const { tours } = builderWith(
+      { diff: GO_DIFF, checker, worktree },
+      flowAnswer,
+      reviewAnswer([{ kind: 'why', step: 'F9.S9', why: 'w', reason: 'r' }]),
+    );
+
+    const tour = await tours.build('acme/greet', 7);
+
+    expect(tour.analysis?.review).toMatchObject({ ran: true, changes: [] });
+    expect(tour.analysis?.problems).toHaveLength(1);
+    expect(tour.analysis?.problems[0]).toContain('F9.S9');
+    // Nothing changed, so pass B has nothing new to check.
+    expect(checker.symbols).toEqual(['Payy']);
+  });
+
+  it('keeps the pass B tour and records the problem when Claude fails', async () => {
+    const checker = anchoringChecker();
+    const { tours, calls } = builderWith({ diff: GO_DIFF, checker, worktree }, flowAnswer, () => ({
+      stdout: '',
+      stderr: 'rate limited',
+      code: 1,
+    }));
+
+    const tour = await tours.build('acme/greet', 7);
+
+    expect(calls).toHaveLength(2);
+    expect(checker.symbols).toEqual(['Payy']);
+    expect(tour.flows[0]!.steps[0]!.symbol).toBe('Payy');
+    expect(tour.flows[0]!.steps[0]!.anchor?.source).toBe('range');
+    expect(tour.analysis?.review).toMatchObject({ ran: false, changes: [] });
+    expect(tour.analysis?.review?.ms).toBeGreaterThanOrEqual(0);
+    expect(tour.analysis?.problems).toEqual([
+      'the review by Claude failed: Claude failed to run: rate limited',
+    ]);
+    expect(store.getTour('acme/greet', 7)).toEqual(tour);
+  });
+
+  it('keeps the pass B tour when Claude answers with the wrong shape', async () => {
+    const checker = anchoringChecker();
+    const { tours } = builderWith(
+      { diff: GO_DIFF, checker, worktree },
+      flowAnswer,
+      answer('{"changes": [{"kind": "homes"}]}'),
+    );
+
+    const tour = await tours.build('acme/greet', 7);
+
+    expect(checker.symbols).toEqual(['Payy']);
+    expect(tour.analysis?.review?.ran).toBe(false);
+    expect(tour.analysis?.problems).toHaveLength(1);
+    expect(tour.analysis?.problems[0]).toMatch(
+      /^the review by Claude failed: invalid answer: [^\n]+$/,
+    );
+  });
+
+  it('makes no review call when there are no findings', async () => {
+    const { tours, calls } = builderWith({ diff: GO_DIFF }, answer(JSON.stringify(GO_BODY)));
+
+    const tour = await tours.build('acme/greet', 7);
+
+    expect(calls).toHaveLength(1);
+    expect(tour.analysis?.review).toBeUndefined();
+  });
+
+  it('is not run for imports', async () => {
+    const checker = anchoringChecker();
+    const { tours, calls } = builderWith({ diff: GO_DIFF, checker, worktree });
+
+    const tour = await tours.importAuthorTour('acme/greet', 7, JSON.stringify(FLOW_BODY));
+
+    expect(calls).toHaveLength(0);
+    expect(checker.symbols).toEqual(['Payy']);
+    expect(tour.analysis?.review).toBeUndefined();
   });
 });

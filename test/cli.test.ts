@@ -308,13 +308,32 @@ describe('functions and recheck', () => {
     expect(() => parseArgs([cmd])).toThrow(UsageError);
   });
 
-  it('importReport lists analysis problems as findings', () => {
+  it('importReport prints findings as finding lines and analysis problems as notes', () => {
     const tour = {
       check: { problems: [] },
       other: [],
-      analysis: { problems: ['link F1 unproven'] },
+      flows: [
+        {
+          id: 'F1',
+          title: 'Pay',
+          steps: [
+            {
+              id: 'F1.S1',
+              title: 'Take it',
+              file: 'x/pay.go',
+              symbol: 'Payy',
+              anchor: { name: 'Pay', startLine: 3, endLine: 3, source: 'range' },
+            },
+          ],
+          links: [],
+        },
+      ],
+      analysis: { engine: 'go-syntax', problems: ['the Go checker is not installed'] },
     } as unknown as Tour;
-    expect(importReport(tour)).toEqual(['finding: link F1 unproven']);
+    expect(importReport(tour)).toEqual([
+      'finding: step 1 "Take it" (F1.S1): the code has no function Payy in x/pay.go; the step was pinned to Pay instead',
+      'note: the Go checker is not installed',
+    ]);
   });
 });
 

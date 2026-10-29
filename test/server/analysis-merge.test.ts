@@ -125,6 +125,51 @@ describe('applyCheck', () => {
     expect(out.analysis!.problems).toEqual(['timed out']);
   });
 
+  it('keeps the pass C review on success and on failure', () => {
+    const review = { ran: true, ms: 7, changes: [{ step: 'F1.S2', what: 'w', reason: 'r' }] };
+    const t = { ...tour(), analysis: { ...applyCheck(tour(), null).analysis!, review } };
+    expect(applyCheck(t, { ok: true, output: output(), ms: 1 }).analysis!.review).toEqual(review);
+    expect(applyCheck(t, { ok: false, problem: 'timed out', ms: 9 }).analysis!.review).toEqual(
+      review,
+    );
+    expect(applyCheck(t, null, 'no Go files in this PR').analysis!.review).toEqual(review);
+  });
+
+  it('keeps Claude’s explained how and reason on a link the code still cannot prove', () => {
+    const o = output();
+    o.links['F1'] = [
+      { from: 'F1.S1', to: 'F1.S2', line: 18, how: 'call', source: 'claude', check: 'not-found' },
+    ];
+    const t = tour();
+    t.flows[0]!.links = [
+      {
+        from: 'F1.S1',
+        to: 'F1.S2',
+        line: 18,
+        how: 'register',
+        source: 'claude',
+        check: 'unchecked',
+        reason: 'registered through dependency injection',
+      },
+    ];
+    const out = applyCheck(t, { ok: true, output: o, ms: 1 });
+    expect(out.flows[0]!.links).toEqual([
+      {
+        from: 'F1.S1',
+        to: 'F1.S2',
+        line: 18,
+        how: 'register',
+        source: 'claude',
+        check: 'unchecked',
+        reason: 'registered through dependency injection',
+      },
+    ]);
+    expect(out.analysis!.coverage.proven).toBe(0);
+    // A link the code now proves keeps the code's result, without Claude's reason.
+    const proven = applyCheck(t, { ok: true, output: output(), ms: 1 });
+    expect(proven.flows[0]!.links![0]).toEqual(output().links['F1']![0]);
+  });
+
   it('is idempotent', () => {
     const r = { ok: true as const, output: output(), ms: 1 };
     const once = applyCheck(tour(), r);
