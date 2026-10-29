@@ -252,6 +252,7 @@ export function StepPane({
         onOpenHome={onOpenHome}
         review={review}
       />
+      {home.kind === 'step' && <NextFrom flow={home.flow} step={home.step} />}
       <div className="step-nav" {...keepsReviewOpen}>
         <button
           type="button"
@@ -300,15 +301,20 @@ function CameFromLine({
   const { caller, callerNo, line, how, via, returned } = from;
   return (
     <p className="came-from" data-testid="came-from">
-      {CAME_FROM_VERB[how]} <strong>{caller.title}</strong> (step {callerNo}),{' '}
-      <button
-        type="button"
-        className="link-button"
-        onClick={() => onShowLine(caller.file, line)}
-        title={`Show line ${line} of ${caller.file}`}
-      >
-        line {line}
-      </button>
+      {CAME_FROM_VERB[how]} <strong>{caller.title}</strong> (step {callerNo})
+      {line !== null && (
+        <>
+          ,{' '}
+          <button
+            type="button"
+            className="link-button"
+            onClick={() => onShowLine(caller.file, line)}
+            title={`Show line ${line} of ${caller.file}`}
+          >
+            line {line}
+          </button>
+        </>
+      )}
       {via !== undefined && <>, through {via}</>}.
       {returned && (
         <span className="muted">
@@ -318,6 +324,22 @@ function CameFromLine({
             : `Steps ${returned[0]} to ${returned[1]} returned first.`}
         </span>
       )}
+    </p>
+  );
+}
+
+/**
+ * Above the step buttons, when the next step of the flow is not called from this one: where
+ * it is called from, so the jump back up the flow does not come as a surprise.
+ */
+function NextFrom({ flow, step }: { flow: Flow; step: Step }) {
+  const next = flow.steps[flow.steps.indexOf(step) + 1];
+  const from = next && cameFrom(flow, next);
+  if (!from || from.caller === step) return null;
+  return (
+    <p className="next-from" data-testid="next-from">
+      Next step is called from <strong>{from.caller.title}</strong> (step {from.callerNo}), not from
+      this step.
     </p>
   );
 }

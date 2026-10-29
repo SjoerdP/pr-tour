@@ -186,3 +186,29 @@ describe('how the flow gets to a step', () => {
     expect(screen.getByTestId('code-view').textContent).toBe('src/loans/record.ts:8');
   });
 });
+
+/** The note above the step buttons when the next step is not called from this one. */
+function nextNote(): string | null {
+  return screen.queryByTestId('next-from')?.textContent ?? null;
+}
+
+describe('where the next step is called from', () => {
+  it('says so when the next step is not called from this one', async () => {
+    await open('Check the amount');
+    expect(nextNote()).toBe(
+      'Next step is called from Handle the repay request (step 1), not from this step.',
+    );
+  });
+
+  it('says nothing when this step calls the next one', async () => {
+    await open('Handle the repay request');
+    expect(nextNote()).toBeNull();
+    fireEvent.click(outlineItem('Record the repayment'));
+    expect(nextNote()).toBeNull();
+  });
+
+  it('says nothing on the last step of a flow', async () => {
+    await open('Email the receipt');
+    expect(nextNote()).toBeNull();
+  });
+});

@@ -1000,6 +1000,15 @@ p.why {
   font-size: var(--font-size-small);
 }
 
+/* Where the next step is called from, when not from this one: just above the step buttons. */
+.next-from {
+  flex: none;
+  margin: var(--space-2) var(--space-6) 0;
+  color: var(--fg-muted);
+  font-size: var(--font-size-small);
+  text-align: right;
+}
+
 .step-nav {
   display: flex;
   flex: none;
@@ -1675,7 +1684,8 @@ p.why {
   }
 
   .flow-end-banner,
-  .jump-bar {
+  .jump-bar,
+  .next-from {
     margin-inline: var(--space-3);
   }
 

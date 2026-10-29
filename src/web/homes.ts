@@ -81,27 +81,42 @@ export type CameFrom = {
   caller: Step;
   /** The caller's 1-based number in the flow. */
   callerNo: number;
-  line: number;
+  /** Null when worked out from the calls, which say where a function is, not where it is called. */
+  line: number | null;
   how: StepFrom['how'];
   via: string | undefined;
   /** Steps between the caller and this one, which returned before the call: [first, last]. */
   returned: [number, number] | null;
 };
 
-/** Where `step` is called from, by its `from`; null for a first step or a tour without it. */
+/**
+ * Where `step` is called from, by its `from`. A tour from before `from` existed has only the
+ * calls each step lists: then the nearest earlier step that calls into this one. Null for a
+ * flow's first step, or when nothing says.
+ */
 export function cameFrom(flow: Flow, step: Step): CameFrom | null {
-  const from = step.from;
-  const caller = from && flow.steps[from.step - 1];
-  if (!from || !caller) return null;
   const no = flow.steps.indexOf(step) + 1;
-  return {
-    caller,
-    callerNo: from.step,
-    line: from.line,
-    how: from.how,
-    via: from.via,
-    returned: from.step < no - 1 ? [from.step + 1, no - 1] : null,
-  };
+  const link = step.from ? fromLink(flow, step.from) : callLink(flow, step, no);
+  if (!link) return null;
+  const { callerNo } = link;
+  return { ...link, returned: callerNo < no - 1 ? [callerNo + 1, no - 1] : null };
+}
+
+function fromLink(flow: Flow, from: StepFrom): Omit<CameFrom, 'returned'> | null {
+  const caller = flow.steps[from.step - 1];
+  if (!caller) return null;
+  return { caller, callerNo: from.step, line: from.line, how: from.how, via: from.via };
+}
+
+function callLink(flow: Flow, step: Step, no: number): Omit<CameFrom, 'returned'> | null {
+  for (let i = no - 2; i >= 0; i--) {
+    const caller = flow.steps[i]!;
+    const calls = caller.calls.some(
+      (c) => c.file === step.file && step.startLine <= c.line && c.line <= step.endLine,
+    );
+    if (calls) return { caller, callerNo: i + 1, line: null, how: 'call', via: undefined };
+  }
+  return null;
 }
 
 /** True for the first step of a flow: where `[` and `]` land. */
