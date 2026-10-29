@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { parseArgs as parseNodeArgs } from 'node:util';
 import { createAdaptorServer, type ServerType } from '@hono/node-server';
 import type { Hono } from 'hono';
-import { findings, findingText } from './server/analysis/findings.js';
+import { findings, findingText, repeatsFinding } from './server/analysis/findings.js';
 import { coverage } from './server/analysis/merge.js';
 import { runCheck, runFunctions } from './server/analysis/runner.js';
 import { createApp } from './server/app.js';
@@ -353,11 +353,15 @@ async function openTour(config: Config, repo: string, pr: number): Promise<void>
  */
 export function importReport(tour: Tour): string[] {
   const unexplained = tour.other.filter((g) => g.kind === 'unexplained').flatMap((g) => g.items);
+  const list = findings(tour);
   return [
     ...tour.check.problems.map((problem) => `problem: ${problem}`),
-    ...findings(tour).map((f) => `finding: ${findingText(tour, f)}`),
-    // The code check's own status lines (no Go files, no checker, load problems).
-    ...(tour.analysis?.problems ?? []).map((problem) => `note: ${problem}`),
+    ...list.map((f) => `finding: ${findingText(tour, f)}`),
+    // The code check's own status lines (no Go files, no checker, load problems), except the
+    // ones a finding above already says.
+    ...(tour.analysis?.problems ?? [])
+      .filter((problem) => !repeatsFinding(problem, list))
+      .map((problem) => `note: ${problem}`),
     ...unexplained.map((item) => `unexplained: ${item.title}`),
   ];
 }

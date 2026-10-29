@@ -80,6 +80,11 @@ it finds a suitable `go`, and prints one line and goes on when it does not. With
 it, tours still build. To check a tour again, run `pr-tour recheck owner/name#123`.
 `pr-tour functions owner/name#123` lists the functions in a PR.
 
+pr-tour runs the checker built at `dist/bin/pr-tour-check-go`. Set `PR_TOUR_CHECKER`
+to the path of another checker binary to use that one instead. The override wins: if
+the file it names is not executable, the check does not run (and the tour says the
+checker is not installed). pr-tour does not fall back to the built one.
+
 ### Reviewing
 
 You can do your GitHub review inside the tour.
@@ -144,6 +149,7 @@ exactly one home.
 | `PR_TOUR_PORT`    | `4317`       | port to listen on                      |
 | `PR_TOUR_HOME`    | `~/.pr-tour` | data dir (clones, tours, seen, drafts) |
 | `PR_TOUR_NO_OPEN` | unset        | set to `1` to not open a browser       |
+| `PR_TOUR_CHECKER` | unset        | path of the Go checker binary to use   |
 
 ## Development
 

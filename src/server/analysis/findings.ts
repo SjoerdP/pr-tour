@@ -38,6 +38,22 @@ export function findings(tour: Tour): Finding[] {
   return list;
 }
 
+/**
+ * Whether a checker problem line says the same as one of the findings: "step X: symbol S not
+ * found ..." backs a symbol-missing finding, "link A->B: ..." a not-found finding.
+ */
+export function repeatsFinding(problem: string, list: Finding[]): boolean {
+  const symbol = /^step (\S+): symbol \S+ not found /.exec(problem);
+  if (symbol) return list.some((f) => f.kind === 'symbol-missing' && f.step === symbol[1]);
+  const link = /^link (\S+?)->(\S+?): /.exec(problem);
+  if (link) {
+    return list.some(
+      (f) => f.kind === 'not-found' && f.link.from === link[1] && f.link.to === link[2],
+    );
+  }
+  return false;
+}
+
 /** The flow holding a step, and the step's 1-based number in it. */
 export function stepPlace(
   tour: Tour,

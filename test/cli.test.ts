@@ -335,6 +335,56 @@ describe('functions and recheck', () => {
       'note: the Go checker is not installed',
     ]);
   });
+
+  it('importReport prints no note that repeats a finding', () => {
+    const step = (id: string, symbol: string) => ({
+      id,
+      title: id,
+      file: 'x/pay.go',
+      symbol,
+      anchor: { name: symbol, startLine: 3, endLine: 3, source: 'symbol' },
+    });
+    const tour = {
+      check: { problems: [] },
+      other: [],
+      flows: [
+        {
+          id: 'F1',
+          title: 'Pay',
+          steps: [
+            {
+              ...step('F1.S1', 'Payy'),
+              anchor: { name: 'Pay', startLine: 3, endLine: 3, source: 'range' },
+            },
+            step('F1.S2', 'Save'),
+            step('F1.S3', 'Load'),
+          ],
+          links: [
+            {
+              from: 'F1.S2',
+              to: 'F1.S3',
+              line: 9,
+              how: 'call',
+              source: 'claude',
+              check: 'not-found',
+            },
+          ],
+        },
+      ],
+      analysis: {
+        engine: 'go-types',
+        problems: [
+          'step F1.S1: symbol Payy not found in x/pay.go; anchored by range to Pay',
+          'link F1.S2->F1.S3: line 9 calls Store, not Load',
+          'step F1.S2: side effect line 40 (event) is outside Save (lines 3-3); dropped',
+        ],
+      },
+    } as unknown as Tour;
+    const notes = importReport(tour).filter((l) => l.startsWith('note: '));
+    expect(notes).toEqual([
+      'note: step F1.S2: side effect line 40 (event) is outside Save (lines 3-3); dropped',
+    ]);
+  });
 });
 
 describe('importReport', () => {

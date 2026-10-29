@@ -184,6 +184,16 @@ describe('applyCheck', () => {
     expect(proven.flows[0]!.links![0]).toEqual(output().links['F1']![0]);
   });
 
+  it('sets callSites only for steps the checker type-checked', () => {
+    const o = output();
+    o.steps['F1.S2'] = { marks: [] };
+    const out = applyCheck(tour(), { ok: true, output: o, ms: 1 });
+    expect(out.flows[0]!.steps[0]!.callSites).toHaveLength(1);
+    expect('callSites' in out.flows[0]!.steps[1]!).toBe(false);
+    const checked = applyCheck(tour(), { ok: true, output: output(), ms: 1 });
+    expect(checked.flows[0]!.steps[1]!.callSites).toEqual([]);
+  });
+
   it('is idempotent', () => {
     const r = { ok: true as const, output: output(), ms: 1 };
     const once = applyCheck(tour(), r);

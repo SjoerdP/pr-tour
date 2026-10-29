@@ -223,6 +223,11 @@ export type TourBuilderDeps = {
 
 const NO_GO_FILES = 'no Go files in this PR';
 
+/** Whether the PR touches a `.go` file that still exists at its head (added lines or not). */
+function hasGoAtHead(files: FileDiff[]): boolean {
+  return files.some((f) => f.status !== 'deleted' && f.path.endsWith('.go'));
+}
+
 /** Head-side changed lines of the PR's `.go` files, for the checker's `functions` pass. */
 function goInput(files: FileDiff[]): FunctionsInput {
   const byFile = new Map<string, number[]>();
@@ -285,6 +290,7 @@ export class TourBuilder {
       onLog(`Function table skipped: ${result.problem}`);
       return null;
     }
+    for (const problem of result.output.problems ?? []) onLog(`Function table: ${problem}`);
     return result.output;
   }
 
@@ -317,7 +323,7 @@ export class TourBuilder {
 
   /** Pass B: check the tour against the code. Never throws; a failure becomes a problem. */
   private async passB(tour: Tour, worktree: string, diff: string): Promise<Tour> {
-    if (goInput(parseDiff(diff)).files.length === 0) return applyCheck(tour, null, NO_GO_FILES);
+    if (!hasGoAtHead(parseDiff(diff))) return applyCheck(tour, null, NO_GO_FILES);
     try {
       return applyCheck(
         tour,

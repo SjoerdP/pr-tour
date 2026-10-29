@@ -1,8 +1,11 @@
 import { accessSync, constants, existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { firstLine, type Runner } from '../exec.js';
+import type { z } from 'zod';
 import {
   CHECKER_VERSION,
+  CheckOutputSchema,
+  FunctionsOutputSchema,
   type CheckInput,
   type CheckOutput,
   type FunctionsInput,
@@ -51,8 +54,11 @@ export function checkerPath(): string | null {
   return path !== null && isExecutable(path) ? path : null;
 }
 
-async function invoke<T extends { version: number }>(
+const NOT_INSTALLED = 'the Go checker is not installed';
+
+async function invoke<T>(
   run: Runner,
+  schema: z.ZodType<T>,
   args: string[],
   root: string,
   input: unknown,
@@ -65,7 +71,7 @@ async function invoke<T extends { version: number }>(
     ms: Date.now() - start,
   });
   const bin = checkerPath();
-  if (bin === null) return fail('the Go checker is not installed');
+  if (bin === null) return fail(NOT_INSTALLED);
   const result = await run(bin, [...args, '--root', root], {
     input: JSON.stringify(input),
     timeoutMs,
@@ -84,7 +90,15 @@ async function invoke<T extends { version: number }>(
   if (version !== CHECKER_VERSION) {
     return fail(`the checker speaks version ${String(version)}, expected ${CHECKER_VERSION}`);
   }
-  return { ok: true, output: parsed as T, ms: Date.now() - start };
+  // A tour that holds bad checker output saves but never loads: check it here, so a bad answer
+  // is a failure like invalid JSON and the fallback chain handles it.
+  const checked = schema.safeParse(parsed);
+  if (!checked.success) {
+    const issue = checked.error.issues[0];
+    const where = issue ? `${issue.path.join('.')}: ${issue.message}` : 'unknown';
+    return fail(`the checker printed output that breaks the contract (${where})`);
+  }
+  return { ok: true, output: checked.data, ms: Date.now() - start };
 }
 
 /** Functions that contain changed lines. */
@@ -96,6 +110,7 @@ export function runFunctions(
 ): Promise<CheckerResult<FunctionsOutput>> {
   return invoke<FunctionsOutput>(
     run,
+    FunctionsOutputSchema,
     ['functions'],
     root,
     input,
@@ -103,18 +118,31 @@ export function runFunctions(
   );
 }
 
-/** Check the tour against the code: typed first, then once more syntax-only. */
+/**
+ * Check the tour against the code: typed first, then once more syntax-only. A syntax-only
+ * result after a failed typed run is degraded and says why the typed run failed.
+ */
 export async function runCheck(
   run: Runner,
   root: string,
   input: CheckInput,
   opts: RunnerOptions = {},
 ): Promise<CheckerResult<CheckOutput>> {
+  if (checkerPath() === null) return { ok: false, problem: NOT_INSTALLED, ms: 0 };
   const timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS;
-  const typed = await invoke<CheckOutput>(run, ['check'], root, input, timeoutMs);
+  const check = (args: string[]) =>
+    invoke<CheckOutput>(run, CheckOutputSchema, args, root, input, timeoutMs);
+  const typed = await check(['check']);
   if (typed.ok) return typed;
-  const syntax = await invoke<CheckOutput>(run, ['check', '--syntax-only'], root, input, timeoutMs);
-  if (syntax.ok) return { ...syntax, ms: typed.ms + syntax.ms };
+  const syntax = await check(['check', '--syntax-only']);
+  if (syntax.ok) {
+    const output: CheckOutput = {
+      ...syntax.output,
+      degraded: true,
+      problems: [`typed check failed: ${typed.problem}`, ...syntax.output.problems],
+    };
+    return { ok: true, output, ms: typed.ms + syntax.ms };
+  }
   return {
     ok: false,
     problem: `Go check failed: ${typed.problem}; syntax-only check failed: ${syntax.problem}`,

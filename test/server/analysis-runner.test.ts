@@ -1,9 +1,10 @@
-import { chmodSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { realRunner, type Runner } from '../../src/server/exec.js';
 import { checkerPath, runCheck, runFunctions } from '../../src/server/analysis/runner.js';
+import { CHECKER_VERSION } from '../../src/server/analysis/contract.js';
 
 const fake = join(import.meta.dirname, '../fixtures/fake-checker.mjs');
 const input = { flows: [] };
@@ -29,6 +30,23 @@ describe('runCheck', () => {
     process.env.PR_TOUR_CHECKER = fake;
     const r = await runCheck(withMode('typed-fails'), '/tmp', input);
     expect(r.ok && r.output.engine).toBe('go-syntax');
+  });
+
+  it('keeps why the typed check failed and marks the fallback degraded', async () => {
+    process.env.PR_TOUR_CHECKER = fake;
+    const r = await runCheck(withMode('typed-fails'), '/tmp', input);
+    expect(r.ok && r.output.degraded).toBe(true);
+    expect(r.ok && r.output.problems).toEqual([
+      'typed check failed: fake: cannot load project',
+      'syntax problem',
+    ]);
+  });
+
+  it('treats output that breaks the contract as a failure', async () => {
+    process.env.PR_TOUR_CHECKER = fake;
+    const r = await runCheck(withMode('bad-link'), '/tmp', input);
+    expect(r.ok && r.output.engine).toBe('go-syntax');
+    expect(r.ok && r.output.problems[0]).toMatch(/^typed check failed: .*links/);
   });
 
   it('names both failures when both fail', async () => {
@@ -68,6 +86,7 @@ describe('runCheck', () => {
     process.env.PR_TOUR_CHECKER = '/nonexistent/pr-tour-check-go';
     const r = await runCheck(withMode('ok'), '/tmp', input);
     expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.problem).toBe('the Go checker is not installed');
   });
 });
 
@@ -82,6 +101,20 @@ describe('runFunctions', () => {
     process.env.PR_TOUR_CHECKER = fake;
     const r = await runFunctions(withMode('old-version'), '/tmp', { files: [] });
     expect(r.ok).toBe(false);
+  });
+
+  it('rejects output that breaks the contract', async () => {
+    process.env.PR_TOUR_CHECKER = fake;
+    const r = await runFunctions(withMode('bad-link'), '/tmp', { files: [] });
+    expect(r.ok).toBe(false);
+  });
+});
+
+describe('CHECKER_VERSION', () => {
+  it('matches CheckerVersion in checker/go/contract.go', () => {
+    const go = readFileSync(join(import.meta.dirname, '../../checker/go/contract.go'), 'utf8');
+    const m = /const CheckerVersion = (\d+)/.exec(go);
+    expect(Number(m?.[1])).toBe(CHECKER_VERSION);
   });
 });
 

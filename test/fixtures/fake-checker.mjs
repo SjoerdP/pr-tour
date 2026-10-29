@@ -19,17 +19,18 @@ if (args[0] === 'functions') {
   if (mode === 'both-fail') fail('fake: cannot load project');
   out({
     version: mode === 'old-version' ? 0 : 1,
-    functions: [{ file: 'a.go', name: 'Foo', startLine: 1, endLine: 5 }],
+    functions: [{ file: 'a.go', name: 'Foo', startLine: mode === 'bad-link' ? 0 : 1, endLine: 5 }],
   });
 } else {
   const output = (engine) => ({
     version: 1,
     engine,
     engineVersion: 'fake',
-    degraded: engine === 'go-syntax',
+    // The real syntax-only check never says degraded itself; the runner does.
+    degraded: false,
     steps: {},
     links: {},
-    problems: [],
+    problems: engine === 'go-syntax' ? ['syntax problem'] : [],
   });
   if (syntaxOnly) {
     if (mode === 'both-fail') fail('fake: syntax parse failed');
@@ -40,6 +41,9 @@ if (args[0] === 'functions') {
     setTimeout(() => undefined, 60_000);
   } else if (mode === 'bad-json') {
     process.stdout.write('not json');
+  } else if (mode === 'bad-link') {
+    const link = { from: 'S1', to: 'S2', line: 0, how: 'call', source: 'claude', check: 'maybe' };
+    out({ ...output('go-types'), links: { F1: [link] } });
   } else if (mode === 'old-version') {
     out({ ...output('go-types'), version: 0 });
   } else {

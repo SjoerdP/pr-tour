@@ -685,6 +685,75 @@ describe('code check passes', () => {
     await expect(tours.recheck('acme/greet', 7)).rejects.toThrow('No tour is stored');
   });
 
+  it('checks a PR that only deletes lines in a Go file', async () => {
+    const deleteDiff = `diff --git a/x/pay.go b/x/pay.go
+index 111..222 100644
+--- a/x/pay.go
++++ b/x/pay.go
+@@ -1,4 +1,3 @@
+ package x
+ 
+-func Pay() {}
+ func Old() {}
+`;
+    const body: TourBodyInput = {
+      ...GO_BODY,
+      other: [
+        {
+          kind: 'refactor',
+          title: 'Go',
+          summary: 's',
+          items: [{ file: 'x/pay.go', title: 'Pay', homes: [lines('x/pay.go', 'old', 3, 3)] }],
+        },
+      ],
+    };
+    const { tours, fake } = builderWith({ diff: deleteDiff });
+    const tour = await tours.importAuthorTour('acme/greet', 7, JSON.stringify(body));
+    expect(fake.log).toEqual([`check ${WORKTREE}`]);
+    expect(tour.analysis?.engine).toBe('go-types');
+  });
+
+  it('does not check a PR whose only Go file is deleted', async () => {
+    const goneDiff = `diff --git a/x/pay.go b/x/pay.go
+deleted file mode 100644
+index 111..000
+--- a/x/pay.go
++++ /dev/null
+@@ -1,2 +0,0 @@
+-package x
+-func Pay() {}
+`;
+    const body: TourBodyInput = {
+      ...GO_BODY,
+      other: [
+        {
+          kind: 'refactor',
+          title: 'Go',
+          summary: 's',
+          items: [{ file: 'x/pay.go', title: 'Pay', homes: [lines('x/pay.go', 'old', 1, 2)] }],
+        },
+      ],
+    };
+    const { tours, fake } = builderWith({ diff: goneDiff });
+    const tour = await tours.importAuthorTour('acme/greet', 7, JSON.stringify(body));
+    expect(fake.log).toEqual([]);
+    expect(tour.analysis?.problems).toEqual(['no Go files in this PR']);
+  });
+
+  it('logs the files the function table skipped', async () => {
+    const fake = fakeChecker();
+    fake.checker.functions = () =>
+      Promise.resolve({
+        ok: true as const,
+        output: { ...TABLE, problems: ['cannot read or parse x/bad.go; skipped'] },
+        ms: 1,
+      });
+    const { tours } = builderWith({ diff: GO_DIFF, checker: fake }, goAnswer);
+    const log: string[] = [];
+    await tours.build('acme/greet', 7, (line) => log.push(line));
+    expect(log).toContain('Function table: cannot read or parse x/bad.go; skipped');
+  });
+
   it('functionsOf returns the table, or null without Go files', async () => {
     expect(await builderWith({ diff: GO_DIFF }).tours.functionsOf('acme/greet', 7)).toEqual(TABLE);
     expect(await builder().tours.functionsOf('acme/greet', 7)).toBeNull();

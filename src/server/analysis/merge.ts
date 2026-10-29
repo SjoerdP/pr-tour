@@ -131,7 +131,8 @@ export function applyCheck(
             ...s,
             ...(r.anchor ? { anchor: r.anchor } : {}),
             marks: r.marks,
-            callSites: r.callSites,
+            // Absent: the step was not type-checked, so the view falls back to names.
+            ...(r.callSites ? { callSites: r.callSites } : {}),
           };
         }),
       };
