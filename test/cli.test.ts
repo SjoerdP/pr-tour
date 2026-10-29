@@ -297,6 +297,27 @@ describe('pr-tour import', () => {
   }, 30_000);
 });
 
+describe('functions and recheck', () => {
+  it.each(['functions', 'recheck'] as const)('%s parses a PR ref', (cmd) => {
+    expect(parseArgs([cmd, 'a/b#7'])).toEqual({ cmd, repo: 'a/b', pr: 7 });
+  });
+
+  it.each(['functions', 'recheck'])('%s rejects bad refs', (cmd) => {
+    expect(() => parseArgs([cmd, 'a/b'])).toThrow(UsageError);
+    expect(() => parseArgs([cmd, 'a/b#x'])).toThrow(UsageError);
+    expect(() => parseArgs([cmd])).toThrow(UsageError);
+  });
+
+  it('importReport lists analysis problems as findings', () => {
+    const tour = {
+      check: { problems: [] },
+      other: [],
+      analysis: { problems: ['link F1 unproven'] },
+    } as unknown as Tour;
+    expect(importReport(tour)).toEqual(['finding: link F1 unproven']);
+  });
+});
+
 describe('importReport', () => {
   const tour = {
     check: { problems: ['f1 home a.ts:1-3 covers no changed lines'] },

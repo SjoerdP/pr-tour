@@ -6,10 +6,13 @@ import {
   ReplaceNeedsConfirmError,
   TourBuildError,
   TourBuilder,
+  type TourBuilderDeps,
   assignIds,
   contentHash,
   finishTour,
 } from '../../src/server/build.js';
+import type { CheckOutput, FunctionsOutput } from '../../src/server/analysis/contract.js';
+import type { CheckerResult } from '../../src/server/analysis/runner.js';
 import { parseDiff } from '../../src/server/diff.js';
 import type { RunResult } from '../../src/server/exec.js';
 import type { PrSummary } from '../../src/server/github.js';
@@ -261,7 +264,77 @@ const WORKTREE = '/worktrees/acme__greet/bbbb';
 const MERGE_BASE = 'e'.repeat(40);
 
 /** A builder whose claude runs answer with `answers` in turn. */
+const GO_DIFF = `diff --git a/x/pay.go b/x/pay.go
+index 111..222 100644
+--- a/x/pay.go
++++ b/x/pay.go
+@@ -1,3 +1,4 @@
+ package x
+ 
++func Pay() {}
+ func Old() {}
+`;
+const GO_BODY: TourBodyInput = {
+  summary: 'Adds Pay.',
+  foundations: [],
+  flows: [],
+  other: [
+    {
+      kind: 'refactor',
+      title: 'Go',
+      summary: 's',
+      items: [{ file: 'x/pay.go', title: 'Pay', homes: [lines('x/pay.go', 'new', 3, 3)] }],
+    },
+  ],
+};
+const TABLE: FunctionsOutput = {
+  version: 1,
+  functions: [{ file: 'x/pay.go', name: 'Pay', startLine: 3, endLine: 3 }],
+};
+const CHECK_OUT: CheckOutput = {
+  version: 1,
+  engine: 'go-types',
+  engineVersion: 'go1.23',
+  degraded: false,
+  steps: {},
+  links: {},
+  problems: ['something odd'],
+};
+
+/** Fake checker functions that record their calls; `failing` makes both report a problem. */
+function fakeChecker(failing = false) {
+  const log: string[] = [];
+  const inputs: unknown[] = [];
+  const checker = {
+    functions: (_run: unknown, root: string, input: unknown) => {
+      log.push(`functions ${root}`);
+      inputs.push(input);
+      return Promise.resolve(
+        failing
+          ? { ok: false as const, problem: 'boom', ms: 1 }
+          : { ok: true as const, output: TABLE, ms: 1 },
+      );
+    },
+    check: (_run: unknown, root: string) => {
+      log.push(`check ${root}`);
+      const r: CheckerResult<CheckOutput> = failing
+        ? { ok: false, problem: 'boom', ms: 1 }
+        : { ok: true, output: CHECK_OUT, ms: 5 };
+      return Promise.resolve(r);
+    },
+  } as unknown as TourBuilderDeps['checker'];
+  return { checker, log, inputs };
+}
+
 function builder(...answers: ((call: RunCall) => RunResult)[]) {
+  return builderWith({ diff: DIFF }, ...answers);
+}
+
+function builderWith(
+  opts: { diff: string; checker?: ReturnType<typeof fakeChecker> },
+  ...answers: ((call: RunCall) => RunResult)[]
+) {
+  const fake = opts.checker ?? fakeChecker();
   const { run, calls } = fakeRunner((call) => {
     if (call.cmd !== 'claude') throw new Error(`unexpected command ${call.cmd}`);
     const answer = answers.shift();
@@ -283,7 +356,7 @@ function builder(...answers: ((call: RunCall) => RunResult)[]) {
     },
     diffText: () => {
       checkoutCalls.push('diffText');
-      return Promise.resolve(DIFF);
+      return Promise.resolve(opts.diff);
     },
     mergeBase: (_repo: string, baseSha: string, headSha: string) => {
       checkoutCalls.push('mergeBase');
@@ -292,8 +365,8 @@ function builder(...answers: ((call: RunCall) => RunResult)[]) {
       );
     },
   };
-  const tours = new TourBuilder({ run, repos, github, store, home });
-  return { tours, calls, checkoutCalls };
+  const tours = new TourBuilder({ run, repos, github, store, home, checker: fake.checker });
+  return { tours, calls, checkoutCalls, fake };
 }
 
 const answer = (result: string) => () => claudeAnswer(result);
@@ -508,5 +581,76 @@ describe('TourBuilder.importAuthorTour', () => {
 
       expect(store.getTour('acme/greet', 7)).not.toBeNull();
     });
+  });
+});
+
+describe('code check passes', () => {
+  const goAnswer = answer(JSON.stringify(GO_BODY));
+
+  it('build gives Claude the function table and runs the check on the worktree', async () => {
+    let table = '';
+    let tablePath = '';
+    const { tours, calls, fake } = builderWith({ diff: GO_DIFF }, (call) => {
+      tablePath = join(home, 'tmp', `acme__greet-7-${pr.headSha}.functions.json`);
+      table = readFileSync(tablePath, 'utf8');
+      void call;
+      return goAnswer();
+    });
+
+    const tour = await tours.build('acme/greet', 7);
+
+    expect(calls[0]!.opts?.input).toContain(tablePath);
+    expect(JSON.parse(table)).toEqual(TABLE);
+    expect(existsSync(tablePath)).toBe(false);
+    expect(fake.inputs[0]).toEqual({ files: [{ path: 'x/pay.go', lines: [3] }] });
+    expect(fake.log).toEqual([`functions ${WORKTREE}`, `check ${WORKTREE}`]);
+    expect(tour.analysis?.engine).toBe('go-types');
+    expect(store.getTour('acme/greet', 7)?.analysis?.engine).toBe('go-types');
+  });
+
+  it('build with no Go file runs no checker and records why', async () => {
+    const { tours, fake } = builder(validAnswer);
+    const tour = await tours.build('acme/greet', 7);
+    expect(fake.log).toEqual([]);
+    expect(tour.analysis?.engine).toBe('none');
+    expect(tour.analysis?.problems).toEqual(['no Go files in this PR']);
+  });
+
+  it('a failing checker never fails the build', async () => {
+    const { tours } = builderWith({ diff: GO_DIFF, checker: fakeChecker(true) }, goAnswer);
+    const tour = await tours.build('acme/greet', 7);
+    expect(tour.analysis?.engine).toBe('none');
+    expect(tour.analysis?.problems).toEqual(['boom']);
+    expect(store.getTour('acme/greet', 7)).toEqual(tour);
+  });
+
+  it('import runs pass B', async () => {
+    const { tours, fake } = builderWith({ diff: GO_DIFF });
+    const tour = await tours.importAuthorTour('acme/greet', 7, JSON.stringify(GO_BODY));
+    expect(fake.log).toEqual([`check ${WORKTREE}`]);
+    expect(tour.analysis?.problems).toEqual(['something odd']);
+  });
+
+  it('recheck runs the check again, saves, and keeps content hashes', async () => {
+    const { tours, fake } = builderWith({ diff: GO_DIFF, checker: fakeChecker(true) });
+    const first = await tours.importAuthorTour('acme/greet', 7, JSON.stringify(GO_BODY));
+    expect(first.analysis?.engine).toBe('none');
+    const good = builderWith({ diff: GO_DIFF });
+    const again = await good.tours.recheck('acme/greet', 7);
+    expect(good.fake.log).toEqual([`check ${WORKTREE}`]);
+    expect(fake.log).toHaveLength(1);
+    expect(again.analysis?.engine).toBe('go-types');
+    expect(again.hashes).toEqual(first.hashes);
+    expect(store.getTour('acme/greet', 7)).toEqual(again);
+  });
+
+  it('recheck without a stored tour says so', async () => {
+    const { tours } = builder();
+    await expect(tours.recheck('acme/greet', 7)).rejects.toThrow('No tour is stored');
+  });
+
+  it('functionsOf returns the table, or null without Go files', async () => {
+    expect(await builderWith({ diff: GO_DIFF }).tours.functionsOf('acme/greet', 7)).toEqual(TABLE);
+    expect(await builder().tours.functionsOf('acme/greet', 7)).toBeNull();
   });
 });
