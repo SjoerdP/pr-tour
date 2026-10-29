@@ -1,7 +1,7 @@
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { FileDiff } from '../../src/shared/diff.js';
-import type { Tour } from '../../src/shared/tour.js';
+import type { FlowLink, Tour } from '../../src/shared/tour.js';
 import * as api from '../../src/web/api.js';
 import { CodeView } from '../../src/web/CodeView.js';
 import { fakeReview } from './review-fake.js';
@@ -526,5 +526,89 @@ describe('CodeView', () => {
     getDiff.mockRejectedValue(new api.ApiError(500, 'git failed'));
     renderView();
     expect((await screen.findByRole('alert')).textContent).toContain('git failed');
+  });
+});
+
+describe('the next-step marker', () => {
+  /** A file with the step on lines 5 to 8; line 5 is changed. */
+  function serveStep() {
+    serve(modified('src/repay.ts', [replaceHunk(5, 'old five', 'new five')]), {
+      [`${HEAD}:src/repay.ts`]: lines(10, { 5: 'new five' }),
+      [`${BASE}:src/repay.ts`]: lines(10, { 5: 'old five' }),
+    });
+  }
+
+  function link(to: string, line: number, extra: Partial<FlowLink> = {}): FlowLink {
+    return { from: 'F1.S1', to, line, how: 'call', source: 'both', check: 'proven', ...extra };
+  }
+
+  /** Steps 1 (lines 5 to 8), 2 "Charge the fee" and 3 "Send the receipt", with `links`. */
+  function tourWith(links: FlowLink[] | undefined): Tour {
+    const tour = makeTour();
+    const flow = tour.flows[0]!;
+    const first = { ...flow.steps[0]!, endLine: 8 };
+    flow.steps = [
+      first,
+      { ...first, id: 'F1.S2', title: 'Charge the fee', file: 'src/fees.ts' },
+      { ...first, id: 'F1.S3', title: 'Send the receipt', file: 'src/mail.ts' },
+    ];
+    if (links) flow.links = links;
+    return tour;
+  }
+
+  async function show(links: FlowLink[] | undefined, nextStep: boolean | undefined = true) {
+    serveStep();
+    const onNextStep = vi.fn();
+    renderView({
+      tour: tourWith(links),
+      focus: { start: 5, end: 8 },
+      ...(nextStep && { onNextStep }),
+    });
+    await screen.findByText('new five');
+    return onNextStep;
+  }
+
+  const marker = () => screen.queryByRole('button', { name: 'next step →' });
+
+  it('marks the line that calls the next step; a click goes there', async () => {
+    const onNextStep = await show([link('F1.S2', 7), link('F1.S2', 6, { check: 'name-match' })]);
+    const button = marker()!;
+    // Several links to the next step: the lowest line.
+    expect(button.closest('.code-row')!.textContent).toContain('line 6');
+    expect(button.title).toBe('Next step: Charge the fee');
+    fireEvent.click(button);
+    expect(onNextStep).toHaveBeenCalledTimes(1);
+  });
+
+  it('sits after the mark badges of the line', async () => {
+    serveStep();
+    const tour = tourWith([link('F1.S2', 5)]);
+    tour.flows[0]!.steps[0]!.marks = [{ line: 5, kind: 'db-write', source: 'both' }];
+    renderView({ tour, focus: { start: 5, end: 8 }, onNextStep: vi.fn() });
+    const badge = await screen.findByText('DB write');
+    expect(badge.nextElementSibling).toBe(marker());
+  });
+
+  it('no marker for an unchecked or not-found link', async () => {
+    await show([link('F1.S2', 6, { source: 'claude', check: 'unchecked' })]);
+    expect(marker()).toBeNull();
+    cleanup();
+    await show([link('F1.S2', 6, { source: 'claude', check: 'not-found' })]);
+    expect(marker()).toBeNull();
+  });
+
+  it('no marker for a link to a step that is not the next one', async () => {
+    await show([link('F1.S3', 6)]);
+    expect(marker()).toBeNull();
+  });
+
+  it('no marker for an old tour without links', async () => {
+    await show(undefined);
+    expect(marker()).toBeNull();
+  });
+
+  it('no marker in a quick look, which has no way to the next step', async () => {
+    await show([link('F1.S2', 6)], false);
+    expect(marker()).toBeNull();
   });
 });

@@ -4,6 +4,7 @@ import type { PrResponse } from '../../src/shared/api.js';
 import type { Step, Tour } from '../../src/shared/tour.js';
 import * as api from '../../src/web/api.js';
 import { TourView } from '../../src/web/TourView.js';
+import { cameFromRows } from './came-from-helpers.js';
 import { outlineItem } from './outline-helpers.js';
 
 vi.mock('../../src/web/api.js', async (importActual) => ({
@@ -91,16 +92,17 @@ describe('a tour without "from": worked out from the calls', () => {
     await screen.findByRole('navigation', { name: 'Tour outline' });
 
     fireEvent.click(outlineItem('Check the amount'));
-    expect(screen.getByTestId('came-from').textContent).toBe(
-      'Called from Handle the repay request (step 1).',
-    );
+    // No line and no check: no line button and no tag.
+    expect(cameFromRows()).toEqual(['Called from: Step 1 · Handle the repay request']);
+    expect(screen.getByTestId('came-from').querySelector('.came-tag')).toBeNull();
     expect(screen.getByTestId('next-from').textContent).toBe(
       'Next step is called from Handle the repay request (step 1), not from this step.',
     );
 
     fireEvent.click(outlineItem('Record the repayment'));
-    expect(screen.getByTestId('came-from').textContent).toBe(
-      'Called from Handle the repay request (step 1). Step 2 returned first.',
-    );
+    expect(cameFromRows()).toEqual([
+      'Called from: Step 1 · Handle the repay request',
+      'Previous step: Step 2 · Check the amount — it returns first, then step 1 calls this step.',
+    ]);
   });
 });

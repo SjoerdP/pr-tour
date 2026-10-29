@@ -907,30 +907,72 @@ pre {
   color: var(--warn);
 }
 
-/* How the flow got here: under the facts, before the why. */
+/* How the flow got here, as labelled rows: under the facts, before the why. */
 .came-from {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: var(--space-1) var(--space-3);
   max-width: var(--prose-width);
   margin: var(--space-3) 0 0;
-  color: var(--fg-muted);
   font-size: var(--font-size-small);
 }
 
-.came-from::before {
-  content: '↳ ';
-  color: var(--fg-faint);
+/* The rows share the block's two columns, so the labels line up. */
+.came-from-row {
+  display: contents;
+}
+
+/* Like the why label. */
+.came-from-label {
+  padding-top: 2px;
+  color: var(--fg-muted);
+  font-size: var(--font-size-tiny);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.came-from-body p {
+  margin: 0;
+}
+
+.came-from-body strong {
+  color: var(--fg);
+  font-weight: 600;
 }
 
 .came-from-warn {
   color: var(--warn);
 }
 
-.came-from-warn::before {
+.came-from-warn strong {
   color: var(--warn);
 }
 
-.came-from strong {
-  color: var(--fg);
-  font-weight: 500;
+/* How well the code backs up the link: a small chip, like the step facts. */
+.came-tag {
+  display: inline-block;
+  margin-left: var(--space-1);
+  padding: 0 var(--space-2);
+  border: 1px solid var(--border-faint);
+  border-radius: 999px;
+  background: var(--bg-subtle);
+  color: var(--fg-muted);
+  font-size: var(--font-size-tiny);
+  line-height: 18px;
+}
+
+.came-tag-proven {
+  border-color: color-mix(in srgb, var(--add) 30%, transparent);
+  background: color-mix(in srgb, var(--add) 12%, transparent);
+  color: var(--add);
+}
+
+/* The tour and the code disagree on the caller. */
+.came-conflict {
+  max-width: var(--prose-width);
+  margin: var(--space-2) 0 0;
+  font-size: var(--font-size-small);
 }
 
 /* The note: its own panel, so it is clear where it starts and ends. */
@@ -1750,6 +1792,27 @@ p.why {
 
 .mark-claude {
   opacity: 0.55;
+}
+
+/* On the line that calls the next step: a way there, after any mark badges. */
+.next-step-marker {
+  flex: 0 0 auto;
+  margin: 1px var(--space-2);
+  padding: 0 var(--space-1);
+  border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent);
+  border-radius: 3px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-family: var(--font-sans);
+  font-size: var(--font-size-tiny);
+  line-height: 16px;
+  cursor: pointer;
+}
+
+/* Beats the plain button hover, which would turn it grey. */
+.next-step-marker:hover:not(:disabled) {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 20%, transparent);
 }
 
 .code-check h2 {

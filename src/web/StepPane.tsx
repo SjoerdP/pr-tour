@@ -284,6 +284,8 @@ export function StepPane({
         plain={!jump && home.kind === 'other' && home.group.kind === 'generated'}
         onJump={onJump}
         onOpenHome={onOpenHome}
+        // The marker on the line that calls the next step: only on the step's own code.
+        {...(!jump && { onNextStep: nav.nextStep })}
         review={review}
       />
       {home.kind === 'step' && <NextFrom flow={home.flow} step={home.step} />}
@@ -310,17 +312,30 @@ export function StepPane({
   );
 }
 
-const CAME_FROM_VERB: Record<CameFrom['how'], string> = {
+const CAME_FROM_LABEL: Record<CameFrom['how'], string> = {
   call: 'Called from',
   service: 'Request from',
   event: 'Event from',
 };
 
+/** The tag that says how the code check backs up the link; null when it says nothing. */
+function proofTag(check: CameFrom['check'], source: CameFrom['source']): ReactNode {
+  if (check === 'proven') {
+    return (
+      <span className="came-tag came-tag-proven">
+        {source === 'code' ? '✓ found in the code' : '✓ proven in code'}
+      </span>
+    );
+  }
+  if (check === 'name-match') return <span className="came-tag">matched by name</span>;
+  return null;
+}
+
 /**
- * How the flow gets to this step: "Called from Handle the request (step 1), line 14. Step 2
- * returned first." The line shows the call. Left out for a flow's first step, and for tours
- * from before steps said where they are called from. A link the code check did not find says
- * so; one only the code found says that.
+ * How the flow gets to this step, as labelled rows: who calls it (with the line, and how
+ * well the code backs that up), and, when the step before is not the caller, that it
+ * returns first. Left out for a flow's first step, and for tours from before steps said
+ * where they are called from. A link the code check did not find is a warning.
  */
 function CameFromLine({
   flow,
@@ -335,25 +350,21 @@ function CameFromLine({
   if (!from) return null;
   const { caller, callerNo, line, how, via, returned, check, source, others, claimedNo, reason } =
     from;
-  if (check === 'not-found') {
-    return (
-      <p className="came-from came-from-warn" data-testid="came-from">
+  const tag = proofTag(check, source);
+  const caught =
+    check === 'not-found' ? (
+      <p className="came-from-warn">
         The tour says <strong>{caller.title}</strong> (step {callerNo}) calls this, but the code
         does not show it.
       </p>
-    );
-  }
-  return (
-    <>
-      <p
-        className="came-from"
-        data-testid="came-from"
-        title={check !== 'proven' ? reason : undefined}
-      >
-        {CAME_FROM_VERB[how]} <strong>{caller.title}</strong> (step {callerNo})
+    ) : (
+      <p>
+        <strong>
+          Step {callerNo} · {caller.title}
+        </strong>
         {line !== null && (
           <>
-            ,{' '}
+            {' '}
             <button
               type="button"
               className="link-button"
@@ -361,25 +372,47 @@ function CameFromLine({
               title={`Show line ${line} of ${caller.file}`}
             >
               line {line}
+              <span aria-hidden="true"> ↗</span>
             </button>
           </>
         )}
         {via !== undefined && <>, through {via}</>}
-        {source === 'code' && check === 'proven' && <>, found in the code</>}.
-        {returned && (
-          <span className="muted">
-            {' '}
-            {returned[0] === returned[1]
-              ? `Step ${returned[0]} returned first.`
-              : `Steps ${returned[0]} to ${returned[1]} returned first.`}
-          </span>
-        )}
-        {others.length > 0 && (
-          <> Also called from {others.map((o) => `step ${o.callerNo}`).join(', ')}.</>
-        )}
+        {tag && <> {tag}</>}
       </p>
+    );
+  return (
+    <>
+      <div
+        className="came-from"
+        data-testid="came-from"
+        title={check !== 'proven' ? reason : undefined}
+      >
+        <div className="came-from-row">
+          <span className="came-from-label">{CAME_FROM_LABEL[how]}</span>
+          <div className="came-from-body">
+            {caught}
+            {others.length > 0 && (
+              <p className="muted">
+                Also called from {others.map((o) => `step ${o.callerNo}`).join(', ')}.
+              </p>
+            )}
+          </div>
+        </div>
+        {returned && (
+          <div className="came-from-row" data-testid="came-from-previous">
+            <span className="came-from-label">Previous step</span>
+            <div className="came-from-body">
+              <p>
+                {returned[0] === returned[1]
+                  ? `Step ${returned[0]} · ${flow.steps[returned[0] - 1]!.title} — it returns first, then step ${callerNo} calls this step.`
+                  : `Steps ${returned[0]} to ${returned[1]} return first, then step ${callerNo} calls this step.`}
+              </p>
+            </div>
+          </div>
+        )}
+      </div>
       {claimedNo !== undefined && (
-        <p className="came-from came-from-warn" data-testid="came-conflict">
+        <p className="came-conflict came-from-warn" data-testid="came-conflict">
           The tour says step {claimedNo} calls this. The code says step {callerNo} does.
         </p>
       )}

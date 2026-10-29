@@ -4,6 +4,7 @@ import type { PrResponse } from '../../src/shared/api.js';
 import type { FlowLink, Mark, Step, StepFrom, Tour } from '../../src/shared/tour.js';
 import * as api from '../../src/web/api.js';
 import { TourView } from '../../src/web/TourView.js';
+import { cameFromRows } from './came-from-helpers.js';
 import { outlineItem } from './outline-helpers.js';
 
 vi.mock('../../src/web/api.js', async (importActual) => ({
@@ -135,10 +136,8 @@ const response: PrResponse = {
   job: null,
 };
 
-/** The "how did we get here" line of the open step; null when it has none. */
-function cameFrom(): string | null {
-  return screen.queryByTestId('came-from')?.textContent ?? null;
-}
+/** The "how did we get here" block of the open step, row by row; [] when it has none. */
+const rows = cameFromRows;
 
 async function open(title: string) {
   await screen.findByRole('navigation', { name: 'Tour outline' });
@@ -156,31 +155,34 @@ afterEach(() => vi.resetAllMocks());
 describe('how the flow gets to a step', () => {
   it('the first step has none: the entry starts the flow', async () => {
     await open('Handle the repay request');
-    expect(cameFrom()).toBeNull();
+    expect(screen.queryByTestId('came-from')).toBeNull();
   });
 
-  it('a step called by the step just before', async () => {
+  it('a step called by the step just before: no previous-step row', async () => {
     await open('Check the amount');
-    expect(cameFrom()).toBe('Called from Handle the repay request (step 1), line 12.');
+    expect(rows()).toEqual(['Called from: Step 1 · Handle the repay request line 12 ↗']);
+    expect(screen.queryByTestId('came-from-previous')).toBeNull();
   });
 
   it('a step called after the step before it returned: a jump back up', async () => {
     await open('Record the repayment');
-    expect(cameFrom()).toBe(
-      'Called from Handle the repay request (step 1), line 14. Step 2 returned first.',
-    );
+    expect(rows()).toEqual([
+      'Called from: Step 1 · Handle the repay request line 14 ↗',
+      'Previous step: Step 2 · Check the amount — it returns first, then step 1 calls this step.',
+    ]);
+    expect(screen.getByTestId('came-from-previous')).toBeTruthy();
   });
 
   it('a request to another service, through a helper that is not a step', async () => {
     await open('Book it in the ledger');
-    expect(cameFrom()).toBe(
-      'Request from Record the repayment (step 3), line 30, through ledgerClient.book.',
-    );
+    expect(rows()).toEqual([
+      'Request from: Step 3 · Record the repayment line 30 ↗, through ledgerClient.book',
+    ]);
   });
 
   it('an event that this step handles', async () => {
     await open('Email the receipt');
-    expect(cameFrom()).toBe('Event from Book it in the ledger (step 4), line 25.');
+    expect(rows()).toEqual(['Event from: Step 4 · Book it in the ledger line 25 ↗']);
   });
 
   it('clicking the line shows the call, then Back returns to the step', async () => {
@@ -246,33 +248,48 @@ async function reopen(links: FlowLink[], marks?: Mark[], openTitle = 'Check the 
   await open(openTitle);
 }
 
+/** The proof tag of the called-from row; null when it has none. */
+function tag(): HTMLElement | null {
+  return screen.getByTestId('came-from').querySelector('.came-tag');
+}
+
 describe('called from, with the code check', () => {
-  it('a link only the code found says so', async () => {
+  it('a link only the code found says so in its tag', async () => {
     await reopen([link(1, 2, { source: 'code' })]);
-    expect(cameFrom()).toBe(
-      'Called from Handle the repay request (step 1), line 12, found in the code.',
-    );
+    expect(rows()).toEqual([
+      'Called from: Step 1 · Handle the repay request line 12 ↗ ✓ found in the code',
+    ]);
+    expect(tag()!.className).toContain('came-tag-proven');
   });
 
-  it('a link both agree on reads as today', async () => {
+  it('a link both agree on is proven in code', async () => {
     await reopen([link(1, 2)]);
-    expect(cameFrom()).toBe('Called from Handle the repay request (step 1), line 12.');
+    expect(rows()).toEqual([
+      'Called from: Step 1 · Handle the repay request line 12 ↗ ✓ proven in code',
+    ]);
+    expect(tag()!.className).toContain('came-tag-proven');
   });
 
-  it('a link the code does not show is a warning', async () => {
+  it('a link the code does not show is a warning, without a tag', async () => {
     await reopen([link(1, 2, { source: 'claude', check: 'not-found' })]);
-    expect(cameFrom()).toBe(
-      'The tour says Handle the repay request (step 1) calls this, but the code does not show it.',
-    );
-    expect(screen.getByTestId('came-from').className).toContain('came-from-warn');
+    expect(rows()).toEqual([
+      'Called from: The tour says Handle the repay request (step 1) calls this, but the code does not show it.',
+    ]);
+    expect(screen.getByTestId('came-from').querySelector('.came-from-warn')).toBeTruthy();
+    expect(tag()).toBeNull();
   });
 
-  it('an unchecked or name-matched link has no warning colour', async () => {
+  it('an unchecked link has no tag; a name-matched one is matched by name', async () => {
     await reopen([link(1, 2, { source: 'claude', check: 'unchecked' })]);
-    expect(cameFrom()).toBe('Called from Handle the repay request (step 1), line 12.');
-    expect(screen.getByTestId('came-from').className).not.toContain('warn');
+    expect(rows()).toEqual(['Called from: Step 1 · Handle the repay request line 12 ↗']);
+    expect(tag()).toBeNull();
+    expect(screen.getByTestId('came-from').querySelector('.came-from-warn')).toBeNull();
     await reopen([link(1, 2, { check: 'name-match' })]);
-    expect(screen.getByTestId('came-from').className).not.toContain('warn');
+    expect(rows()).toEqual([
+      'Called from: Step 1 · Handle the repay request line 12 ↗ matched by name',
+    ]);
+    expect(tag()!.className).not.toContain('came-tag-proven');
+    expect(screen.getByTestId('came-from').querySelector('.came-from-warn')).toBeNull();
   });
 
   it("puts Claude's reason in the tooltip of an unproven link", async () => {
@@ -285,11 +302,31 @@ describe('called from, with the code check', () => {
       }),
     ]);
     expect(screen.getByTestId('came-from').title).toBe('HTTP call to the ledger service');
+    expect(rows()).toEqual(['Request from: Step 1 · Handle the repay request line 12 ↗']);
+    expect(tag()).toBeNull();
   });
 
   it('a name-matched code link is not said to be found in the code', async () => {
     await reopen([link(1, 2, { source: 'code', check: 'name-match' })]);
-    expect(cameFrom()).toBe('Called from Handle the repay request (step 1), line 12.');
+    expect(rows()).toEqual([
+      'Called from: Step 1 · Handle the repay request line 12 ↗ matched by name',
+    ]);
+  });
+
+  it('a link through a helper names it after the line', async () => {
+    await reopen([link(1, 2, { via: ['ledgerClient.book'] })]);
+    expect(rows()).toEqual([
+      'Called from: Step 1 · Handle the repay request line 12 ↗, through ledgerClient.book ✓ proven in code',
+    ]);
+  });
+
+  it('several returned steps make a range in the previous-step row', async () => {
+    await reopen([link(1, 4, { how: 'service', line: 20 })], undefined, 'Book it in the ledger');
+    expect(rows()).toEqual([
+      'Request from: Step 1 · Handle the repay request line 20 ↗ ✓ proven in code',
+      'Previous step: Steps 2 to 3 return first, then step 1 calls this step.',
+    ]);
+    expect(screen.getByTestId('came-from-previous').textContent).toContain('Steps 2 to 3');
   });
 
   it('no next-step note when this step is a secondary caller of the next', async () => {
@@ -300,8 +337,11 @@ describe('called from, with the code check', () => {
 
   it('lists the other callers', async () => {
     await reopen([link(1, 3), link(2, 3, { line: 7 })], undefined, 'Record the repayment');
-    expect(cameFrom()).toContain('Called from Handle the repay request (step 1), line 12.');
-    expect(cameFrom()).toContain('Also called from step 2.');
+    expect(rows()[0]).toBe(
+      'Called from: Step 1 · Handle the repay request line 12 ↗ ✓ proven in code Also called from step 2.',
+    );
+    const also = screen.getByText('Also called from step 2.');
+    expect(also.className).toContain('muted');
   });
 
   it("prefers the proven link over Claude's, and shows the conflict", async () => {
@@ -313,9 +353,7 @@ describe('called from, with the code check', () => {
       undefined,
       'Record the repayment',
     );
-    expect(cameFrom()).toContain(
-      'Called from Check the amount (step 2), line 7, found in the code.',
-    );
+    expect(rows()).toEqual(['Called from: Step 2 · Check the amount line 7 ↗ ✓ found in the code']);
     expect(screen.getByTestId('came-conflict').textContent).toBe(
       'The tour says step 1 calls this. The code says step 2 does.',
     );
