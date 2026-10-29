@@ -572,6 +572,72 @@ describe('TourView', () => {
     expect(screen.getByTestId('code-focus').textContent).toBe('10');
   });
 
+  it('following a call into a step of the same flow goes to that step', async () => {
+    const tour = makeTour();
+    const flow = tour.flows[0]!;
+    const charge = {
+      ...flow.steps[0]!,
+      id: 'F1.S2',
+      title: 'Charge the fee',
+      file: 'src/fees.ts',
+      startLine: 12,
+      endLine: 30,
+      homes: [{ file: 'src/fees.ts', side: 'new' as const, start: 12, end: 30 }],
+    };
+    getPr.mockResolvedValue(
+      response({
+        tour: {
+          ...tour,
+          flows: [{ ...flow, steps: [...flow.steps, charge] }],
+          hashes: { ...tour.hashes, 'F1.S2': 'h-s2' },
+        },
+      }),
+    );
+    render(<TourView repo="acme/loans" pr={42} />);
+    await screen.findByRole('navigation', { name: 'Tour outline' });
+    fireEvent.click(outlineItem('Validate and record'));
+
+    fireEvent.click(screen.getByRole('button', { name: 'follow chargeFee' }));
+    expect(outlineItem('Charge the fee').getAttribute('aria-current')).toBe('step');
+    expect(screen.getByTestId('code-view').textContent).toBe('F1.S2 src/fees.ts');
+    expect(screen.queryByRole('button', { name: 'Back to this step' })).toBeNull();
+    expect(markSeen).toHaveBeenCalledWith('acme/loans', 42, 'F1.S1', 'h-s1');
+  });
+
+  it('a call into a step of another flow stays a look from this step', async () => {
+    const tour = makeTour();
+    const flow = tour.flows[0]!;
+    const other = {
+      ...flow,
+      id: 'F2',
+      title: 'Charge fees',
+      steps: [
+        {
+          ...flow.steps[0]!,
+          id: 'F2.S1',
+          title: 'Charge the fee',
+          file: 'src/fees.ts',
+          startLine: 12,
+          endLine: 30,
+          homes: [{ file: 'src/fees.ts', side: 'new' as const, start: 12, end: 30 }],
+        },
+      ],
+    };
+    getPr.mockResolvedValue(
+      response({
+        tour: { ...tour, flows: [flow, other], hashes: { ...tour.hashes, 'F2.S1': 'h-f2' } },
+      }),
+    );
+    render(<TourView repo="acme/loans" pr={42} />);
+    await screen.findByRole('navigation', { name: 'Tour outline' });
+    fireEvent.click(outlineItem('Validate and record'));
+
+    fireEvent.click(screen.getByRole('button', { name: 'follow chargeFee' }));
+    expect(outlineItem('Validate and record').getAttribute('aria-current')).toBe('step');
+    expect(screen.getByTestId('code-view').textContent).toBe('F1.S1 src/fees.ts');
+    expect(screen.getByRole('button', { name: 'Back to this step' })).toBeTruthy();
+  });
+
   it('a belongs-to label in the code opens that item', async () => {
     getPr.mockResolvedValue(response());
     render(<TourView repo="acme/loans" pr={42} />);

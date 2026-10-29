@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { BuildStatus } from './BuildStatus.js';
 import type { Reveal, RevealPlace } from './code-lines.js';
 import { ComposerMemory, ComposerMemoryContext } from './composer-memory.js';
-import { homesInOrder, nextFlowStart, previousFlowStart } from './homes.js';
+import { flowStepAt, homesInOrder, nextFlowStart, previousFlowStart } from './homes.js';
 import { Outline } from './Outline.js';
 import { StepPane } from './StepPane.js';
 import { TopBar } from './TopBar.js';
@@ -73,6 +73,17 @@ export function TourView({ repo, pr }: { repo: string; pr: number }) {
   function follow(to: { file: string; line: number } | null) {
     setJump(to);
     setReveal(null);
+  }
+
+  /**
+   * Follows a call from the step's code. A call into another step of the same flow goes to
+   * that step, so the outline moves along; any other call is a look from this step.
+   */
+  function followCall(file: string, line: number) {
+    const home = homes.find((h) => h.id === current);
+    const step = home?.kind === 'step' ? flowStepAt(home.flow, file, line) : undefined;
+    if (step && step.id !== current) goTo(step.id);
+    else follow({ file, line });
   }
 
   /**
@@ -230,7 +241,7 @@ export function TourView({ repo, pr }: { repo: string; pr: number }) {
                 home={currentHome}
                 jump={jump}
                 reveal={reveal}
-                onJump={(file, line) => follow({ file, line })}
+                onJump={followCall}
                 onBack={() => follow(null)}
                 onOpenHome={goTo}
                 nav={nav}
