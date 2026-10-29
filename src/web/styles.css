@@ -1126,8 +1126,24 @@ p.why {
   color: var(--del);
 }
 
+/* The step's lines: a bar down the left, closed by a line above and below. Each step mounts
+   a new view, so the flash runs once when a step opens, also within the same file. */
 .code-focus {
-  box-shadow: inset 3px 0 0 var(--accent);
+  --focus-top: 0 0 0 transparent;
+  --focus-bottom: 0 0 0 transparent;
+  box-shadow:
+    inset 3px 0 0 var(--accent),
+    inset var(--focus-top),
+    inset var(--focus-bottom);
+  animation: reveal-flash 1.6s ease-out;
+}
+
+.code-focus-first {
+  --focus-top: 0 1px 0 var(--accent);
+}
+
+.code-focus-last {
+  --focus-bottom: 0 -1px 0 var(--accent);
 }
 
 .fold-bar {
@@ -1249,6 +1265,11 @@ p.why {
   .reveal-flash {
     animation: none;
     background-color: var(--reveal-flash);
+  }
+
+  /* The frame alone marks the step. */
+  .code-focus {
+    animation: none;
   }
 }
 
