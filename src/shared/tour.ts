@@ -61,6 +61,8 @@ function bodySchema<Id extends z.ZodType<string | undefined>>(id: Id) {
   const flow = z.object({
     id,
     title: z.string(),
+    /** What the flow does and why it is in the tour. Optional: older tours have none. */
+    why: z.string().optional(),
     entry: z.object({
       kind: z.enum(['http', 'job', 'event', 'cli', 'other']),
       label: z.string(),

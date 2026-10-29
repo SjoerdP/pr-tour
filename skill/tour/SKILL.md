@@ -21,6 +21,8 @@ as a pr-tour tour: the reviewer reads it next to the code, in the order the code
    - For every `why`, use your memory of why you made that change: the reason, the
      trade-off, what the reviewer should check. That is what makes an author tour
      better than an inferred one.
+   - For each flow's `why`, say why that flow is in the tour: what the PR changes in it,
+     or why the reviewer needs it when it has no changes.
    - Never invent intent you do not have. If you do not remember why something
      changed, say only what it does.
 5. **Save and import.** Write the JSON to a temp file

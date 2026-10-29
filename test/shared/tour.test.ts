@@ -52,6 +52,13 @@ describe('TourBodyInputSchema', () => {
     expect(TourBodyInputSchema.safeParse(body).success).toBe(false);
   });
 
+  it('a flow may have a why; a body without one still parses', () => {
+    const body = fixture();
+    expect(body.flows[0]!.why).toBeUndefined();
+    body.flows[0]!.why = 'The repay path.';
+    expect(TourBodyInputSchema.parse(body).flows[0]!.why).toBe('The repay path.');
+  });
+
   it('rejects an unknown risk', () => {
     const body = fixture() as unknown as { flows: { steps: Record<string, unknown>[] }[] };
     body.flows[0]!.steps[0]!.risk = 'maybe';

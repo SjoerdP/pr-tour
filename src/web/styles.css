@@ -404,6 +404,35 @@ pre {
   white-space: pre-line;
 }
 
+.tour-map {
+  margin: 0 0 var(--space-3);
+}
+
+.tour-map h2 {
+  margin: 0 0 var(--space-1);
+  color: var(--fg-muted);
+  font-size: var(--font-size-small);
+  font-weight: 600;
+}
+
+.tour-map ol {
+  display: grid;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.tour-map-flow {
+  font-weight: 600;
+}
+
+.tour-map p {
+  margin: 0;
+  color: var(--fg-muted);
+  font-size: var(--font-size-small);
+}
+
 .check-problems {
   margin-bottom: var(--space-3);
   padding: var(--space-2) var(--space-3);
@@ -791,8 +820,52 @@ pre {
   max-width: var(--prose-width);
 }
 
+.step-trail-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0 var(--space-3);
+}
+
 .step-trail {
   margin: 0;
+  color: var(--fg-muted);
+  font-size: var(--font-size-small);
+}
+
+.about-flow-button {
+  font-size: var(--font-size-small);
+}
+
+.about-flow-button[aria-expanded='true'] {
+  text-decoration: underline;
+}
+
+/* Fixed, not absolute: the notes scroll and would cut it off. Placed under the button. */
+.about-flow-panel {
+  position: fixed;
+  z-index: 10;
+  width: min(420px, calc(100vw - 2 * var(--space-4)));
+  max-height: 40vh;
+  overflow-y: auto;
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg);
+  box-shadow: var(--shadow-popover);
+}
+
+.about-flow-panel h3 {
+  margin: 0;
+  font-size: var(--font-size);
+  font-weight: 600;
+}
+
+.about-flow-panel p {
+  margin: var(--space-1) 0 0;
+}
+
+.about-flow-entry {
   color: var(--fg-muted);
   font-size: var(--font-size-small);
 }

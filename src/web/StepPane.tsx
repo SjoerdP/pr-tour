@@ -1,5 +1,12 @@
-import { useId, useState, type ReactNode } from 'react';
-import type { Range, SideEffect, Tour } from '../shared/tour.js';
+import {
+  useEffect,
+  useId,
+  useRef,
+  useState,
+  type KeyboardEvent,
+  type ReactNode,
+} from 'react';
+import type { Flow, Range, SideEffect, Tour } from '../shared/tour.js';
 import type { Focus as CodeFocus, Reveal } from './code-lines.js';
 import { CodeView } from './CodeView.js';
 import { FlowEndNote } from './FlowEndNote.js';
@@ -180,9 +187,13 @@ export function StepPane({
     <article className="step-pane" aria-labelledby={`step-title-${home.id}`}>
       <div className="step-notes">
         <div className="step-head">
-          <p className="step-trail" data-testid="step-trail" title={trailTitle(home)}>
-            {trail(tour, home)}
-          </p>
+          <div className="step-trail-row">
+            <p className="step-trail" data-testid="step-trail" title={trailTitle(home)}>
+              {trail(tour, home)}
+            </p>
+            {/* New home, shut again. */}
+            {home.kind === 'step' && <AboutFlow key={home.id} flow={home.flow} />}
+          </div>
           <h2 className="step-title" id={`step-title-${home.id}`}>
             {homeTitle(home)}
           </h2>
@@ -262,6 +273,89 @@ export function StepPane({
         </button>
       </div>
     </article>
+  );
+}
+
+/**
+ * "About this flow": a reminder of what the flow does and why it is in the tour, in a small
+ * popover. Shut until clicked; a click outside or Esc shuts it. Left out for a flow without
+ * a why.
+ */
+function AboutFlow({ flow }: { flow: Flow }) {
+  const panelId = useId();
+  // Where the popover sits, under the button; null while shut. Fixed, as the notes scroll
+  // and would cut it off; so a scroll or resize shuts it rather than leave it behind.
+  const [place, setPlace] = useState<{ top: number; left: number } | null>(null);
+  const open = place !== null;
+  const panel = useRef<HTMLElement>(null);
+  const button = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    function onMouseDown(event: MouseEvent) {
+      const target = event.target as Node | null;
+      if (panel.current?.contains(target) || button.current?.contains(target)) return;
+      setPlace(null);
+    }
+    function onMove(event: Event) {
+      // A resize, or a scroll of the window itself, has no node as its target.
+      if (event.target instanceof Node && panel.current?.contains(event.target)) return;
+      setPlace(null);
+    }
+    document.addEventListener('mousedown', onMouseDown);
+    window.addEventListener('scroll', onMove, true);
+    window.addEventListener('resize', onMove);
+    return () => {
+      document.removeEventListener('mousedown', onMouseDown);
+      window.removeEventListener('scroll', onMove, true);
+      window.removeEventListener('resize', onMove);
+    };
+  }, [open]);
+
+  if (flow.why === undefined) return null;
+
+  function onKeyDown(event: KeyboardEvent) {
+    if (event.key !== 'Escape' || !open) return;
+    // The tour's own Esc (back from a jump) must not run as well.
+    event.stopPropagation();
+    setPlace(null);
+    button.current?.focus();
+  }
+
+  function toggle() {
+    const rect = button.current?.getBoundingClientRect();
+    setPlace(open || !rect ? null : { top: rect.bottom + 4, left: rect.left });
+  }
+
+  return (
+    // Esc on the button or in the popover shuts it.
+    <div className="about-flow" onKeyDown={onKeyDown}>
+      <button
+        type="button"
+        className="link-button about-flow-button"
+        ref={button}
+        aria-expanded={open}
+        aria-controls={open ? panelId : undefined}
+        onClick={toggle}
+      >
+        About this flow
+      </button>
+      {place && (
+        <section
+          ref={panel}
+          id={panelId}
+          className="about-flow-panel"
+          style={place}
+          aria-label="About this flow"
+        >
+          <h3>{flow.title}</h3>
+          <p className="about-flow-entry">
+            <code>{flow.entry.label}</code>
+          </p>
+          <p>{flow.why}</p>
+        </section>
+      )}
+    </div>
   );
 }
 

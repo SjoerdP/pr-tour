@@ -58,3 +58,11 @@ describe('tourRules: flow ends', () => {
     expect(rules).toMatch(/skip small helpers \(formatting, logging, getters\)/i);
   });
 });
+
+describe('tourRules: flow why', () => {
+  it('asks for a short why per flow: what it does and why it is in the tour', () => {
+    const rules = tourRules();
+    expect(rules).toMatch(/"why" on a flow/);
+    expect(rules).toMatch(/why this flow is in the tour/);
+  });
+});

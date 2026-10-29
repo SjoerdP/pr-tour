@@ -619,3 +619,128 @@ describe('review after a rebuild', () => {
     expect(within(items[1]!).queryByText('older version')).toBeNull();
   });
 });
+
+function withFlowWhys(): Tour {
+  const tour = structuredClone(baseTour);
+  tour.flows[0]!.why = 'The borrower pays early. The new check runs in step 3.';
+  tour.flows[1]!.why = 'Tells the lender after a repayment.';
+  return tour;
+}
+
+function aboutFlowButton() {
+  return screen.queryByRole('button', { name: 'About this flow' });
+}
+
+function aboutFlowPanel() {
+  return screen.queryByRole('region', { name: 'About this flow' });
+}
+
+describe('About this PR: how the tour is built', () => {
+  it('lists each flow with its why, and a click goes to the flow', async () => {
+    await open(withFlowWhys());
+    const about = screen.getByRole('region', { name: 'About this PR' });
+    expect(within(about).getByRole('heading', { name: 'How the tour is built' })).toBeTruthy();
+    const items = within(about)
+      .getAllByRole('listitem')
+      .map((li) => li.textContent);
+    expect(items).toEqual([
+      '1 Repay a loanThe borrower pays early. The new check runs in step 3.',
+      '2 Notify the lenderTells the lender after a repayment.',
+    ]);
+
+    fireEvent.click(within(about).getByRole('button', { name: '2 Notify the lender' }));
+    expect(trail()).toBe('Flow 2 · step 1 of 2');
+    expect(screen.queryByRole('region', { name: 'About this PR' })).toBeNull();
+  });
+
+  it('is left out for a tour without flow whys', async () => {
+    await open();
+    const about = screen.getByRole('region', { name: 'About this PR' });
+    expect(within(about).queryByText('How the tour is built')).toBeNull();
+  });
+});
+
+describe('About this flow', () => {
+  it('is a button on every step of a flow with a why, and shut until clicked', async () => {
+    await open(withFlowWhys());
+    expect(aboutFlowButton()).toBeNull(); // the foundation is not in a flow
+    fireEvent.keyDown(window, { key: 'j' });
+    expect(aboutFlowButton()!.getAttribute('aria-expanded')).toBe('false');
+    expect(aboutFlowPanel()).toBeNull();
+    fireEvent.keyDown(window, { key: 'j' });
+    expect(aboutFlowButton()).toBeTruthy();
+  });
+
+  it('opens the flow title, entry and why; a second click shuts it', async () => {
+    await open(withFlowWhys());
+    fireEvent.keyDown(window, { key: 'j' });
+    fireEvent.click(aboutFlowButton()!);
+    const panel = aboutFlowPanel()!;
+    expect(panel.textContent).toContain('Repay a loan');
+    expect(panel.textContent).toContain('POST /F1');
+    expect(panel.textContent).toContain('The borrower pays early. The new check runs in step 3.');
+    expect(aboutFlowButton()!.getAttribute('aria-expanded')).toBe('true');
+    expect(document.getElementById(aboutFlowButton()!.getAttribute('aria-controls')!)).toBe(panel);
+
+    fireEvent.click(aboutFlowButton()!);
+    expect(aboutFlowPanel()).toBeNull();
+  });
+
+  it('closes on a click outside it, on Esc and on the next step', async () => {
+    await open(withFlowWhys());
+    fireEvent.keyDown(window, { key: 'j' });
+
+    fireEvent.click(aboutFlowButton()!);
+    fireEvent.mouseDown(aboutFlowPanel()!);
+    expect(aboutFlowPanel()).toBeTruthy();
+    fireEvent.mouseDown(screen.getByTestId('code-view'));
+    expect(aboutFlowPanel()).toBeNull();
+
+    fireEvent.click(aboutFlowButton()!);
+    fireEvent.keyDown(aboutFlowPanel()!, { key: 'Escape' });
+    expect(aboutFlowPanel()).toBeNull();
+    expect(document.activeElement).toBe(aboutFlowButton());
+
+    fireEvent.keyDown(aboutFlowButton()!, { key: 'Escape' });
+    expect(aboutFlowPanel()).toBeNull();
+
+    fireEvent.click(aboutFlowButton()!);
+    fireEvent.keyDown(window, { key: 'j' });
+    expect(aboutFlowPanel()).toBeNull();
+  });
+
+  it('closes when the page scrolls or resizes, not when the popover itself scrolls', async () => {
+    await open(withFlowWhys());
+    fireEvent.keyDown(window, { key: 'j' });
+    fireEvent.click(aboutFlowButton()!);
+    fireEvent.scroll(aboutFlowPanel()!);
+    expect(aboutFlowPanel()).toBeTruthy();
+    fireEvent.scroll(screen.getByTestId('code-view'));
+    expect(aboutFlowPanel()).toBeNull();
+
+    fireEvent.click(aboutFlowButton()!);
+    fireEvent(window, new Event('resize'));
+    expect(aboutFlowPanel()).toBeNull();
+  });
+
+  it('Esc with the popover shut leaves the tour keys alone', async () => {
+    await open(withFlowWhys());
+    fireEvent.keyDown(window, { key: 'j' });
+    const event = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true });
+    const stop = vi.spyOn(event, 'stopPropagation');
+    aboutFlowButton()!.dispatchEvent(event);
+    expect(stop).not.toHaveBeenCalled();
+  });
+
+  it('is left out for a flow without a why', async () => {
+    await open();
+    fireEvent.keyDown(window, { key: 'j' });
+    expect(aboutFlowButton()).toBeNull();
+  });
+
+  it('leaves the trail text as it was', async () => {
+    await open(withFlowWhys());
+    fireEvent.keyDown(window, { key: 'j' });
+    expect(trail()).toBe('Flow 1 · step 1 of 5');
+  });
+});

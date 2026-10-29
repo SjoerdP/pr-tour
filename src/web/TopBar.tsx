@@ -174,6 +174,7 @@ export function TopBar({
       {tour && open && (
         <section ref={panel} id={panelId} className="about-panel" aria-label="About this PR">
           <p className="about-summary">{tour.summary}</p>
+          <TourMap tour={tour} onOpenHome={onOpenHome} />
           {problems.length > 0 && (
             <div className="check-problems">
               <h2>{problemsText(problems.length)}</h2>
@@ -190,6 +191,43 @@ export function TopBar({
         </section>
       )}
     </header>
+  );
+}
+
+/**
+ * "How the tour is built": each flow with its why, a click goes to its first step. Left out
+ * when no flow has a why (tours from before flows had one).
+ */
+function TourMap({ tour, onOpenHome }: { tour: Tour; onOpenHome: (homeId: string) => void }) {
+  const titleId = useId();
+  if (!tour.flows.some((flow) => flow.why !== undefined)) return null;
+  return (
+    <section className="tour-map" aria-labelledby={titleId}>
+      <h2 id={titleId}>How the tour is built</h2>
+      <ol>
+        {tour.flows.map((flow, i) => {
+          const first = flow.steps[0];
+          return (
+            <li key={flow.id}>
+              {first ? (
+                <button
+                  type="button"
+                  className="link-button tour-map-flow"
+                  onClick={() => onOpenHome(first.id)}
+                >
+                  {i + 1} {flow.title}
+                </button>
+              ) : (
+                <span className="tour-map-flow">
+                  {i + 1} {flow.title}
+                </span>
+              )}
+              {flow.why !== undefined && <p>{flow.why}</p>}
+            </li>
+          );
+        })}
+      </ol>
+    </section>
   );
 }
 
