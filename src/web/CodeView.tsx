@@ -476,6 +476,8 @@ function FileCode({
                     row={row}
                     tokens={rowTokens(row, tokens)}
                     inFocus={inFocus}
+                    focusFirst={i === focusRange?.[0]}
+                    focusLast={i === focusRange?.[1]}
                     selected={selected}
                     showOld={showOld}
                     calls={inFocus && row.newNo !== undefined ? calls : NO_CALLS}
@@ -596,6 +598,9 @@ type CodeRowProps = {
   row: Row;
   tokens: HighlightedLine | undefined;
   inFocus: boolean;
+  /** The first and last rows of the focus, which close its frame. */
+  focusFirst: boolean;
+  focusLast: boolean;
   /** Picked for a comment. */
   selected: boolean;
   /** False when the file has no old side (an added file). */
@@ -658,6 +663,8 @@ function CodeRow({
   row,
   tokens,
   inFocus,
+  focusFirst,
+  focusLast,
   selected,
   showOld,
   calls,
@@ -671,9 +678,12 @@ function CodeRow({
   const parts =
     tokens && tokens.map((t) => t.content).join('') === row.text ? tokens : [{ content: row.text }];
   const matches = calls.length > 0 ? callMatches(row.text, calls) : [];
+  const focus = inFocus
+    ? ` code-focus${focusFirst ? ' code-focus-first' : ''}${focusLast ? ' code-focus-last' : ''}`
+    : '';
   return (
     <div
-      className={`code-row code-${row.kind}${inFocus ? ' code-focus' : ''}${selected ? ' code-selected' : ''}`}
+      className={`code-row code-${row.kind}${focus}${selected ? ' code-selected' : ''}`}
       data-row={index}
     >
       {/* Deleted lines are commented on the old side, all others on the new side. */}

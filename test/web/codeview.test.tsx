@@ -157,6 +157,21 @@ describe('CodeView', () => {
     expect(screen.queryByText('line 10')).toBeNull();
   });
 
+  it('frames the focus range: marks its first and last rows', async () => {
+    serve(modified('src/repay.ts', [replaceHunk(20, 'old twenty', 'new twenty')]), {
+      [`${HEAD}:src/repay.ts`]: lines(30, { 20: 'new twenty' }),
+      [`${BASE}:src/repay.ts`]: lines(30, { 20: 'old twenty' }),
+    });
+    // Lines 17-19 are the context above the change, which stays outside the focus.
+    renderView({ focus: { start: 17, end: 19 } });
+
+    const row = async (text: string) => (await screen.findByText(text)).closest('.code-row')!;
+    expect((await row('line 17')).className).toContain('code-focus code-focus-first');
+    expect((await row('line 18')).className).not.toMatch(/code-focus-(first|last)/);
+    expect((await row('line 19')).className).toContain('code-focus code-focus-last');
+    expect((await row('old twenty')).className).not.toContain('code-focus');
+  });
+
   it('n moves to the next change and updates the counter', async () => {
     serve(
       modified('src/repay.ts', [
