@@ -1,6 +1,15 @@
 // The tour's homes in the order the web shows them (outline and j/k).
 
-import type { Flow, Foundation, OtherGroup, OtherItem, Range, Step, Tour } from '../shared/tour.js';
+import type {
+  Flow,
+  Foundation,
+  OtherGroup,
+  OtherItem,
+  Range,
+  Step,
+  StepFrom,
+  Tour,
+} from '../shared/tour.js';
 
 /** One place a changed line can live: a foundation, a flow step or an other-changes item. */
 export type Home =
@@ -65,6 +74,34 @@ export function homeRanges(home: Home): Range[] {
  */
 export function flowStepAt(flow: Flow, file: string, line: number): Step | undefined {
   return flow.steps.find((s) => s.file === file && s.startLine <= line && line <= s.endLine);
+}
+
+/** How the flow gets to a step: the calling step, the line of the call, and how. */
+export type CameFrom = {
+  caller: Step;
+  /** The caller's 1-based number in the flow. */
+  callerNo: number;
+  line: number;
+  how: StepFrom['how'];
+  via: string | undefined;
+  /** Steps between the caller and this one, which returned before the call: [first, last]. */
+  returned: [number, number] | null;
+};
+
+/** Where `step` is called from, by its `from`; null for a first step or a tour without it. */
+export function cameFrom(flow: Flow, step: Step): CameFrom | null {
+  const from = step.from;
+  const caller = from && flow.steps[from.step - 1];
+  if (!from || !caller) return null;
+  const no = flow.steps.indexOf(step) + 1;
+  return {
+    caller,
+    callerNo: from.step,
+    line: from.line,
+    how: from.how,
+    via: from.via,
+    returned: from.step < no - 1 ? [from.step + 1, no - 1] : null,
+  };
 }
 
 /** True for the first step of a flow: where `[` and `]` land. */

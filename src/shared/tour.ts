@@ -26,9 +26,25 @@ export const CallRefSchema = z.object({ symbol: z.string(), file: z.string(), li
 
 export const RiskSchema = z.enum(['read-closely', 'skim']);
 
+/**
+ * How the flow gets to a step: the line in an earlier step of the same flow that calls it.
+ * `step` is that step's 1-based number in the flow (Claude's output has no ids yet) and
+ * `line` a head line in its file. `how`: a function call, a request to another service in
+ * this repo, or an event this step handles. `via` names a helper in between that is not a
+ * step itself.
+ */
+export const StepFromSchema = z.object({
+  step: z.number().int().min(1),
+  line,
+  how: z.enum(['call', 'service', 'event']),
+  via: z.string().optional(),
+});
+
 // Claude's output has no ids (the builder assigns them); a stored tour has
 // them. Both schemas are built from the same shapes so they cannot drift.
-function bodySchema<Id extends z.ZodType<string | undefined>>(id: Id) {
+// `requireFrom`: every step after a flow's first must say how the flow gets there. Only
+// new tours must; stored tours from before `from` existed have none.
+function bodySchema<Id extends z.ZodType<string | undefined>>(id: Id, requireFrom: boolean) {
   const foundation = z.object({
     id,
     kind: z.enum(['migration', 'model', 'config', 'dependency']),
@@ -55,20 +71,40 @@ function bodySchema<Id extends z.ZodType<string | undefined>>(id: Id) {
     sideEffects: z.array(SideEffectSchema),
     tests: z.array(TestRefSchema),
     calls: z.array(CallRefSchema),
+    /** Left out on a flow's first step: the entry starts the flow. */
+    from: StepFromSchema.optional(),
     homes: z.array(RangeSchema),
   });
 
-  const flow = z.object({
-    id,
-    title: z.string(),
-    /** What the flow does and why it is in the tour. Optional: older tours have none. */
-    why: z.string().optional(),
-    entry: z.object({
-      kind: z.enum(['http', 'job', 'event', 'cli', 'other']),
-      label: z.string(),
-    }),
-    steps: z.array(step),
-  });
+  const flow = z
+    .object({
+      id,
+      title: z.string(),
+      /** What the flow does and why it is in the tour. Optional: older tours have none. */
+      why: z.string().optional(),
+      entry: z.object({
+        kind: z.enum(['http', 'job', 'event', 'cli', 'other']),
+        label: z.string(),
+      }),
+      steps: z.array(step),
+    })
+    .superRefine((flow, ctx) => {
+      // Whether `from.line` lies in the calling step is a check problem, not a parse error.
+      flow.steps.forEach((s, i) => {
+        const path = ['steps', i, 'from'];
+        if (s.from === undefined) {
+          if (requireFrom && i > 0) {
+            const message = `step ${i + 1} needs "from": the earlier step of this flow that calls it`;
+            ctx.addIssue({ code: 'custom', path, message });
+          }
+        } else if (i === 0) {
+          ctx.addIssue({ code: 'custom', path, message: 'the first step of a flow has no "from"' });
+        } else if (s.from.step > i) {
+          const message = `step ${i + 1} "from.step" must be an earlier step of this flow: 1 to ${i}`;
+          ctx.addIssue({ code: 'custom', path, message });
+        }
+      });
+    });
 
   const otherItem = z.object({
     id,
@@ -94,10 +130,10 @@ function bodySchema<Id extends z.ZodType<string | undefined>>(id: Id) {
 }
 
 /** What Claude produces. Ids are optional; the builder assigns them. */
-export const TourBodyInputSchema = bodySchema(z.string().optional());
+export const TourBodyInputSchema = bodySchema(z.string().optional(), true);
 
 /** A tour body with every id assigned. */
-export const TourBodySchema = bodySchema(z.string());
+export const TourBodySchema = bodySchema(z.string(), false);
 
 export const TourMetaSchema = z.object({
   repo: z.string(),
@@ -122,6 +158,7 @@ export type Range = z.infer<typeof RangeSchema>;
 export type SideEffect = z.infer<typeof SideEffectSchema>;
 export type TestRef = z.infer<typeof TestRefSchema>;
 export type CallRef = z.infer<typeof CallRefSchema>;
+export type StepFrom = z.infer<typeof StepFromSchema>;
 export type Risk = z.infer<typeof RiskSchema>;
 export type TourBodyInput = z.infer<typeof TourBodyInputSchema>;
 export type TourBody = z.infer<typeof TourBodySchema>;

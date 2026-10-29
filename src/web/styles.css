@@ -905,6 +905,14 @@ pre {
   color: var(--warn);
 }
 
+/* How the flow got here: under the title, before the why. */
+.came-from {
+  max-width: var(--prose-width);
+  margin: var(--space-2) 0 0;
+  color: var(--fg-muted);
+  font-size: var(--font-size-small);
+}
+
 .why {
   max-width: var(--prose-width);
   margin: var(--space-3) 0 0;

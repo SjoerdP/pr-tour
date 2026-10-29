@@ -91,6 +91,57 @@ describe('TourBodyInputSchema', () => {
   });
 });
 
+describe('step from', () => {
+  type Body = ReturnType<typeof fixture>;
+  /** The fixture's flow with a third step, called by `from`. */
+  function withThirdStep(from: unknown): Body {
+    const body = fixture();
+    const steps = body.flows[0]!.steps;
+    steps.push({ ...steps[1]!, title: 'Third', from } as Step);
+    return body;
+  }
+  function messages(body: unknown): string[] {
+    const result = TourBodyInputSchema.safeParse(body);
+    return result.success ? [] : result.error.issues.map((i) => i.message);
+  }
+
+  it('accepts a call from an earlier step, also not the one just before', () => {
+    const body = withThirdStep({ step: 1, line: 30, how: 'service', via: 'loansClient.post' });
+    expect(TourBodyInputSchema.parse(body).flows[0]!.steps[2]!.from).toEqual({
+      step: 1,
+      line: 30,
+      how: 'service',
+      via: 'loansClient.post',
+    });
+  });
+
+  it('requires from on every step after the first', () => {
+    const body = fixture();
+    delete body.flows[0]!.steps[1]!.from;
+    expect(messages(body)).toEqual([
+      'step 2 needs "from": the earlier step of this flow that calls it',
+    ]);
+  });
+
+  it('rejects from on the first step: the entry starts the flow', () => {
+    const body = fixture();
+    body.flows[0]!.steps[0]!.from = { step: 1, line: 12, how: 'call' };
+    expect(messages(body)).toEqual(['the first step of a flow has no "from"']);
+  });
+
+  it('rejects from that points at this step or a later one', () => {
+    expect(messages(withThirdStep({ step: 3, line: 6, how: 'call' }))).toEqual([
+      'step 3 "from.step" must be an earlier step of this flow: 1 to 2',
+    ]);
+  });
+
+  it('a stored tour may lack from: tours from before it was added still load', () => {
+    const body = bodyWithIds();
+    delete body.flows[0]!.steps[1]!.from;
+    expect(TourBodySchema.safeParse(body).success).toBe(true);
+  });
+});
+
 describe('TourBodySchema', () => {
   it('requires ids, unlike the input schema', () => {
     expect(TourBodySchema.safeParse(fixture()).success).toBe(false);

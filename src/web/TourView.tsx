@@ -242,6 +242,7 @@ export function TourView({ repo, pr }: { repo: string; pr: number }) {
                 jump={jump}
                 reveal={reveal}
                 onJump={followCall}
+                onShowLine={(file, line) => follow({ file, line })}
                 onBack={() => follow(null)}
                 onOpenHome={goTo}
                 nav={nav}

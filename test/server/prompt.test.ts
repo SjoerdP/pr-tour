@@ -66,3 +66,14 @@ describe('tourRules: flow why', () => {
     expect(rules).toMatch(/why this flow is in the tour/);
   });
 });
+
+describe('tourRules: step from', () => {
+  it('asks how the flow gets to each step after the first, also after a return', () => {
+    const rules = tourRules();
+    expect(rules).toMatch(/every step after the first, fill "from"/);
+    expect(rules).toMatch(/returns first and an earlier\s+step then makes the next call/);
+    expect(rules).toMatch(/"how" is call .*,\s+service .* or event/s);
+    expect(rules).toMatch(/helper's name in "via"/);
+    expect(rules).toMatch(/first step of a flow has no\s+"from"/);
+  });
+});
