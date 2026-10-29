@@ -15,8 +15,8 @@ const usage = `usage:
   pr-tour-check-go functions --root <dir>   (FunctionsInput on stdin)
   pr-tour-check-go check --root <dir> [--syntax-only]   (CheckInput on stdin)
 
-check loads the project with go/types. Run it with GOPROXY=off,
-GOFLAGS=-mod=readonly and GOTOOLCHAIN=local so it never downloads anything.
+check loads the project with go/types. It always loads with GOPROXY=off,
+GOFLAGS=-mod=readonly and GOTOOLCHAIN=local, so it never downloads anything.
 `
 
 func main() {

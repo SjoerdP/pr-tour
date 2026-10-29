@@ -165,3 +165,25 @@ func TestRunCheckSyntaxOnly(t *testing.T) {
 		t.Errorf("%v %+v", err, out)
 	}
 }
+
+// A calls entry naming a symbol that was not found still reaches the step
+// (Claude's link is never dropped). It is checked by the name of the
+// function the step is anchored on, here Max, which PlaceWrapped does not
+// call.
+func TestCheckSyntaxCallsEntryToMissingSymbol(t *testing.T) {
+	in := CheckInput{Flows: []CheckFlow{{ID: "F1", Steps: []CheckStep{
+		{ID: "A", File: "service/service.go", Symbol: "OrderService.PlaceWrapped", StartLine: 31, EndLine: 33,
+			Calls: []Call{{Symbol: "Nope", File: "service/service.go", Line: 32}}},
+		{ID: "B", File: "service/service.go", Symbol: "Nope", StartLine: 46, EndLine: 48},
+	}}}}
+	out, err := checkSyntax("testdata/flow", in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if a := out.Steps["B"].Anchor; a == nil || a.Name != "Max" || a.Source != "range" {
+		t.Errorf("B anchor %+v", a)
+	}
+	if l := findLink(t, out, "A", "B"); l.Check != "not-found" || l.Source != "claude" || l.Line != 32 {
+		t.Errorf("A->B %+v", l)
+	}
+}

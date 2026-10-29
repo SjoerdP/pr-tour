@@ -72,9 +72,8 @@ func engineVersion() string {
 	return "pr-tour/checker@" + v + " " + runtime.Version()
 }
 
-// loadProject loads every package under root with types. The environment is
-// the process's own: the server sets GOPROXY=off, GOFLAGS=-mod=readonly and
-// GOTOOLCHAIN=local, so loading never downloads anything.
+// loadProject loads every package under root with types, never downloading
+// anything (see loaderEnv).
 func loadProject(root string) (*project, error) {
 	abs, err := filepath.Abs(root)
 	if err != nil {
@@ -88,7 +87,7 @@ func loadProject(root string) (*project, error) {
 	if e, err := filepath.EvalSymlinks(abs); err == nil {
 		p.evalRoot = e
 	}
-	cfg := &packages.Config{Mode: loadMode, Dir: abs, Tests: false, Env: os.Environ()}
+	cfg := &packages.Config{Mode: loadMode, Dir: abs, Tests: false, Env: loaderEnv(os.Environ())}
 	pkgs, err := packages.Load(cfg, "./...")
 	if err != nil {
 		return nil, fmt.Errorf("load packages: %w", err)
@@ -134,6 +133,15 @@ func loadProject(root string) (*project, error) {
 		}
 	}
 	return p, nil
+}
+
+// loaderEnv is the environment for loading the analysed project: the
+// process's own, with GOPROXY=off, GOFLAGS=-mod=readonly and
+// GOTOOLCHAIN=local appended so they win over anything the caller set. The
+// checker never downloads anything, whoever runs it.
+func loaderEnv(base []string) []string {
+	env := append([]string(nil), base...)
+	return append(env, "GOPROXY=off", "GOFLAGS=-mod=readonly", "GOTOOLCHAIN=local")
 }
 
 // rel gives a file's slash path relative to the root.
@@ -408,14 +416,13 @@ func (fc *flowCheck) indexSteps() {
 
 func (fc *flowCheck) isStep(fi *funcInfo) bool { return fc.owner[fi] != nil }
 
-// anchorByIncomingLinks anchors a step whose symbol was not found on the
-// function a call of Claude's incoming link lands on, when that call names
-// exactly one function of the step's file. A step without a symbol keeps its
-// range anchor: Claude pointed at lines, and a registration line often calls
-// other functions of the same file (the router, the closure's body).
+// anchorByIncomingLinks anchors a step whose symbol was not found, or that
+// has no symbol, on the function a call of Claude's incoming link lands on
+// (spec Pass B step 1). The claimed line must name exactly one function of
+// the step's file; otherwise the step keeps its range anchor.
 func (fc *flowCheck) anchorByIncomingLinks() {
 	for i, ss := range fc.states {
-		if ss.file == nil || ss.step.Symbol == "" || (ss.anchor != nil && ss.anchor.Source == "symbol") {
+		if ss.file == nil || (ss.anchor != nil && ss.anchor.Source == "symbol") {
 			continue
 		}
 		type claim struct {
@@ -428,7 +435,7 @@ func (fc *flowCheck) anchorByIncomingLinks() {
 		}
 		for _, o := range fc.states {
 			for _, c := range o.step.Calls {
-				if o != ss && c.File == ss.step.File && c.Symbol == ss.step.Symbol {
+				if o != ss && ss.step.Symbol != "" && c.File == ss.step.File && c.Symbol == ss.step.Symbol {
 					claims = append(claims, claim{o, c.Line})
 				}
 			}
@@ -458,7 +465,10 @@ func (fc *flowCheck) anchorByIncomingLinks() {
 		if target == nil || ss.file.funcByName(target.Name) == nil {
 			continue
 		}
-		problem := fmt.Sprintf("step %s: symbol %s not found in %s; anchored by incoming link to %s", ss.step.ID, ss.step.Symbol, ss.step.File, target.Name)
+		problem := fmt.Sprintf("step %s: no symbol given in %s; anchored by incoming link to %s", ss.step.ID, ss.step.File, target.Name)
+		if ss.step.Symbol != "" {
+			problem = fmt.Sprintf("step %s: symbol %s not found in %s; anchored by incoming link to %s", ss.step.ID, ss.step.Symbol, ss.step.File, target.Name)
+		}
 		ss.setAnchor(&Anchor{Name: target.Name, StartLine: target.Line, EndLine: target.End, Source: "incoming-link"}, problem)
 		fc.typed[ss] = fc.p.typeStep(ss)
 	}

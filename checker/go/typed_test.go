@@ -69,7 +69,9 @@ func TestCheckTyped(t *testing.T) {
 	if l := findLink(t, out, "S1", "S2"); l.Check != "proven" || l.How != "register" || l.Line != 23 || l.Source != "both" {
 		t.Errorf("S1->S2 %+v", l)
 	}
-	if a := out.Steps["S14"].Anchor; a == nil || a.Name != "Routes" {
+	// Line 24 names two functions of api.go (Router.Handle, Handler.ping):
+	// no incoming-link anchor, the range anchor stays.
+	if a := out.Steps["S14"].Anchor; a == nil || a.Name != "Routes" || a.Source != "range" {
 		t.Errorf("S14 anchor %+v", a)
 	}
 	if l := findLink(t, out, "S1", "S14"); l.Check != "proven" || l.How != "register" || l.Line != 24 {
@@ -178,6 +180,45 @@ func TestCheckTypedIncomingLink(t *testing.T) {
 	}
 	if !hasProblem(out, "B", "OrderService.plac", "incoming link") {
 		t.Errorf("problems %v", out.Problems)
+	}
+}
+
+func TestCheckTypedIncomingLinkNoSymbol(t *testing.T) {
+	typedEnv(t)
+	in := CheckInput{Flows: []CheckFlow{{ID: "F1", Steps: []CheckStep{
+		{ID: "A", File: "service/service.go", Symbol: "OrderService.PlaceWrapped", StartLine: 31, EndLine: 33},
+		{ID: "B", File: "service/service.go", StartLine: 1, EndLine: 2, From: &From{Step: 1, Line: 32, How: "call"}},
+	}}}}
+	out, err := checkTyped("testdata/flow", in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	a := out.Steps["B"].Anchor
+	if a == nil || a.Name != "OrderService.place" || a.Source != "incoming-link" || a.StartLine != 35 || a.EndLine != 37 {
+		t.Errorf("B anchor %+v", a)
+	}
+	if l := findLink(t, out, "A", "B"); l.Check != "proven" || l.Line != 32 {
+		t.Errorf("A->B %+v", l)
+	}
+	if !hasProblem(out, "step B: no symbol", "incoming link to OrderService.place") {
+		t.Errorf("problems %v", out.Problems)
+	}
+}
+
+func TestLoaderEnvForcesOffline(t *testing.T) {
+	t.Setenv("GOPROXY", "https://proxy.example.com")
+	t.Setenv("GOFLAGS", "-mod=mod")
+	t.Setenv("GOTOOLCHAIN", "auto")
+	env := loaderEnv(os.Environ())
+	if len(env) < 3 {
+		t.Fatalf("env %v", env)
+	}
+	tail := env[len(env)-3:]
+	want := []string{"GOPROXY=off", "GOFLAGS=-mod=readonly", "GOTOOLCHAIN=local"}
+	for i := range want {
+		if tail[i] != want[i] {
+			t.Fatalf("env ends with %v, want %v", tail, want)
+		}
 	}
 }
 
