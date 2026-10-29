@@ -87,11 +87,18 @@ describe('tour layout CSS', () => {
     expect(rule('.code-dragging')['user-select']).toBe('none');
   });
 
-  it('step facts have the same space on both sides of the separator', () => {
-    const gap = rule('.step-facts li').gap;
-    expect(gap).toBeDefined();
-    expect(rule('.step-facts')['column-gap']).toBe(gap);
-    expect(rule('.step-facts li + li::before')['padding-right']).toBeUndefined();
+  it('step facts are chips, and warnings are tinted chips', () => {
+    expect(rule('.step-facts li')['border-radius']).toBe('999px');
+    expect(css).not.toMatch(/\.step-facts li \+ li::before/);
+    const warn = rule('.step-facts .fact-risk,\n.step-facts .fact-warn');
+    expect(warn.background).toBe('var(--warn-bg)');
+    expect(warn['border-color']).toBe('var(--warn-border)');
+  });
+
+  it('the why is a panel with a section-head label', () => {
+    expect(rule('.why').background).toBe('var(--bg-subtle)');
+    expect(rule('.why-label')['text-transform']).toBe('uppercase');
+    expect(rule('.why-label').color).toBe('var(--fg-muted)');
   });
 
   it('the comment button is a visible accent +, and the row it would comment on is outlined', () => {
