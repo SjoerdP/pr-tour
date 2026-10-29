@@ -4,6 +4,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -15,7 +16,8 @@ const usage = `usage:
   pr-tour-check-go functions --root <dir>   (FunctionsInput on stdin)
   pr-tour-check-go check --root <dir> [--syntax-only]   (CheckInput on stdin)
 
-check loads the project with go/types. It always loads with GOPROXY=off,
+check exits 3 when the project cannot be loaded with types (the caller then
+runs --syntax-only). It loads the project with go/types. It always loads with GOPROXY=off,
 GOFLAGS=-mod=readonly and GOTOOLCHAIN=local, so it never downloads anything.
 `
 
@@ -76,6 +78,10 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		out, err := check(*root, in)
 		if err != nil {
 			fmt.Fprintln(stderr, err)
+			var le *loadError
+			if errors.As(err, &le) {
+				return 3
+			}
 			return 1
 		}
 		if err := json.NewEncoder(stdout).Encode(out); err != nil {

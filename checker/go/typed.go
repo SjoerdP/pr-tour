@@ -57,6 +57,8 @@ type project struct {
 	byKey    map[string]*funcInfo // file + "\x00" + name
 	problems []string
 	degraded bool
+	files    map[string]bool // files of every loaded package, type-checked or not
+	failed   map[string]bool // files of packages that did not type-check
 
 	sites    map[*funcInfo][]tsite
 	impls    map[*types.Func][]*funcInfo
@@ -81,6 +83,7 @@ func loadProject(root string) (*project, error) {
 	}
 	p := &project{
 		root: abs, evalRoot: abs, pkgPaths: map[string]bool{},
+		files: map[string]bool{}, failed: map[string]bool{},
 		funcs: map[*types.Func]*funcInfo{}, byKey: map[string]*funcInfo{},
 		sites: map[*funcInfo][]tsite{}, impls: map[*types.Func][]*funcInfo{}, wrappers: map[*funcInfo]wrapper{},
 	}
@@ -90,13 +93,22 @@ func loadProject(root string) (*project, error) {
 	cfg := &packages.Config{Mode: loadMode, Dir: abs, Tests: false, Env: loaderEnv(os.Environ())}
 	pkgs, err := packages.Load(cfg, "./...")
 	if err != nil {
-		return nil, fmt.Errorf("load packages: %w", err)
+		return nil, &loadError{fmt.Errorf("load packages: %w", err)}
 	}
 	sort.Slice(pkgs, func(i, j int) bool { return pkgs[i].PkgPath < pkgs[j].PkgPath })
 	for _, pkg := range pkgs {
+		bad := len(pkg.Errors) > 0 || pkg.IllTyped || pkg.Types == nil || pkg.TypesInfo == nil
+		for _, name := range append(append([]string(nil), pkg.GoFiles...), pkg.CompiledGoFiles...) {
+			if r, ok := p.rel(name); ok {
+				p.files[r] = true
+				if bad {
+					p.failed[r] = true
+				}
+			}
+		}
 		// A package that does not type-check is left out: steps in it and
 		// links through it fall back to the syntax result.
-		if len(pkg.Errors) > 0 || pkg.IllTyped || pkg.Types == nil || pkg.TypesInfo == nil {
+		if bad {
 			msg := "unknown error"
 			if len(pkg.Errors) > 0 {
 				msg = pkg.Errors[0].Msg
@@ -132,8 +144,20 @@ func loadProject(root string) (*project, error) {
 			}
 		}
 	}
+	if len(p.pkgs) == 0 {
+		// Nothing of the project type-checked (missing modules, no packages):
+		// the caller runs the syntax check instead.
+		return nil, &loadError{fmt.Errorf("no package of the project type-checks (%d loaded)", len(pkgs))}
+	}
 	return p, nil
 }
+
+// loadError is a project that cannot be loaded with types at all; the
+// command exits with code 3 and prints nothing on stdout.
+type loadError struct{ err error }
+
+func (e *loadError) Error() string { return e.err.Error() }
+func (e *loadError) Unwrap() error { return e.err }
 
 // loaderEnv is the environment for loading the analysed project: the
 // process's own, with GOPROXY=off, GOFLAGS=-mod=readonly and
@@ -364,7 +388,6 @@ func checkTyped(root string, in CheckInput) (CheckOutput, error) {
 		return CheckOutput{}, err
 	}
 	out := newOutput("go-types", engineVersion())
-	out.Degraded = p.degraded
 	out.Problems = append(out.Problems, p.problems...)
 	for i, states := range syntaxStates(root, in) {
 		fc := &flowCheck{p: p, states: states, typed: map[*stepState]*typedStep{}}
@@ -372,7 +395,7 @@ func checkTyped(root string, in CheckInput) (CheckOutput, error) {
 		for _, ss := range states {
 			fc.typed[ss] = p.typeStep(ss)
 			if ss.anchor != nil && fc.typed[ss] == nil {
-				untyped = append(untyped, fmt.Sprintf("step %s: %s is not type-checked; its links are matched by name", ss.step.ID, ss.step.File))
+				untyped = append(untyped, p.untypedProblem(ss))
 			}
 		}
 		fc.anchorByIncomingLinks()
@@ -389,7 +412,23 @@ func checkTyped(root string, in CheckInput) (CheckOutput, error) {
 		out.Problems = append(out.Problems, fc.problems...)
 		out.Links[in.Flows[i].ID] = links
 	}
+	out.Degraded = p.degraded
 	return out, nil
+}
+
+// untypedProblem explains why an anchored step has no types. A file that is
+// in no loaded package (a test file or build tags) is expected and only
+// noted; a file in a package that failed to load marks the run degraded.
+func (p *project) untypedProblem(ss *stepState) string {
+	file := ss.step.File
+	switch {
+	case p.failed[file]:
+		p.degraded = true
+		return fmt.Sprintf("step %s: %s is in a package that does not type-check; its links are matched by name", ss.step.ID, file)
+	case !p.files[file]:
+		return fmt.Sprintf("step %s: %s is not part of the normal build (build tags or test file); its links are matched by name", ss.step.ID, file)
+	}
+	return fmt.Sprintf("step %s: %s is not type-checked; its links are matched by name", ss.step.ID, file)
 }
 
 type flowCheck struct {

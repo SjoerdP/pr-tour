@@ -7,6 +7,7 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 )
 
 // typedEnv sets the environment the server runs the checker with: the
@@ -232,5 +233,77 @@ func TestRunCheckTyped(t *testing.T) {
 	var out CheckOutput
 	if err := json.Unmarshal(stdout.Bytes(), &out); err != nil || out.Engine != "go-types" {
 		t.Errorf("%v %+v", err, out)
+	}
+}
+
+func TestTypedPartial(t *testing.T) {
+	typedEnv(t)
+	in := CheckInput{Flows: []CheckFlow{{ID: "F1", Steps: []CheckStep{
+		{ID: "A", File: "good/good.go", Symbol: "Start", StartLine: 3, EndLine: 5,
+			Calls: []Call{{Symbol: "Next", File: "good/good.go", Line: 4}}},
+		{ID: "B", File: "good/good.go", Symbol: "Next", StartLine: 7, EndLine: 8},
+		{ID: "C", File: "bad/bad.go", Symbol: "Run", StartLine: 3, EndLine: 5,
+			Calls: []Call{{Symbol: "Finish", File: "bad/bad.go", Line: 4}}},
+		{ID: "D", File: "bad/bad.go", Symbol: "Finish", StartLine: 7, EndLine: 10},
+	}}}}
+	out, err := checkTyped("testdata/broken", in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out.Engine != "go-types" || !out.Degraded {
+		t.Errorf("engine %q degraded %v", out.Engine, out.Degraded)
+	}
+	if l := findLink(t, out, "A", "B"); l.Check != "proven" {
+		t.Errorf("A->B %+v", l)
+	}
+	if l := findLink(t, out, "C", "D"); l.Check != "name-match" {
+		t.Errorf("C->D %+v", l)
+	}
+	if !hasProblem(out, "example.com/broken/bad", "does not type-check") {
+		t.Errorf("problems %v", out.Problems)
+	}
+	first, _ := json.Marshal(out)
+	again, _ := checkTyped("testdata/broken", in)
+	if b, _ := json.Marshal(again); !bytes.Equal(first, b) {
+		t.Errorf("output differs between runs")
+	}
+}
+
+func TestTypedMissingDep(t *testing.T) {
+	typedEnv(t)
+	start := time.Now()
+	var stdout, stderr bytes.Buffer
+	code := run([]string{"check", "--root", "testdata/missingdep"}, strings.NewReader(`{"flows":[]}`), &stdout, &stderr)
+	if code != 3 {
+		t.Errorf("exit %d, want 3", code)
+	}
+	if stdout.Len() != 0 {
+		t.Errorf("stdout %q", stdout.String())
+	}
+	if stderr.Len() == 0 {
+		t.Errorf("no error text on stderr")
+	}
+	if d := time.Since(start); d > 30*time.Second {
+		t.Errorf("took %v", d)
+	}
+}
+
+func TestTypedBuildTags(t *testing.T) {
+	typedEnv(t)
+	in := CheckInput{Flows: []CheckFlow{{ID: "F1", Steps: []CheckStep{
+		{ID: "S12", File: "api/integration.go", Symbol: "IntegrationOnly", StartLine: 5, EndLine: 6},
+	}}}}
+	out, err := checkTyped("testdata/flow", in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if a := out.Steps["S12"].Anchor; a == nil || a.Name != "IntegrationOnly" || a.Source != "symbol" {
+		t.Errorf("S12 anchor %+v", a)
+	}
+	if !hasProblem(out, "step S12", "api/integration.go", "not part of the normal build") {
+		t.Errorf("problems %v", out.Problems)
+	}
+	if out.Degraded {
+		t.Errorf("a file left out of the normal build must not degrade the run")
 	}
 }
