@@ -337,8 +337,8 @@ describe('CodeView', () => {
     const tour = makeTour();
     const step = tour.flows[0]!.steps[0]!;
     step.calls = [{ symbol: 'chargeFee', file: 'src/fees.ts', line: 12 }];
-    // Only the inner call (columns 12..21) was resolved.
-    step.callSites = [{ line: 5, col: 12, endCol: 21, to: { file: 'src/fees.ts', line: 12 } }];
+    // Only the inner call was resolved: 0-based 12..21, so Go columns 13 and 22.
+    step.callSites = [{ line: 5, col: 13, endCol: 22, to: { file: 'src/fees.ts', line: 12 } }];
     const { onJump } = renderView({ tour });
 
     const call = await screen.findByRole('button', { name: 'chargeFee' });
@@ -346,6 +346,42 @@ describe('CodeView', () => {
     expect(call.title).toBe('Show the called function');
     fireEvent.click(call);
     expect(onJump).toHaveBeenCalledWith('src/fees.ts', 12, null);
+  });
+
+  it('places a button by Go byte columns, past non-ASCII text, and drops a wrong column', async () => {
+    // "é" is two bytes: ping starts at string index 27 but byte 28, so Go columns 29 and 33.
+    const text = '\tr.Handle("/é", func() { h.ping() })';
+    expect(text.indexOf('ping')).toBe(27);
+    serve(modified('src/repay.ts', [replaceHunk(5, 'old five', text)]), {
+      [`${HEAD}:src/repay.ts`]: lines(10, { 5: text }),
+      [`${BASE}:src/repay.ts`]: lines(10, { 5: 'old five' }),
+    });
+    const tour = makeTour();
+    tour.flows[0]!.steps[0]!.callSites = [
+      { line: 5, col: 29, endCol: 33, to: { file: 'src/p.ts', line: 1 } },
+      // Not on an identifier: dropped.
+      { line: 5, col: 2, endCol: 5, to: { file: 'src/q.ts', line: 1 } },
+    ];
+    renderView({ tour });
+    const call = await screen.findByRole('button', { name: 'ping' });
+    expect(screen.getAllByRole('button', { name: /^(ping|r\.)/ })).toHaveLength(1);
+    expect(call.textContent).toBe('ping');
+    expect(call.parentElement!.textContent).toBe(text);
+    expect(call.previousSibling!.textContent).toBe('\tr.Handle("/é", func() { h.');
+  });
+
+  it('matches the checker example: h.ping at Go columns 31 to 35', async () => {
+    const text = '\tr.Handle("/ping", func() { h.ping() })';
+    serve(modified('src/repay.ts', [replaceHunk(5, 'old five', text)]), {
+      [`${HEAD}:src/repay.ts`]: lines(10, { 5: text }),
+      [`${BASE}:src/repay.ts`]: lines(10, { 5: 'old five' }),
+    });
+    const tour = makeTour();
+    tour.flows[0]!.steps[0]!.callSites = [
+      { line: 5, col: 31, endCol: 35, to: { file: 'src/p.ts', line: 1 } },
+    ];
+    renderView({ tour });
+    expect((await screen.findByRole('button', { name: 'ping' })).textContent).toBe('ping');
   });
 
   it('names the target of a call site: its step number, or its function', async () => {
@@ -372,8 +408,8 @@ describe('CodeView', () => {
       ],
     });
     first.callSites = [
-      { line: 5, col: 2, endCol: 3, to: { file: 'src/other.ts', line: 1 }, toStep: 'F1.S2' },
-      { line: 5, col: 7, endCol: 8, to: { file: 'src/o.ts', line: 1 }, toStep: 'F2.S1' },
+      { line: 5, col: 3, endCol: 4, to: { file: 'src/other.ts', line: 1 }, toStep: 'F1.S2' },
+      { line: 5, col: 8, endCol: 9, to: { file: 'src/o.ts', line: 1 }, toStep: 'F2.S1' },
     ];
     const { onJump } = renderView({ tour });
 

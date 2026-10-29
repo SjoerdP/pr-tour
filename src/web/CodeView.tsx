@@ -638,7 +638,7 @@ type CodeRowProps = {
   /** False when the file has no old side (an added file). */
   showOld: boolean;
   calls: CallRef[];
-  /** The step's call sites, when the code check found them: they replace `calls`. */
+  /** The step's call sites, when the code check found them: they replace `calls`. `[]` means checked, no calls: name matching is not used. */
   sites: CallSite[] | undefined;
   siteTitle: (site: CallSite) => string;
   label: Owner | null;

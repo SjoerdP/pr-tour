@@ -59,7 +59,10 @@ export const MarkSchema = z.object({
   source: z.enum(['code', 'claude', 'both']),
 });
 
-/** A call in a step, with the column range of the callee name. */
+/**
+ * A call in a step, with the column range of the callee name. As Go writes them: 1-based
+ * UTF-8 byte columns on the head line, `endCol` the column just after the name.
+ */
 export const CallSiteSchema = z.object({
   line,
   col: z.number().int().min(0),
