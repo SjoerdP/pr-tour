@@ -164,7 +164,4 @@ func TestRunCheckSyntaxOnly(t *testing.T) {
 	if err := json.Unmarshal(stdout.Bytes(), &out); err != nil || out.Engine != "go-syntax" {
 		t.Errorf("%v %+v", err, out)
 	}
-	if code := run([]string{"check", "--root", "testdata/flow"}, bytes.NewReader(raw), &stdout, &stderr); code != 2 {
-		t.Errorf("without --syntax-only exit %d, want 2", code)
-	}
 }

@@ -26,3 +26,11 @@ func Routes(r *Router, h *Handler) {
 
 func (h *Handler) ping() {
 }
+
+func Boot() {
+	GeneratedHelper()
+}
+
+func Reload() {
+	GeneratedHelper()
+}

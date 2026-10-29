@@ -235,18 +235,43 @@ func stepMarks(st CheckStep, a *Anchor, sites []site) ([]Mark, []string) {
 }
 
 type stepState struct {
-	step   CheckStep
-	anchor *Anchor
-	sites  []site
+	step     CheckStep
+	file     *goFile // nil when the file is not Go or did not load
+	anchor   *Anchor
+	sites    []site
+	res      StepResult
+	problems []string
 }
 
-// checkSyntax checks a tour by syntax only: it anchors steps, marks lines and
-// checks Claude's links by name. It never finds links Claude did not give.
-func checkSyntax(root string, in CheckInput) (CheckOutput, error) {
-	out := CheckOutput{
-		Version: CheckerVersion, Engine: "go-syntax", EngineVersion: runtime.Version(),
+// setAnchor anchors the step on a function of its file and recomputes its
+// sites, marks and problems. anchorProblem is "" when there is nothing to say.
+func (ss *stepState) setAnchor(a *Anchor, anchorProblem string) {
+	ss.problems = nil
+	if anchorProblem != "" {
+		ss.problems = append(ss.problems, anchorProblem)
+	}
+	ss.anchor = a
+	ss.res = StepResult{Marks: []Mark{}, CallSites: []CallSite{}}
+	ss.sites = nil
+	if a == nil {
+		return
+	}
+	ss.sites = findSites(ss.file, ss.file.funcByName(a.Name))
+	var mp []string
+	ss.res.Anchor = a
+	ss.res.Marks, mp = stepMarks(ss.step, a, ss.sites)
+	ss.problems = append(ss.problems, mp...)
+}
+
+func newOutput(engine, version string) CheckOutput {
+	return CheckOutput{
+		Version: CheckerVersion, Engine: engine, EngineVersion: version,
 		Steps: map[string]StepResult{}, Links: map[string][]Link{}, Problems: []string{},
 	}
+}
+
+// syntaxStates anchors and marks every step of every flow by syntax.
+func syntaxStates(root string, in CheckInput) [][]*stepState {
 	files := map[string]*goFile{}
 	fileErr := map[string]error{}
 	load := func(rel string) (*goFile, error) {
@@ -264,44 +289,55 @@ func checkSyntax(root string, in CheckInput) (CheckOutput, error) {
 		files[rel] = g
 		return g, nil
 	}
-	for _, flow := range in.Flows {
+	flows := make([][]*stepState, len(in.Flows))
+	for fi, flow := range in.Flows {
 		states := make([]*stepState, len(flow.Steps))
 		for i, st := range flow.Steps {
-			ss := &stepState{step: st}
+			ss := &stepState{step: st, res: StepResult{Marks: []Mark{}, CallSites: []CallSite{}}}
 			states[i] = ss
-			res := StepResult{Marks: []Mark{}, CallSites: []CallSite{}}
-			if strings.HasSuffix(st.File, ".go") {
-				g, err := load(st.File)
-				if err != nil {
-					out.Problems = append(out.Problems, fmt.Sprintf("step %s: %v", st.ID, err))
-				} else {
-					a, problem := anchorStep(g, st)
-					if problem != "" {
-						out.Problems = append(out.Problems, problem)
-					}
-					if a != nil {
-						ss.anchor = a
-						ss.sites = findSites(g, g.funcByName(a.Name))
-						var mp []string
-						res.Anchor = a
-						res.Marks, mp = stepMarks(st, a, ss.sites)
-						out.Problems = append(out.Problems, mp...)
-					}
-				}
+			if !strings.HasSuffix(st.File, ".go") {
+				continue
 			}
-			out.Steps[st.ID] = res
+			g, err := load(st.File)
+			if err != nil {
+				ss.problems = []string{fmt.Sprintf("step %s: %v", st.ID, err)}
+				continue
+			}
+			ss.file = g
+			ss.setAnchor(anchorStep(g, st))
 		}
-		out.Links[flow.ID] = syntaxLinks(states)
+		flows[fi] = states
+	}
+	return flows
+}
+
+// checkSyntax checks a tour by syntax only: it anchors steps, marks lines and
+// checks Claude's links by name. It never finds links Claude did not give.
+func checkSyntax(root string, in CheckInput) (CheckOutput, error) {
+	out := newOutput("go-syntax", runtime.Version())
+	for i, states := range syntaxStates(root, in) {
+		for _, ss := range states {
+			out.Steps[ss.step.ID] = ss.res
+			out.Problems = append(out.Problems, ss.problems...)
+		}
+		links := claudeLinks(states, nameCheck)
+		sortLinks(links)
+		out.Links[in.Flows[i].ID] = links
 	}
 	return out, nil
 }
 
-// syntaxLinks checks the links Claude gave in one flow: each step's from, then
-// each calls entry that names another step of the flow.
-func syntaxLinks(states []*stepState) []Link {
+// linkCheck checks one call or registration link Claude gave. l comes filled
+// with from, to, Claude's line, how "call" and source "claude".
+type linkCheck func(l Link, caller, callee *stepState) Link
+
+// claudeLinks lists the links Claude gave in one flow, each step's from, then
+// each calls entry that names another step of the flow, once per pair.
+// Service and event hops stay unchecked; the rest go through check.
+func claudeLinks(states []*stepState, check linkCheck) []Link {
 	links := []Link{}
 	seen := map[[2]string]bool{}
-	check := func(caller, callee *stepState, claimed int, how string) {
+	add := func(caller, callee *stepState, claimed int, how string) {
 		key := [2]string{caller.step.ID, callee.step.ID}
 		if seen[key] {
 			return
@@ -314,37 +350,11 @@ func syntaxLinks(states []*stepState) []Link {
 			return
 		}
 		l.How = "call"
-		if caller.anchor == nil {
-			l.Check = "unchecked"
-			l.Note = "calling step has no anchor"
-			links = append(links, l)
-			return
-		}
-		name := lastName(callee.step.Symbol)
-		if callee.anchor != nil {
-			name = lastName(callee.anchor.Name)
-		}
-		s, ok := matchSite(caller.sites, name, claimed)
-		if !ok {
-			l.Check = "not-found"
-			links = append(links, l)
-			return
-		}
-		l.Check = "name-match"
-		if !s.IsCall {
-			l.How = "register"
-		}
-		if claimed != s.Line {
-			if claimed > 0 {
-				l.Note = fmt.Sprintf("tour says line %d", claimed)
-			}
-			l.Line = s.Line
-		}
-		links = append(links, l)
+		links = append(links, check(l, caller, callee))
 	}
 	for i, ss := range states {
 		if f := ss.step.From; f != nil && f.Step >= 1 && f.Step <= len(states) && f.Step-1 != i {
-			check(states[f.Step-1], ss, f.Line, f.How)
+			add(states[f.Step-1], ss, f.Line, f.How)
 		}
 	}
 	for _, ss := range states {
@@ -353,10 +363,50 @@ func syntaxLinks(states []*stepState) []Link {
 				if t == ss || t.step.File != c.File || !stepIsNamed(t, c.Symbol) {
 					continue
 				}
-				check(ss, t, c.Line, "call")
+				add(ss, t, c.Line, "call")
 			}
 		}
 	}
+	return links
+}
+
+// nameCheck checks a link by the callee's name in the caller's function.
+func nameCheck(l Link, caller, callee *stepState) Link {
+	claimed := l.Line
+	if caller.anchor == nil {
+		l.Check = "unchecked"
+		l.Note = "calling step has no anchor"
+		return l
+	}
+	name := lastName(callee.step.Symbol)
+	if callee.anchor != nil {
+		name = lastName(callee.anchor.Name)
+	}
+	s, ok := matchSite(caller.sites, name, claimed)
+	if !ok {
+		l.Check = "not-found"
+		return l
+	}
+	l.Check = "name-match"
+	if !s.IsCall {
+		l.How = "register"
+	}
+	setLine(&l, s.Line)
+	return l
+}
+
+// setLine stores the code's line; Claude's differing line goes in the note.
+func setLine(l *Link, line int) {
+	if l.Line != line {
+		if l.Line > 0 {
+			l.Note = fmt.Sprintf("tour says line %d", l.Line)
+		}
+		l.Line = line
+	}
+}
+
+// sortLinks orders links by from, line, to.
+func sortLinks(links []Link) {
 	sort.SliceStable(links, func(i, j int) bool {
 		a, b := links[i], links[j]
 		if a.From != b.From {
@@ -367,12 +417,13 @@ func syntaxLinks(states []*stepState) []Link {
 		}
 		return a.To < b.To
 	})
-	return links
 }
 
+// stepIsNamed tells whether a calls entry names the step: by its anchor, or
+// by the symbol Claude gave it.
 func stepIsNamed(s *stepState, sym string) bool {
-	if s.anchor != nil {
-		return s.anchor.Name == sym
+	if s.anchor != nil && s.anchor.Name == sym {
+		return true
 	}
-	return s.step.Symbol == sym
+	return sym != "" && s.step.Symbol == sym
 }

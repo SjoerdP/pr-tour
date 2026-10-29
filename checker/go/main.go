@@ -13,7 +13,10 @@ import (
 const usage = `usage:
   pr-tour-check-go version
   pr-tour-check-go functions --root <dir>   (FunctionsInput on stdin)
-  pr-tour-check-go check --root <dir> --syntax-only   (CheckInput on stdin)
+  pr-tour-check-go check --root <dir> [--syntax-only]   (CheckInput on stdin)
+
+check loads the project with go/types. Run it with GOPROXY=off,
+GOFLAGS=-mod=readonly and GOTOOLCHAIN=local so it never downloads anything.
 `
 
 func main() {
@@ -61,16 +64,16 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 			fmt.Fprint(stderr, usage)
 			return 2
 		}
-		if !*syntaxOnly {
-			fmt.Fprintln(stderr, "check without --syntax-only is not available yet")
-			return 2
-		}
 		var in CheckInput
 		if err := json.NewDecoder(stdin).Decode(&in); err != nil {
 			fmt.Fprintln(stderr, "read input:", err)
 			return 1
 		}
-		out, err := checkSyntax(*root, in)
+		check := checkTyped
+		if *syntaxOnly {
+			check = checkSyntax
+		}
+		out, err := check(*root, in)
 		if err != nil {
 			fmt.Fprintln(stderr, err)
 			return 1
