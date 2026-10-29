@@ -1,0 +1,41 @@
+{
+  "version": 1,
+  "functions": [
+    {
+      "file": "api/integration.go",
+      "name": "IntegrationOnly",
+      "startLine": 5,
+      "endLine": 6
+    },
+    {
+      "file": "service/service.go",
+      "name": "OrderService.Place",
+      "startLine": 19,
+      "endLine": 25
+    },
+    {
+      "file": "service/service.go",
+      "name": "OrderService.PlaceWrapped",
+      "startLine": 31,
+      "endLine": 33
+    },
+    {
+      "file": "service/service.go",
+      "name": "Max",
+      "startLine": 45,
+      "endLine": 50
+    },
+    {
+      "file": "service/service.go",
+      "name": "Run",
+      "startLine": 54,
+      "endLine": 55
+    },
+    {
+      "file": "service/service.go",
+      "name": "Job.Run",
+      "startLine": 57,
+      "endLine": 58
+    }
+  ]
+}
