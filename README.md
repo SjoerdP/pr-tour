@@ -69,6 +69,17 @@ Seen marks are saved, so you can stop and come back.
 
 The inbox also shows each PR's CI status and how many unsent drafts it has.
 
+### Code check
+
+pr-tour can check a tour against the code. For Go files it adds the real functions
+and calls to the tour, and it reports steps that do not match the code
+(`finding:` lines in `pr-tour import`).
+
+This needs Go 1.26 or later. It is optional. `npm run build` builds the checker when
+it finds a suitable `go`, and prints one line and goes on when it does not. Without
+it, tours still build. To check a tour again, run `pr-tour recheck owner/name#123`.
+`pr-tour functions owner/name#123` lists the functions in a PR.
+
 ### Reviewing
 
 You can do your GitHub review inside the tour.

@@ -17,7 +17,10 @@ as a pr-tour tour: the reviewer reads it next to the code, in the order the code
    builds a tour itself, so do not work from memory of an older version.
 3. **Read the diff.** `gh pr diff <number>` (merge base to head). Every added and
    deleted line in it needs exactly one home.
-4. **Write the tour body** as one JSON object that matches the schema.
+4. **List the functions.** Run `pr-tour functions <owner/name>#<number>`. It lists the
+   functions in the PR. Name each step that is one of those functions in `symbol`
+   exactly as listed.
+5. **Write the tour body** as one JSON object that matches the schema.
    - For every `why`, use your memory of why you made that change: the reason, the
      trade-off, what the reviewer should check. That is what makes an author tour
      better than an inferred one.
@@ -25,14 +28,18 @@ as a pr-tour tour: the reviewer reads it next to the code, in the order the code
      or why the reviewer needs it when it has no changes.
    - Never invent intent you do not have. If you do not remember why something
      changed, say only what it does.
-5. **Save and import.** Write the JSON to a temp file
+6. **Save and import.** Write the JSON to a temp file
    (`mktemp "${TMPDIR:-/tmp}/pr-tour.XXXXXX"`, which works on Linux and macOS), then run
    `pr-tour import --repo <owner/name> --pr <number> --file <path>`.
    - A zod error means the JSON does not match the schema: fix it and import again.
    - Each `problem: ...` line is a home that is wrong (it overlaps another home, covers
      no changed line, or points at a file outside the PR), or a step whose `"from"` line
      is not inside the step it names. Each `unexplained: ...` line is a run of changed
-     lines that no home covers. Fix those and import again.
+     lines that no home covers. Each `finding: ...` line is something the code check
+     found that you should fix. Handle `finding:` lines like `problem:` lines: fix them
+     with what you know and import again.
+   - A `note: ...` line is information only (for example "no Go files in this PR").
+     Do not try to fix it.
    - Retry at most 2 times. If problems remain, keep the last import and tell the
      user which problems are left.
    - Exit code 2 with `This PR has N unsent drafts. Run again with --replace ...` means
@@ -44,7 +51,7 @@ as a pr-tour tour: the reviewer reads it next to the code, in the order the code
    - That yes holds for the rest of this /tour run. The drafts are still there, so every
      later import in this run (a retry after a zod error or problems) also needs
      `--replace`. Do not ask again.
-6. **Open it.** Run `pr-tour open <owner/name>#<number>`. It starts pr-tour in the
+7. **Open it.** Run `pr-tour open <owner/name>#<number>`. It starts pr-tour in the
    background if it is not running yet, opens the browser and exits; it does not keep
    running in your shell. Give the user the URL it prints.
 

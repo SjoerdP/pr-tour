@@ -65,7 +65,7 @@ export default tseslint.config(
   },
   {
     // Plain JS at the repo root (this file) is not covered by a tsconfig.
-    files: ['**/*.js'],
+    files: ['**/*.{js,mjs}'],
     ...tseslint.configs.disableTypeChecked,
   },
   {
