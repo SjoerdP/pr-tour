@@ -76,3 +76,18 @@ The catch: a plugin's `bin/` is on the PATH only inside Claude Code's shell, and
 3. Native: real editor tabs, decorations for the step, VS Code's comments API, "Called from" as a CodeLens. This means rebuilding folds, owner labels, clickable calls and the composer on a more limited API.
 
 Start with 1 to see if reviewing in the editor feels better, then move to 2.
+
+## Follow-ups from code-checked tours (2026-10-30)
+
+From the final review and the per-task reviews. Not blocking the merge.
+
+- Go modules in a sub-folder or several modules (`go.work`): the typed check now only loads a `go.mod` at the repo root; other repos fall back to syntax mode.
+- Vendored projects: `GOFLAGS=-mod=readonly` overrides `-mod=vendor`, so typed loading fails; use `-mod=vendor` when `vendor/modules.txt` exists (still offline).
+- Bump `CHECKER_VERSION` to 2: `callSites` became optional and `functions` gained `problems`.
+- A step whose `symbol` names a Go type still gives a "symbol not found" finding; treat type symbols as non-function steps.
+- Syntax mode counts `handlers[i](x)` as a call named `handlers`; keep the unwrap for generic calls only.
+- The 30 s limit kills the checker but not its `go list` children; kill the process group.
+- After a pass C `order` change, `check.problems` still use the old step numbers.
+- "register" means a code registration and, in pass C, also dependency injection; split the wording.
+- The "next step →" marker can show outside the step's focus lines; limit it like the mark badges. Consider placing it right after the code instead of at the far right.
+- Speed: Claude writing the tour takes about 92% of a build (about 11m40s of 12m45s on PR 1371). Make it faster without losing quality.
