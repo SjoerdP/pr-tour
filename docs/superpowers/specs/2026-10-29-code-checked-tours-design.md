@@ -43,7 +43,7 @@ that plan: data quality and the existing step view. The flow map comes later.
 - Languages other than Go.
 - A before/after (base vs head) view of the flow.
 - AI review findings.
-- A second Claude call to repair the tour after the code check.
+- More than one round of Claude reviewing the check's findings.
 
 ## Anti-goals (a failure even if it works)
 
@@ -52,7 +52,8 @@ that plan: data quality and the existing step view. The flow map comes later.
 - Showing a Claude claim as proven.
 - Any network request with the user's code or module names (no module downloads).
 - Silent partial results: if part of the check did not run, the tour says so.
-- A build that gets noticeably slower: the check must stay under 30 seconds in total.
+- A build that gets much slower: each code check stays under 30 seconds, and the pass C
+  round is limited in time and only runs when there are findings.
 
 ## Constraints
 
@@ -90,8 +91,8 @@ goes into Claude's prompt as a file, next to the diff.
 - For each side effect, give the head `line` of the call that does it (new optional field).
 - Everything else is unchanged: which functions matter, order, why, risk, `from`, `calls`.
 
-Schema errors still send the answer back to Claude, as today. Findings of the code check do
-not (no second Claude call).
+Schema errors still send the answer back to Claude, as today. Findings of the code check
+go to Claude once, in pass C.
 
 ### Pass B: check against the code (after Claude, hard limit 30 seconds)
 
@@ -113,8 +114,38 @@ not (no second Claude call).
    another step or to a known function, store line, column and target.
 
 Rules: the code wins on position (where a function is, which line calls what). Claude wins
-on meaning (labels, why, risk). A disagreement is stored as a conflict and shown. It is
-never fixed silently.
+on meaning (labels, why, risk). A disagreement is stored and shown. It is never fixed
+silently.
+
+### Pass C: Claude reviews the findings (only when there are findings)
+
+A disagreement often means the story is a bit off, and only Claude can fix the story. So
+when pass B has findings, Claude gets one focused round to review them.
+
+- **Findings** are: links Claude gave that the code did not find (`not-found`), links found
+  only by code (`source: 'code'`), steps whose `symbol` was not found, links through a thin
+  wrapper (`via`), and side-effect lines that hold no call.
+- **Input:** only the findings, the steps involved (title, why, symbol, anchor) and the
+  code of the functions involved. Not the whole diff again.
+- **What Claude may change:** a step's `symbol` (it meant another function), the order of
+  steps within a flow, a link's `how` with a short `reason` (for example "registered through
+  dependency injection", "HTTP call to the ledger service"), and why notes. It answers with
+  a list of changes in a fixed JSON shape, each with a one-line reason.
+- **What Claude may not change:** anything the code proved (where a function is, what a
+  line calls), homes, or anything not in a finding. Changes that touch these are dropped.
+- **After pass C, pass B runs once more** on the changed tour. Its result is final; there
+  is no second round.
+- **Limits:** one round, with a time limit (builder's call, around 3 minutes). If Claude
+  fails, times out or answers with an invalid shape, the tour from pass B is kept and
+  `analysis.problems` says so.
+- **Shown to the reviewer:** About this PR lists what pass C changed and why, e.g. "Step 20
+  now points at createSession, not CreateMcpSession: the DB writes are there." A link
+  Claude explained but code cannot prove stays unchecked, with Claude's reason in its
+  tooltip.
+- **Author tours** (`/tour`): `pr-tour import` prints the findings as `finding: ...` lines,
+  the same way it prints problems today. The skill fixes them with what it knows and
+  imports again, within its current limit of 2 retries. The authoring session is the
+  reviewer; pr-tour runs no extra Claude call for imports. *(my call)*
 
 ### When the check cannot run fully
 
@@ -191,6 +222,7 @@ flow.links?: Array<{
   source: 'claude' | 'code' | 'both'   // who named this link
   check: 'proven' | 'name-match' | 'not-found' | 'conflict' | 'unchecked'
   note?: string                        // e.g. what the code says instead, for a conflict
+  reason?: string                      // Claude's explanation from pass C, for a link code cannot prove
 }>
 tour.analysis?: {
   engine: 'go-types' | 'go-syntax' | 'none'
@@ -199,6 +231,11 @@ tour.analysis?: {
   degraded: boolean
   coverage: { functionSteps: number; anchored: number; links: number; proven: number; foundByCode: number }
   problems: string[]
+  review?: {                           // pass C
+    ran: boolean
+    ms: number
+    changes: Array<{ step?: string; what: string; reason: string }>
+  }
 }
 ```
 
@@ -297,6 +334,9 @@ command later.)*
 - **Node tests** cover running the checker, the fallbacks (failure, time limit, missing
   binary) and the merge into the tour, with a fake checker that returns fixed JSON. They
   must pass without `go` installed.
+- **Pass C tests** use a fake Claude runner (as the build tests do today): allowed changes
+  are applied, forbidden ones dropped, a failure keeps the pass B tour, and pass B runs once
+  more afterwards.
 - **The real tour** (PR 1371) is the acceptance check, run by hand, not in CI.
 - **Web tests** for every step-view change, with fixture tours, the same way as
   `test/web/came-from.test.tsx`.
@@ -308,7 +348,9 @@ On a fresh build of PR 1371:
 - at least 95% of function steps are anchored to their exact function,
 - at least 90% of links between steps are proven,
 - three builds in a row give identical analysis results,
-- the check takes under 30 seconds,
+- each code check takes under 30 seconds,
+- pass C runs, its changes are listed in About this PR, and none of them overrules a
+  proven fact,
 
 and when the typed run cannot load the project, the tour still builds, shows "matched by
 name", and says so in About this PR.
