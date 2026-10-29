@@ -43,8 +43,13 @@ describe('runCheck', () => {
 
   it('kills a hanging typed run at the timeout and uses syntax-only', async () => {
     process.env.PR_TOUR_CHECKER = fake;
-    const r = await runCheck(withMode('hang'), '/tmp', input, { timeoutMs: 300 });
+    // Long enough that a normal fake start is never cut, even when the suite is busy; the hang
+    // mode sleeps for 60 s, so only the timeout can end the typed run.
+    const r = await runCheck(withMode('hang'), '/tmp', input, { timeoutMs: 2500 });
     expect(r.ok && r.output.engine).toBe('go-syntax');
+    expect(r.ok && r.output.degraded).toBe(true);
+    expect(r.ms).toBeGreaterThanOrEqual(2400);
+    expect(r.ms).toBeLessThan(30_000);
   });
 
   it('treats invalid JSON as a failure', async () => {
