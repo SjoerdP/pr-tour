@@ -316,11 +316,20 @@ are stored with `check: 'unchecked'` in this version.
 
 ## The /tour skill
 
-The skill's rules come from `pr-tour rules`, so they pick up the new `symbol` and side
-effect `line` rules on their own. The import runs pass B (the worktree is already checked
-out there), so author tours get the same check. The skill gets no Pass A table: the author's
-session knows its own functions. *(Builder's call whether to add a `pr-tour functions`
-command later.)*
+Both ways of making a tour get the same three passes. Only who plays Claude differs: for
+"Build tour" it is a `claude` run started by pr-tour; for `/tour` it is the author's own
+session, which wrote the code.
+
+- **Pass A:** a new command, `pr-tour functions <owner/name>#<pr>`, checks out the PR's
+  head (as the import does) and prints the Pass A table. The skill runs it before writing
+  the tour, so both ways start from the same exact list of functions.
+- **Rules:** the skill's rules come from `pr-tour rules`, so they pick up the new `symbol`
+  and side-effect `line` rules on their own.
+- **Pass B:** the import runs it (the worktree is already checked out there).
+- **Pass C:** see "Pass C" above: the import prints the findings and the skill fixes them.
+
+The skill text (`skill/tour/SKILL.md`) gets a step for `pr-tour functions` and a line on
+`finding:` output, next to the existing one on `problem:` lines.
 
 ## Testing
 
