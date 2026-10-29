@@ -1,6 +1,42 @@
-.superpowers/
+# Dependencies
 node_modules/
+
+# Build output
 dist/
-coverage/
 *.tsbuildinfo
+
+# Tests and tooling caches
+coverage/
 .eslintcache
+.vite/
+.vitest/
+
+# Logs
+*.log
+npm-debug.log*
+
+# Local env and secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Local data (sqlite stores, scratch diffs)
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+tmp/
+
+# Agent and editor state
+.superpowers/
+.claude/settings.local.json
+.idea/
+.vscode/*
+!.vscode/extensions.json
+*.swp
+
+# OS files
+.DS_Store
+Thumbs.db
