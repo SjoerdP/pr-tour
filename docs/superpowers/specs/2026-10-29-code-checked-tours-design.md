@@ -5,7 +5,7 @@ Date: 2026-10-29. Status: draft for review.
 ## Why
 
 A tour is only as good as its links: which function a step is, which step calls it, and on
-which line. Today Claude writes all of that, and a spike on a real tour (PR 1371 of a Go
+which line. Today Claude writes all of that, and a spike on a real tour (a real PR of a Go
 backend, 5 flows, 38 steps) showed where that goes wrong:
 
 - Claude's line ranges are mostly not functions. Only 2 of 38 steps match a function. Many
@@ -139,7 +139,7 @@ when pass B has findings, Claude gets one focused round to review them.
   fails, times out or answers with an invalid shape, the tour from pass B is kept and
   `analysis.problems` says so.
 - **Shown to the reviewer:** About this PR lists what pass C changed and why, e.g. "Step 20
-  now points at createSession, not CreateMcpSession: the DB writes are there." A link
+  now points at createSession, not CreateUserSession: the DB writes are there." A link
   Claude explained but code cannot prove stays unchecked, with Claude's reason in its
   tooltip.
 - **Author tours** (`/tour`): `pr-tour import` prints the findings as `finding: ...` lines,
@@ -198,7 +198,7 @@ sideEffect.line?: number            // the line of the call that does it
 
 // Filled by pass B (stored tour only)
 step.anchor?: {
-  name: string                      // e.g. 'OAuthService.Authorize'
+  name: string                      // e.g. 'OrderService.Place'
   startLine: number
   endLine: number
   source: 'symbol' | 'incoming-link' | 'range'   // how it was found
@@ -346,13 +346,13 @@ The skill text (`skill/tour/SKILL.md`) gets a step for `pr-tour functions` and a
 - **Pass C tests** use a fake Claude runner (as the build tests do today): allowed changes
   are applied, forbidden ones dropped, a failure keeps the pass B tour, and pass B runs once
   more afterwards.
-- **The real tour** (PR 1371) is the acceptance check, run by hand, not in CI.
+- **The real tour** (a real PR) is the acceptance check, run by hand, not in CI.
 - **Web tests** for every step-view change, with fixture tours, the same way as
   `test/web/came-from.test.tsx`.
 
 ## Done when
 
-On a fresh build of PR 1371:
+On a fresh build of the acceptance PR:
 
 - at least 95% of function steps are anchored to their exact function,
 - at least 90% of links between steps are proven,

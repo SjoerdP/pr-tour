@@ -351,7 +351,7 @@ Copy (exact):
 
 ### Task 12: Acceptance on the real tour (manual)
 
-- [ ] **Step 1:** Restart pr-tour on the new build; rebuild the tour of PR 1371 from the app.
-- [ ] **Step 2:** Run `pr-tour recheck <owner/name>#1371` three times; the stored `analysis` (without `ms`) is identical each time.
+- [ ] **Step 1:** Restart pr-tour on the new build; rebuild the tour of the acceptance PR from the app.
+- [ ] **Step 2:** Run `pr-tour recheck <owner/name>#<pr>` three times; the stored `analysis` (without `ms`) is identical each time.
 - [ ] **Step 3:** Check the spec's "Done when": ≥95% function steps anchored, ≥90% of call/register links proven, each check run under 30 s, pass C changes listed in About and none overrules a proven fact. Record the numbers in the PR description.
 - [ ] **Step 4:** Move the checker binary away and run `recheck`: the tour stays usable, About says the check did not run.

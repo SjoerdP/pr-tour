@@ -90,4 +90,4 @@ From the final review and the per-task reviews. Not blocking the merge.
 - After a pass C `order` change, `check.problems` still use the old step numbers.
 - "register" means a code registration and, in pass C, also dependency injection; split the wording.
 - The "next step →" marker can show outside the step's focus lines; limit it like the mark badges. Consider placing it right after the code instead of at the far right.
-- Speed: Claude writing the tour takes about 92% of a build (about 11m40s of 12m45s on PR 1371). Make it faster without losing quality.
+- Speed: Claude writing the tour takes about 92% of a build (about 11m40s of 12m45s on a real PR). Make it faster without losing quality.

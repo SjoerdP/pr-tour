@@ -44,7 +44,7 @@ export const StepFromSchema = z.object({
 
 /** The code range a step is pinned to, and how it was found. */
 export const AnchorSchema = z.object({
-  /** e.g. 'OAuthService.Authorize' */
+  /** e.g. 'OrderService.Place' */
   name: z.string(),
   startLine: line,
   endLine: line,

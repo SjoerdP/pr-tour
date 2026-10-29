@@ -70,8 +70,8 @@ Sources are at the end. Some claims rest on third-party pages; those are marked.
   hashes are half of it.
 
 ### Context and history
-- **Linked-ticket check** ★ Does the PR do what the ticket asks? CodeRabbit, Qodo. Our PR
-  titles carry Linear ids (e.g. BAC-253).
+- **Linked-ticket check** ★ Does the PR do what the ticket asks? CodeRabbit, Qodo. PR titles
+  often carry ticket ids (e.g. ABC-123).
 - **Related issues and PRs:** CodeRabbit.
 - **Blast radius** ★ Callers outside the diff that a change affects. Greptile, Qodo,
   CodeRabbit (Advanced tier).
@@ -102,7 +102,7 @@ Sources are at the end. Some claims rest on third-party pages; those are marked.
 2. **Incremental re-review.** Seen marks per step and per revision; after a push show only
    changed steps and mark stale ones.
 3. **Verified AI findings on tour steps**, as drafts: find, verify, rank.
-4. **Linked-ticket check** against the Linear ticket.
+4. **Linked-ticket check** against the linked ticket.
 5. **Blast-radius panel** per step: callers outside the diff.
 6. **Repo rules file plus "remember this"**, so repeated Claude mistakes get flagged.
 7. **Moved-code detection** inside steps.

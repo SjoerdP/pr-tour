@@ -13,7 +13,7 @@ Input for the flow map design. Not a plan yet.
   Code analysis and Claude are compared, and the map shows where they agree.
 - The results must also improve the existing step view, not only the map.
 
-## Spike: Go, PR 1371 (5 flows, 38 steps)
+## Spike: Go, a real PR (5 flows, 38 steps)
 
 Tools: tree-sitter (web-tree-sitter with tree-sitter-go 0.25 wasm) for function bounds and
 call sites; gopls over LSP (definition and implementation, so interface calls resolve to the
@@ -30,9 +30,9 @@ real method). gopls ran with `GOPROXY=off`, so no module names leave the machine
   block that starts at a random small function. Steps need a function anchor.
 - A route registration (`router.GET("/x", ctrl.Handler)`) is a link of its own kind: a
   reference, not a call.
-- Thin wrappers (`CreateMcpSession` → `createSession`) are hops the tour skips: the `via` case.
+- Thin wrappers (`CreateUserSession` → `createSession`) are hops the tour skips: the `via` case.
 - Claude misses links the code shows plainly, for example the `Login`, `Token` and
-  `DecideConsent` route registrations and step 8 checking the pinned client (step 7).
+  `Approve` route registrations and a step checking its input in another step.
 - Pitfalls found: the old bundled Go grammar fails on generics (0.25 is fine); never open
   files outside the project in gopls (it broke package loading and made results depend on
   timing). With that fixed, three runs gave identical results.
@@ -65,7 +65,7 @@ real method). gopls ran with `GOPROXY=off`, so no module names leave the machine
 - **Diagram:** at most 7 lanes; one row per arrow; internal returns hidden; labels cut with
   full text on hover; phases fold; sticky lane header; every arrow focusable with a spoken
   label. Disagrees with the sequence diagram as the only view: it suits multi-actor flows
-  (OAuth), but a 13-step flow in one service becomes a column of self-calls, so pick per
+  (a login flow), but a 13-step flow in one service becomes a column of self-calls, so pick per
   flow: sequence diagram, or an indented call tree. Ship "whole phase" reading early.
 - **Beyond competitors:** every arrow has provenance and opens the exact code; the map is a
   review surface (comments, seen marks); rebuilt per head SHA so it never goes stale
