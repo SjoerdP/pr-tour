@@ -20,6 +20,13 @@ describe('realRunner', () => {
     });
   });
 
+  it('passes extra env vars to the child', async () => {
+    const result = await realRunner(process.execPath, ['-p', 'process.env.PR_TOUR_TEST_VAR'], {
+      env: { PR_TOUR_TEST_VAR: 'hello' },
+    });
+    expect(result.stdout.trim()).toBe('hello');
+  });
+
   it('reports a missing command as a non-zero code and "not found" first', async () => {
     const result = await realRunner('pr-tour-no-such-command', []);
     expect(result.code).not.toBe(0);

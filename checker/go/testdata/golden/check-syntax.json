@@ -1,0 +1,140 @@
+{
+  "version": 1,
+  "engine": "go-syntax",
+  "engineVersion": "",
+  "degraded": false,
+  "steps": {
+    "S1": {
+      "anchor": {
+        "name": "Routes",
+        "startLine": 22,
+        "endLine": 25,
+        "source": "symbol"
+      },
+      "marks": []
+    },
+    "S2": {
+      "anchor": {
+        "name": "Handler.Create",
+        "startLine": 17,
+        "endLine": 20,
+        "source": "symbol"
+      },
+      "marks": []
+    },
+    "S3": {
+      "anchor": {
+        "name": "OrderService.Place",
+        "startLine": 19,
+        "endLine": 25,
+        "source": "symbol"
+      },
+      "marks": [
+        {
+          "line": 20,
+          "kind": "db-write",
+          "label": "insert order",
+          "source": "both"
+        },
+        {
+          "line": 21,
+          "kind": "db-write",
+          "label": "returns early",
+          "source": "claude"
+        },
+        {
+          "line": 23,
+          "kind": "async",
+          "source": "code"
+        }
+      ]
+    },
+    "S4": {
+      "anchor": {
+        "name": "OrderService.PlaceWrapped",
+        "startLine": 31,
+        "endLine": 33,
+        "source": "symbol"
+      },
+      "marks": []
+    },
+    "S5": {
+      "anchor": {
+        "name": "Max",
+        "startLine": 45,
+        "endLine": 50,
+        "source": "range"
+      },
+      "marks": []
+    },
+    "S6": {
+      "anchor": {
+        "name": "Job.Run",
+        "startLine": 57,
+        "endLine": 58,
+        "source": "symbol"
+      },
+      "marks": []
+    },
+    "S7": {
+      "marks": []
+    },
+    "S8": {
+      "anchor": {
+        "name": "Spawn",
+        "startLine": 60,
+        "endLine": 62,
+        "source": "symbol"
+      },
+      "marks": [
+        {
+          "line": 61,
+          "kind": "async",
+          "source": "code"
+        }
+      ]
+    }
+  },
+  "links": {
+    "F1": [
+      {
+        "from": "S1",
+        "to": "S2",
+        "line": 23,
+        "how": "register",
+        "source": "claude",
+        "check": "name-match"
+      },
+      {
+        "from": "S2",
+        "to": "S3",
+        "line": 19,
+        "how": "call",
+        "source": "claude",
+        "check": "name-match",
+        "note": "tour says line 18"
+      },
+      {
+        "from": "S3",
+        "to": "S8",
+        "line": 21,
+        "how": "service",
+        "source": "claude",
+        "check": "unchecked"
+      },
+      {
+        "from": "S4",
+        "to": "S3",
+        "line": 32,
+        "how": "call",
+        "source": "claude",
+        "check": "not-found"
+      }
+    ]
+  },
+  "problems": [
+    "step S3: side effect line 40 (event) is outside OrderService.Place (lines 19-25); dropped",
+    "step S5: symbol Nope not found in service/service.go; anchored by range to Max",
+    "step S7: file missing/gone.go not found"
+  ]
+}

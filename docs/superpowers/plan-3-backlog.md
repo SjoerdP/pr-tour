@@ -38,3 +38,56 @@ Small items found while building plan 2. None blocked the merge.
 - Browser check: the review panel covers the right part of the code.
 - Browser check: the first click on a line number opens the composer at once, which moves the rows below, so a shift-click must aim at the moved row.
 - Comment bodies show raw markdown (plain text by design, Ruling 9).
+
+## Ideas: packaging and editors (brainstorm, 2026-10-29)
+
+Not planned yet. What we found when we looked at each option.
+
+| Option | Keeps all features? | Effort | Notes |
+|---|---|---|---|
+| Claude Code plugin that installs and starts pr-tour | Yes | About a day | Easiest to share. Teammates run `/plugin marketplace add SjoerdP/pr-tour` and `/plugin install pr-tour@pr-tour`. |
+| VS Code / Cursor extension | Yes (level 1 or 2) | 1-2 days for a webview prototype, 1-2 weeks embedded | The only way to have the tour inside the editor. |
+| Zed | No | - | Zed extensions are Rust compiled to WebAssembly, with no custom UI (no panels or webviews) yet. Do an "Open in Zed" button per step instead, about half a day. |
+| Static page with memory | No | - | No live GitHub, no sending reviews, a snapshot that goes stale. Publishing it would put Tranched code on an outside service. |
+
+They combine well: a plugin for install and sharing, plus "Open in editor" buttons.
+
+### Plugin: what has to change
+
+- Swap `better-sqlite3` for Node's built-in `node:sqlite`. Plugins install npm packages with `--ignore-scripts`, so the native module cannot set itself up. Test that existing databases still open.
+- Plugins run no build step. Bundle the server into one JS file (no `node_modules`) and ship the built web UI in the plugin folder, made by an `npm run build:plugin` script.
+- Contents: `skills/tour/` (no more copying the skill by hand), `bin/pr-tour`, the built UI, and a `/review <pr>` command that starts pr-tour and opens the PR.
+- Keep data in `~/.pr-tour`, not in the plugin folder, so tours, seen marks and drafts survive updates and reinstalls.
+
+### Plugin: still launching pr-tour without Claude
+
+The app does not need Claude: the inbox, reading tours, drafts and sending reviews all work on their own. Only building a tour calls Claude (the "Build tour" button runs the `claude` CLI, or `/tour`).
+
+The catch: a plugin's `bin/` is on the PATH only inside Claude Code's shell, and the plugin's install folder changes on every update, so a fixed link to it breaks. Options:
+
+- Keep `~/.local/bin/pr-tour` pointing at the repo's `dist/cli.js` (works for whoever develops pr-tour).
+- Add `pr-tour install-cli`: it writes a small launcher to `~/.local/bin` that always starts the newest installed plugin version (for teammates who only install the plugin).
+- Publish to npm (`npm i -g pr-tour`): the most standard, but it is a public release.
+
+### VS Code / Cursor levels
+
+1. Webview: the extension starts the server and shows the current UI in a panel, plus "Open in editor" from a step.
+2. Embedded: the server runs in the extension, and the one `fetch` wrapper in `src/web/api.ts` sends messages instead of HTTP. The outline becomes a sidebar tree. Needs files from the PR head (worktree or `git show`), since the workspace may be on another branch.
+3. Native: real editor tabs, decorations for the step, VS Code's comments API, "Called from" as a CodeLens. This means rebuilding folds, owner labels, clickable calls and the composer on a more limited API.
+
+Start with 1 to see if reviewing in the editor feels better, then move to 2.
+
+## Follow-ups from code-checked tours (2026-10-30)
+
+From the final review and the per-task reviews. Not blocking the merge.
+
+- Go modules in a sub-folder or several modules (`go.work`): the typed check now only loads a `go.mod` at the repo root; other repos fall back to syntax mode.
+- Vendored projects: `GOFLAGS=-mod=readonly` overrides `-mod=vendor`, so typed loading fails; use `-mod=vendor` when `vendor/modules.txt` exists (still offline).
+- Bump `CHECKER_VERSION` to 2: `callSites` became optional and `functions` gained `problems`.
+- A step whose `symbol` names a Go type still gives a "symbol not found" finding; treat type symbols as non-function steps.
+- Syntax mode counts `handlers[i](x)` as a call named `handlers`; keep the unwrap for generic calls only.
+- The 30 s limit kills the checker but not its `go list` children; kill the process group.
+- After a pass C `order` change, `check.problems` still use the old step numbers.
+- "register" means a code registration and, in pass C, also dependency injection; split the wording.
+- The "next step →" marker can show outside the step's focus lines; limit it like the mark badges. Consider placing it right after the code instead of at the far right.
+- Speed: Claude writing the tour takes about 92% of a build (about 11m40s of 12m45s on a real PR). Make it faster without losing quality.

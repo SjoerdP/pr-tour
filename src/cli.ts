@@ -7,6 +7,9 @@ import { fileURLToPath } from 'node:url';
 import { parseArgs as parseNodeArgs } from 'node:util';
 import { createAdaptorServer, type ServerType } from '@hono/node-server';
 import type { Hono } from 'hono';
+import { findings, findingText, repeatsFinding } from './server/analysis/findings.js';
+import { coverage } from './server/analysis/merge.js';
+import { runCheck, runFunctions } from './server/analysis/runner.js';
 import { createApp } from './server/app.js';
 import { ReplaceNeedsConfirmError, TourBuilder, TourBuildError } from './server/build.js';
 import { CommandError, realRunner } from './server/exec.js';
@@ -26,6 +29,8 @@ export const USAGE = `Usage:
                                                             store a tour written by the PR's author;
                                                             --replace confirms replacing a tour while
                                                             the PR has unsent drafts (else exit 2)
+  pr-tour functions <owner/name>#<pr>                       print the changed Go functions of a PR as JSON
+  pr-tour recheck <owner/name>#<pr>                         run the code check again on the stored tour
   pr-tour schema                                            print the JSON Schema of a tour file
   pr-tour rules                                             print the rules for writing a tour file
 
@@ -46,6 +51,8 @@ export type Command =
   | { cmd: 'serve' }
   | { cmd: 'import'; repo: string; pr: number; file: string; replace: boolean }
   | { cmd: 'open'; repo: string; pr: number }
+  | { cmd: 'functions'; repo: string; pr: number }
+  | { cmd: 'recheck'; repo: string; pr: number }
   | { cmd: 'schema' }
   | { cmd: 'rules' };
 
@@ -108,12 +115,14 @@ export function parseArgs(argv: string[]): Command {
     if (values.file === undefined) throw new UsageError('Missing --file <path>.');
     return { cmd: 'import', repo, pr, file: values.file, replace: values.replace === true };
   }
-  if (cmd === 'open') {
-    if (hasOptions || rest.length !== 1) throw new UsageError('open takes one <owner/name>#<pr>.');
+  if (cmd === 'open' || cmd === 'functions' || cmd === 'recheck') {
+    if (hasOptions || rest.length !== 1) {
+      throw new UsageError(`${cmd} takes one <owner/name>#<pr>.`);
+    }
     const ref = rest[0] ?? '';
     const hash = ref.lastIndexOf('#');
     if (hash < 0) throw new UsageError(`Not a PR: ${ref} (expected owner/name#<pr>).`);
-    return { cmd: 'open', repo: parseRepo(ref.slice(0, hash)), pr: parsePr(ref.slice(hash + 1)) };
+    return { cmd, repo: parseRepo(ref.slice(0, hash)), pr: parsePr(ref.slice(hash + 1)) };
   }
   if (cmd === 'schema' || cmd === 'rules') {
     if (hasOptions || rest.length > 0) throw new UsageError(`${cmd} takes no arguments.`);
@@ -265,7 +274,14 @@ function wire(home: string) {
   const repos = new RepoManager(home, realRunner);
   const github = new GitHub(realRunner);
   const store = new Store(join(home, 'pr-tour.db'));
-  const builder = new TourBuilder({ run: realRunner, repos, github, store, home });
+  const builder = new TourBuilder({
+    run: realRunner,
+    repos,
+    github,
+    store,
+    home,
+    checker: { functions: runFunctions, check: runCheck },
+  });
   const review = new ReviewGitHub(realRunner);
   return { repos, github, store, builder, review, jobs: new Jobs() };
 }
@@ -331,13 +347,21 @@ async function openTour(config: Config, repo: string, pr: number): Promise<void>
 }
 
 /**
- * What `pr-tour import` tells the author to fix: each check problem, and each run of
- * changed lines that no home covers (those land in the Unexplained group, not in problems).
+ * What `pr-tour import` tells the author to fix: each check problem, each code-check finding,
+ * and each run of changed lines that no home covers (those land in the Unexplained group, not
+ * in problems). The code check's status lines come as notes.
  */
 export function importReport(tour: Tour): string[] {
   const unexplained = tour.other.filter((g) => g.kind === 'unexplained').flatMap((g) => g.items);
+  const list = findings(tour);
   return [
     ...tour.check.problems.map((problem) => `problem: ${problem}`),
+    ...list.map((f) => `finding: ${findingText(tour, f)}`),
+    // The code check's own status lines (no Go files, no checker, load problems), except the
+    // ones a finding above already says.
+    ...(tour.analysis?.problems ?? [])
+      .filter((problem) => !repeatsFinding(problem, list))
+      .map((problem) => `note: ${problem}`),
     ...unexplained.map((item) => `unexplained: ${item.title}`),
   ];
 }
@@ -368,6 +392,37 @@ async function importTour(
   }
 }
 
+/** `pr-tour functions`: print the table of changed Go functions. */
+async function printFunctions(config: Config, repo: string, pr: number): Promise<void> {
+  const { store, builder } = wire(config.home);
+  try {
+    const table = await builder.functionsOf(repo, pr);
+    if (table === null) {
+      console.error(
+        'No function table: no Go files in this PR, or the Go checker is not available.',
+      );
+    }
+    console.log(JSON.stringify(table ?? { version: 1, functions: [] }, null, 2));
+  } finally {
+    store.close();
+  }
+}
+
+/** `pr-tour recheck`: run the code check again on the stored tour. */
+async function recheckTour(config: Config, repo: string, pr: number): Promise<void> {
+  const { store, builder } = wire(config.home);
+  try {
+    const tour = await builder.recheck(repo, pr);
+    const c = coverage(tour);
+    console.log(
+      `engine: ${tour.analysis?.engine ?? 'none'}; ${c.anchored}/${c.functionSteps} function steps anchored; ${c.proven}/${c.links} links proven`,
+    );
+    for (const line of importReport(tour)) console.log(line);
+  } finally {
+    store.close();
+  }
+}
+
 /** A short message for an error at the CLI surface, without a stack. */
 function errorMessage(err: unknown): string {
   // The details of an invalid tour file are the zod error: the author needs them to fix it.
@@ -392,6 +447,10 @@ async function main(argv: string[]): Promise<void> {
     const config = readConfig(process.env, homedir());
     if (command.cmd === 'import') {
       await importTour(config, command.repo, command.pr, command.file, command.replace);
+    } else if (command.cmd === 'functions') {
+      await printFunctions(config, command.repo, command.pr);
+    } else if (command.cmd === 'recheck') {
+      await recheckTour(config, command.repo, command.pr);
     } else if (command.cmd === 'open') {
       await openTour(config, command.repo, command.pr);
     } else {

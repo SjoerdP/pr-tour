@@ -79,9 +79,15 @@ export function TourView({ repo, pr }: { repo: string; pr: number }) {
    * Follows a call from the step's code. A call into another step of the same flow goes to
    * that step, so the outline moves along; any other call is a look from this step.
    */
-  function followCall(file: string, line: number) {
+  function followCall(file: string, line: number, toStep?: string | null) {
     const home = homes.find((h) => h.id === current);
-    const step = home?.kind === 'step' ? flowStepAt(home.flow, file, line) : undefined;
+    // A call site of the code check names its step (null: it has none, so only a look).
+    const step =
+      home?.kind !== 'step'
+        ? undefined
+        : toStep === undefined
+          ? flowStepAt(home.flow, file, line)
+          : home.flow.steps.find((s) => s.id === toStep);
     if (step && step.id !== current) goTo(step.id);
     else follow({ file, line });
   }
@@ -243,6 +249,9 @@ export function TourView({ repo, pr }: { repo: string; pr: number }) {
                 reveal={reveal}
                 onJump={followCall}
                 onShowLine={(file, line) => follow({ file, line })}
+                onRevealLine={(file, line) =>
+                  openHome(currentHome.id, { path: file, side: 'new', line })
+                }
                 onBack={() => follow(null)}
                 onOpenHome={goTo}
                 nav={nav}

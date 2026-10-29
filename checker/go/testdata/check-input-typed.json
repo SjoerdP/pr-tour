@@ -1,0 +1,16 @@
+{"flows":[{"id":"F1","steps":[
+{"id":"S1","file":"api/api.go","symbol":"Routes","startLine":22,"endLine":25,"calls":[{"symbol":"Handler.Create","file":"api/api.go","line":23}],"sideEffects":[]},
+{"id":"S2","file":"api/api.go","symbol":"Handler.Create","startLine":17,"endLine":20,"calls":[{"symbol":"OrderService.Place","file":"service/service.go","line":18}],"from":{"step":1,"line":23,"how":"call"},"sideEffects":[]},
+{"id":"S3","file":"service/service.go","symbol":"OrderService.Place","startLine":19,"endLine":25,"calls":[],"sideEffects":[{"kind":"db-write","label":"insert order","line":20},{"kind":"db-write","label":"returns early","line":21},{"kind":"event","label":"elsewhere","line":40}]},
+{"id":"S4","file":"service/service.go","symbol":"OrderService.PlaceWrapped","startLine":31,"endLine":33,"calls":[{"symbol":"Store.InsertOrder","file":"repo/repo.go","line":32},{"symbol":"OrderService.Place","file":"service/service.go","line":32}],"sideEffects":[]},
+{"id":"S5","file":"service/service.go","symbol":"Nope","startLine":46,"endLine":48,"calls":[],"sideEffects":[]},
+{"id":"S6","file":"service/service.go","symbol":"Job.Run","startLine":57,"endLine":58,"calls":[],"sideEffects":[]},
+{"id":"S8","file":"service/service.go","symbol":"Spawn","startLine":60,"endLine":62,"calls":[],"from":{"step":3,"line":21,"how":"service"},"sideEffects":[]},
+{"id":"S7","file":"missing/gone.go","symbol":"Gone","startLine":1,"endLine":5,"calls":[],"sideEffects":[]},
+{"id":"S9","file":"repo/repo.go","symbol":"Store.InsertOrder","startLine":5,"endLine":7,"calls":[],"sideEffects":[]},
+{"id":"S10","file":"service/service.go","symbol":"OrderService.notify","startLine":27,"endLine":29,"calls":[],"sideEffects":[]},
+{"id":"S11","file":"api/api.go","symbol":"Boot","startLine":30,"endLine":32,"calls":[{"symbol":"GeneratedHelper","file":"api/zz_generated.go","line":31}],"sideEffects":[]},
+{"id":"S12","file":"api/api.go","symbol":"Reload","startLine":34,"endLine":36,"calls":[],"sideEffects":[]},
+{"id":"S13","file":"api/zz_generated.go","symbol":"GeneratedHelper","startLine":5,"endLine":6,"calls":[],"sideEffects":[]},
+{"id":"S14","file":"api/api.go","startLine":24,"endLine":24,"calls":[],"from":{"step":1,"line":24,"how":"call"},"sideEffects":[]}
+]}]}

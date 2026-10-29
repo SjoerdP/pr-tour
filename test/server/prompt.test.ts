@@ -77,3 +77,24 @@ describe('tourRules: step from', () => {
     expect(rules).toMatch(/first step of a flow has no\s+"from"/);
   });
 });
+
+describe('symbol and side-effect line rules', () => {
+  it('asks for symbol and line', () => {
+    const rules = tourRules();
+    expect(rules).toContain('name each step that is a function in "symbol"');
+    expect(rules).toContain('give the head "line" of the call that does it');
+  });
+
+  it('names the functions file when given', () => {
+    const prompt = tourPrompt({
+      diffPath: '/t/a.diff',
+      functionsPath: '/t/a.functions.json',
+      pr,
+      jsonSchema: {},
+    });
+    expect(prompt).toContain('/t/a.functions.json');
+    expect(tourPrompt({ diffPath: '/t/a.diff', pr, jsonSchema: {} })).not.toContain(
+      '.functions.json',
+    );
+  });
+});

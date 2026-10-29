@@ -225,3 +225,75 @@ describe('lastChangedStepIndex', () => {
     expect(lastChangedStepIndex(flowOf())).toBe(-1);
   });
 });
+
+describe('code-check fields', () => {
+  const full = () => {
+    const body = bodyWithIds();
+    body.flows[0]!.steps[0]!.sideEffects[0]!.line = 20;
+    return {
+      ...body,
+      ...meta,
+      check: { problems: [] },
+      hashes: {},
+      analysis: {
+        engine: 'go-types',
+        engineVersion: '1',
+        ms: 12,
+        degraded: false,
+        coverage: { functionSteps: 2, anchored: 2, links: 1, proven: 1, foundByCode: 0 },
+        problems: [],
+        review: { ran: true, ms: 5, changes: [{ step: 'F1.S1', what: 'x', reason: 'y' }] },
+      },
+    };
+  };
+
+  it('an old tour without the new fields parses and stays equal', () => {
+    const tour = { ...bodyWithIds(), ...meta, check: { problems: [] }, hashes: {} };
+    expect(TourSchema.parse(tour)).toEqual(tour);
+  });
+
+  it('a stored tour with every new field parses and keeps them', () => {
+    const tour = full();
+    const flow = tour.flows[0]!;
+    const step = flow.steps[1]!;
+    step.anchor = { name: 'outstandingBalance', startLine: 5, endLine: 20, source: 'symbol' };
+    step.marks = [{ line: 7, kind: 'db-write', label: 'INSERT', source: 'both' }];
+    step.callSites = [
+      { line: 8, col: 3, endCol: 9, to: { file: 'a.go', line: 1 }, toStep: 'F1.S1' },
+    ];
+    flow.links = [
+      {
+        from: 'F1.S1',
+        to: 'F1.S2',
+        line: 18,
+        how: 'call',
+        via: ['w'],
+        source: 'both',
+        check: 'proven',
+        note: 'n',
+        reason: 'r',
+      },
+    ];
+    expect(TourSchema.parse(tour)).toEqual(tour);
+  });
+
+  it("Claude's input accepts sideEffect.line and strips the stored-only fields", () => {
+    const body = fixture();
+    const flow = body.flows[0]!;
+    const step = flow.steps[0]!;
+    step.sideEffects[0]!.line = 20;
+    step.anchor = { name: 'x', startLine: 1, endLine: 2, source: 'symbol' };
+    step.marks = [];
+    step.callSites = [];
+    flow.links = [];
+    const dirty = { ...body, analysis: { engine: 'none' } };
+    const parsed = TourBodyInputSchema.parse(dirty);
+    const out = parsed.flows[0]!.steps[0]!;
+    expect(out.sideEffects[0]!.line).toBe(20);
+    expect(out).not.toHaveProperty('anchor');
+    expect(out).not.toHaveProperty('marks');
+    expect(out).not.toHaveProperty('callSites');
+    expect(parsed.flows[0]).not.toHaveProperty('links');
+    expect(parsed).not.toHaveProperty('analysis');
+  });
+});

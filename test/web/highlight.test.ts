@@ -1,7 +1,14 @@
-import { describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it } from 'vitest';
 import { highlight } from '../../src/web/highlight.js';
 
 describe('highlight', () => {
+  // Shiki and each grammar load on first use. That load is slow when the whole suite runs at
+  // once and can pass the 5 s test default, so do it once here, with room to finish.
+  beforeAll(async () => {
+    await highlight('const a = 1;', 'src/a.ts', 'light');
+    await highlight('a: 1', 'a.yml', 'dark');
+  }, 60_000);
+
   it('colours a known language, one entry per line', async () => {
     const lines = await highlight('const a = 1;\nfoo();\n', 'src/a.ts', 'light');
     expect(lines.map((l) => l.map((t) => t.content).join(''))).toEqual([
