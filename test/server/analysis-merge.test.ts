@@ -135,6 +135,20 @@ describe('applyCheck', () => {
     expect(applyCheck(t, null, 'no Go files in this PR').analysis!.review).toEqual(review);
   });
 
+  it('keeps why the review did not run after a recheck', () => {
+    const review = {
+      ran: false,
+      ms: 7,
+      changes: [],
+      problems: ['the review by Claude failed: Claude stopped before finishing the review.'],
+    };
+    const t = { ...tour(), analysis: { ...applyCheck(tour(), null).analysis!, review } };
+    const out = applyCheck(t, { ok: true, output: output(), ms: 1 });
+    expect(out.analysis!.review).toEqual(review);
+    expect(out.analysis!.problems).toEqual(['a problem']);
+    expect(() => TourSchema.parse(out)).not.toThrow();
+  });
+
   it('keeps Claude’s explained how and reason on a link the code still cannot prove', () => {
     const o = output();
     o.links['F1'] = [

@@ -106,6 +106,8 @@ export const AnalysisSchema = z.object({
       changes: z.array(
         z.object({ step: z.string().optional(), what: z.string(), reason: z.string() }),
       ),
+      /** Why the review did not run, or which of its changes were dropped. */
+      problems: z.array(z.string()).optional(),
     })
     .optional(),
 });

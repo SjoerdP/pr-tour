@@ -378,7 +378,13 @@ export class TourBuilder {
         attempt === 1 ? 'Asking Claude for a tour' : 'Answer was not a valid tour; asking again',
       );
       const prompt = tourPrompt({ diffPath, functionsPath, pr, jsonSchema, retryError });
-      lastAnswer = await this.runClaude(prompt, worktree, dirname(diffPath), CLAUDE_TIMEOUT_MS);
+      lastAnswer = await this.runClaude(
+        prompt,
+        worktree,
+        dirname(diffPath),
+        CLAUDE_TIMEOUT_MS,
+        'the tour',
+      );
       const parsed = parseBody(extractJson(lastAnswer));
       if (parsed.ok) return parsed.body;
       onLog(parsed.error);
@@ -399,6 +405,8 @@ export class TourBuilder {
     worktree: string,
     addDir: string | undefined,
     timeoutMs: number,
+    /** What the run is for, as it reads after "before finishing": `the tour`, `the review`. */
+    what: string,
   ): Promise<string> {
     // Read-only and predictable:
     // - `--tools` makes Read, Grep and Glob the only tools that exist (no Bash, Edit,
@@ -443,7 +451,7 @@ export class TourBuilder {
     }
     const { result: text, is_error: isError } = output as { result?: unknown; is_error?: unknown };
     if (isError === true || typeof text !== 'string') {
-      throw new TourBuildError('Claude stopped before finishing the tour.', excerpt(result.stdout));
+      throw new TourBuildError(`Claude stopped before finishing ${what}.`, excerpt(result.stdout));
     }
     return text;
   }
@@ -464,7 +472,13 @@ export class TourBuilder {
     let changes: ReviewChange[];
     try {
       const prompt = reviewPrompt(tour, list, functionCode(worktree, tour, list));
-      const answer = await this.runClaude(prompt, worktree, undefined, REVIEW_TIMEOUT_MS);
+      const answer = await this.runClaude(
+        prompt,
+        worktree,
+        undefined,
+        REVIEW_TIMEOUT_MS,
+        'the review',
+      );
       const json = extractJson(answer);
       if (json === null) throw new Error('no JSON object found in the answer');
       const parsed = ReviewAnswerSchema.safeParse(JSON.parse(json));
@@ -476,15 +490,13 @@ export class TourBuilder {
     } catch (err) {
       const analysis = tour.analysis!;
       onLog(`Review skipped: ${(err as Error).message}`);
+      const problem = `the review by Claude failed: ${(err as Error).message}`;
       return {
         ...tour,
         analysis: {
           ...analysis,
-          problems: [
-            ...analysis.problems,
-            `the review by Claude failed: ${(err as Error).message}`,
-          ],
-          review: { ran: false, ms: Date.now() - start, changes: [] },
+          problems: [...analysis.problems, problem],
+          review: { ran: false, ms: Date.now() - start, changes: [], problems: [problem] },
         },
       };
     }
@@ -494,15 +506,18 @@ export class TourBuilder {
     // Its result is final: there is no second review.
     const checked = applied.length > 0 ? await this.passB(reviewed, worktree, diff) : reviewed;
     const analysis = checked.analysis!;
+    const droppedProblems = dropped.map((d) => `a review change by Claude was dropped: ${d.why}`);
     return {
       ...checked,
       analysis: {
         ...analysis,
-        problems: [
-          ...analysis.problems,
-          ...dropped.map((d) => `a review change by Claude was dropped: ${d.why}`),
-        ],
-        review: { ran: true, ms, changes: applied.map((c) => reviewChangeText(tour, reviewed, c)) },
+        problems: [...analysis.problems, ...droppedProblems],
+        review: {
+          ran: true,
+          ms,
+          changes: applied.map((c) => reviewChangeText(tour, reviewed, c)),
+          ...(droppedProblems.length > 0 ? { problems: droppedProblems } : {}),
+        },
       },
     };
   }

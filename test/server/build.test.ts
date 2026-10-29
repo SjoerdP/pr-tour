@@ -819,6 +819,7 @@ describe('pass C: Claude reviews the findings', () => {
     expect(tour.analysis?.review).toMatchObject({ ran: true, changes: [] });
     expect(tour.analysis?.problems).toHaveLength(1);
     expect(tour.analysis?.problems[0]).toContain('F9.S9');
+    expect(tour.analysis?.review?.problems).toEqual(tour.analysis?.problems);
     // Nothing changed, so pass B has nothing new to check.
     expect(checker.symbols).toEqual(['Payy']);
   });
@@ -842,7 +843,24 @@ describe('pass C: Claude reviews the findings', () => {
     expect(tour.analysis?.problems).toEqual([
       'the review by Claude failed: Claude failed to run: rate limited',
     ]);
+    expect(tour.analysis?.review?.problems).toEqual([
+      'the review by Claude failed: Claude failed to run: rate limited',
+    ]);
     expect(store.getTour('acme/greet', 7)).toEqual(tour);
+  });
+
+  it('words a stopped review as being about the review, not the tour', async () => {
+    const { tours } = builderWith(
+      { diff: GO_DIFF, checker: anchoringChecker(), worktree },
+      flowAnswer,
+      () => ({ stdout: JSON.stringify({ is_error: true, result: 'x' }), stderr: '', code: 0 }),
+    );
+
+    const tour = await tours.build('acme/greet', 7);
+
+    expect(tour.analysis?.problems).toEqual([
+      'the review by Claude failed: Claude stopped before finishing the review.',
+    ]);
   });
 
   it('keeps the pass B tour when Claude answers with the wrong shape', async () => {
