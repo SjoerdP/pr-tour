@@ -1,0 +1,9 @@
+{"flows":[{"id":"F1","steps":[
+{"id":"S1","file":"api/api.go","symbol":"Routes","startLine":22,"endLine":25,"calls":[{"symbol":"Handler.Create","file":"api/api.go","line":23}],"sideEffects":[]},
+{"id":"S2","file":"api/api.go","symbol":"Handler.Create","startLine":17,"endLine":20,"calls":[{"symbol":"OrderService.Place","file":"service/service.go","line":18}],"from":{"step":1,"line":23,"how":"call"},"sideEffects":[]},
+{"id":"S3","file":"service/service.go","symbol":"OrderService.Place","startLine":19,"endLine":25,"calls":[],"sideEffects":[{"kind":"db-write","label":"insert order","line":20},{"kind":"db-write","label":"returns early","line":21},{"kind":"event","label":"elsewhere","line":40}]},
+{"id":"S4","file":"service/service.go","symbol":"OrderService.PlaceWrapped","startLine":31,"endLine":33,"calls":[{"symbol":"Store.InsertOrder","file":"repo/repo.go","line":32},{"symbol":"OrderService.Place","file":"service/service.go","line":32}],"sideEffects":[]},
+{"id":"S5","file":"service/service.go","symbol":"Nope","startLine":46,"endLine":48,"calls":[],"sideEffects":[]},
+{"id":"S6","file":"service/service.go","symbol":"Job.Run","startLine":57,"endLine":58,"calls":[],"sideEffects":[]},
+{"id":"S7","file":"missing/gone.go","symbol":"Gone","startLine":1,"endLine":5,"calls":[],"sideEffects":[]}
+]}]}

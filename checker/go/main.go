@@ -13,6 +13,7 @@ import (
 const usage = `usage:
   pr-tour-check-go version
   pr-tour-check-go functions --root <dir>   (FunctionsInput on stdin)
+  pr-tour-check-go check --root <dir> --syntax-only   (CheckInput on stdin)
 `
 
 func main() {
@@ -42,6 +43,34 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 			return 1
 		}
 		out, err := listFunctions(*root, in)
+		if err != nil {
+			fmt.Fprintln(stderr, err)
+			return 1
+		}
+		if err := json.NewEncoder(stdout).Encode(out); err != nil {
+			fmt.Fprintln(stderr, err)
+			return 1
+		}
+		return 0
+	case "check":
+		fs := flag.NewFlagSet("check", flag.ContinueOnError)
+		fs.SetOutput(stderr)
+		root := fs.String("root", "", "repository root")
+		syntaxOnly := fs.Bool("syntax-only", false, "check by syntax only, without type information")
+		if err := fs.Parse(args[1:]); err != nil || *root == "" || fs.NArg() > 0 {
+			fmt.Fprint(stderr, usage)
+			return 2
+		}
+		if !*syntaxOnly {
+			fmt.Fprintln(stderr, "check without --syntax-only is not available yet")
+			return 2
+		}
+		var in CheckInput
+		if err := json.NewDecoder(stdin).Decode(&in); err != nil {
+			fmt.Fprintln(stderr, "read input:", err)
+			return 1
+		}
+		out, err := checkSyntax(*root, in)
 		if err != nil {
 			fmt.Fprintln(stderr, err)
 			return 1
