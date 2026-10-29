@@ -59,6 +59,14 @@ export function homeRanges(home: Home): Range[] {
   }
 }
 
+/**
+ * The step of `flow` whose code holds `line` of `file`: where following a call into the
+ * flow lands. Undefined when the call leads outside the flow's steps.
+ */
+export function flowStepAt(flow: Flow, file: string, line: number): Step | undefined {
+  return flow.steps.find((s) => s.file === file && s.startLine <= line && line <= s.endLine);
+}
+
 /** True for the first step of a flow: where `[` and `]` land. */
 function isFlowStart(home: Home): boolean {
   return home.kind === 'step' && home.flow.steps[0]?.id === home.id;
