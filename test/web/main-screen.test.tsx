@@ -73,6 +73,33 @@ describe('top bar', () => {
   });
 });
 
+describe('About: code check', () => {
+  const analysis: NonNullable<Tour['analysis']> = {
+    engine: 'go-syntax',
+    ms: 10,
+    degraded: true,
+    coverage: { functionSteps: 4, anchored: 3, links: 5, proven: 2, foundByCode: 1 },
+    problems: ['could not read go.mod'],
+    review: { ran: true, ms: 5, changes: [{ what: 'Moved step 2', reason: 'it runs first' }] },
+  };
+
+  it('shows coverage, the engine note and the review changes', async () => {
+    await open({ ...baseTour, analysis });
+    const text = screen.getByRole('region', { name: 'About this PR' }).textContent;
+    expect(text).toContain('3 of 4 steps on their function, 2 of 5 links proven');
+    expect(text).toContain('The project did not load with types: links are matched by name.');
+    expect(text).toContain('could not read go.mod');
+    expect(text).toContain('Moved step 2 — it runs first');
+  });
+
+  it('is left out for a tour without an analysis', async () => {
+    await open();
+    expect(screen.getByRole('region', { name: 'About this PR' }).textContent).not.toContain(
+      'Code check',
+    );
+  });
+});
+
 describe('About this PR', () => {
   it('is open on the first visit to a tour and closed on the next', async () => {
     const first = await open();

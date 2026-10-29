@@ -328,6 +328,26 @@ describe('CodeView', () => {
     expect(onJump).toHaveBeenCalledWith('src/fees.ts', 12);
   });
 
+  it('shows a badge for a mark, faded when only the tour claims it', async () => {
+    const text = '  save(x);';
+    serve(modified('src/repay.ts', [replaceHunk(5, 'old five', text)]), {
+      [`${HEAD}:src/repay.ts`]: lines(10, { 5: text }),
+      [`${BASE}:src/repay.ts`]: lines(10, { 5: 'old five' }),
+    });
+    const tour = makeTour();
+    tour.flows[0]!.steps[0]!.marks = [
+      { line: 5, kind: 'db-write', label: 'insert loan', source: 'both' },
+      { line: 5, kind: 'async', source: 'claude' },
+    ];
+    renderView({ tour });
+    const db = await screen.findByText('DB write');
+    expect(db.title).toBe('insert loan');
+    expect(db.className).not.toContain('mark-claude');
+    const go = screen.getByText('goroutine');
+    expect(go.className).toContain('mark-claude');
+    expect(go.title).toBe('goroutine (not found in the code)');
+  });
+
   it('with call sites, only the exact columns are clickable', async () => {
     const text = '  chargeFee(chargeFee(x));';
     serve(modified('src/repay.ts', [replaceHunk(5, 'old five', text)]), {

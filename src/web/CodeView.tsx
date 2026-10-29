@@ -17,7 +17,7 @@ import {
   type ReviewThread,
 } from '../shared/review.js';
 import { buildRows, changeBlocks, foldRows, type Row, type Segment } from '../shared/rows.js';
-import type { CallRef, CallSite, Tour } from '../shared/tour.js';
+import type { CallRef, CallSite, Mark, Tour } from '../shared/tour.js';
 import {
   callMatches,
   draftRows,
@@ -167,6 +167,7 @@ function FileCode({
     [tour, rows, file.path, file.oldPath],
   );
   const calls = useMemo(() => stepCalls(tour, homeId, file.path), [tour, homeId, file.path]);
+  const marksAt = useMemo(() => stepMarks(tour, homeId, file.path), [tour, homeId, file.path]);
   const sites = useMemo(() => stepSites(tour, homeId, file.path), [tour, homeId, file.path]);
   const siteTitle = useMemo(() => siteTitler(tour, homeId), [tour, homeId]);
   // An added file has no old side: no empty column for old line numbers.
@@ -490,6 +491,7 @@ function FileCode({
                     showOld={showOld}
                     calls={inFocus && row.newNo !== undefined ? calls : NO_CALLS}
                     sites={inFocus && row.newNo !== undefined ? sites : undefined}
+                    marks={inFocus && row.newNo !== undefined ? marksAt.get(row.newNo) : undefined}
                     siteTitle={siteTitle}
                     label={label}
                     onPick={diff ? pick : null}
@@ -596,6 +598,23 @@ function stepSites(tour: Tour, homeId: string, path: string): CallSite[] | undef
   return home?.kind === 'step' && home.step.file === path ? home.step.callSites : undefined;
 }
 
+/** The marks the code check put on lines of `homeId`, by line, when it is a step in `path`. */
+function stepMarks(tour: Tour, homeId: string, path: string): Map<number, Mark[]> {
+  const home = homesInOrder(tour).find((h) => h.id === homeId);
+  const out = new Map<number, Mark[]>();
+  if (home?.kind !== 'step' || home.step.file !== path) return out;
+  for (const mark of home.step.marks ?? [])
+    out.set(mark.line, [...(out.get(mark.line) ?? []), mark]);
+  return out;
+}
+
+const MARK_TEXT: Record<Mark['kind'], string> = {
+  'db-write': 'DB write',
+  event: 'event',
+  'external-call': 'outside call',
+  async: 'goroutine',
+};
+
 /** The button title of a call site: "Go to step 3" in the same flow, else "Show <name>". */
 function siteTitler(tour: Tour, homeId: string): (site: CallSite) => string {
   const home = homesInOrder(tour).find((h) => h.id === homeId);
@@ -641,6 +660,8 @@ type CodeRowProps = {
   /** The step's call sites, when the code check found them: they replace `calls`. `[]` means checked, no calls: name matching is not used. */
   sites: CallSite[] | undefined;
   siteTitle: (site: CallSite) => string;
+  /** What the code check or the tour says happens on this line. */
+  marks: Mark[] | undefined;
   label: Owner | null;
   /** Picks a line for a comment (`extend` on shift+click); null when comments are not possible. */
   onPick: ((side: DiffSide, line: number, extend: boolean) => void) | null;
@@ -705,6 +726,7 @@ function CodeRow({
   calls,
   sites,
   siteTitle,
+  marks,
   label,
   onPick,
   drag,
@@ -736,6 +758,19 @@ function CodeRow({
       <code className="code-text">
         {lineContent(parts, row.text.length, matches, onJump, siteTitle)}
       </code>
+      {marks?.map((mark, k) => (
+        <span
+          key={k}
+          className={`mark-badge${mark.source === 'claude' ? ' mark-claude' : ''}`}
+          title={
+            mark.source === 'claude'
+              ? `${mark.label ?? MARK_TEXT[mark.kind]} (not found in the code)`
+              : mark.label
+          }
+        >
+          {MARK_TEXT[mark.kind]}
+        </span>
+      ))}
       {label && (
         <button type="button" className="owner-label" onClick={() => onOpenHome(label.id)}>
           belongs to {label.title}

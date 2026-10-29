@@ -249,6 +249,9 @@ export function TourView({ repo, pr }: { repo: string; pr: number }) {
                 reveal={reveal}
                 onJump={followCall}
                 onShowLine={(file, line) => follow({ file, line })}
+                onRevealLine={(file, line) =>
+                  openHome(currentHome.id, { path: file, side: 'new', line })
+                }
                 onBack={() => follow(null)}
                 onOpenHome={goTo}
                 nav={nav}

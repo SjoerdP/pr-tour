@@ -920,6 +920,14 @@ pre {
   color: var(--fg-faint);
 }
 
+.came-from-warn {
+  color: var(--warn);
+}
+
+.came-from-warn::before {
+  color: var(--warn);
+}
+
 .came-from strong {
   color: var(--fg);
   font-weight: 500;
@@ -1725,4 +1733,31 @@ p.why {
   .step-nav {
     justify-content: space-between;
   }
+}
+
+/* What the code check found on a line: at the end of the row. A mark only the tour claims is faded. */
+.mark-badge {
+  flex: 0 0 auto;
+  margin: 1px var(--space-2);
+  padding: 0 var(--space-1);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  color: var(--fg-muted);
+  font-family: var(--font-sans);
+  font-size: var(--font-size-tiny);
+  line-height: 16px;
+}
+
+.mark-claude {
+  opacity: 0.55;
+}
+
+.code-check h2 {
+  font-size: var(--font-size-small);
+}
+
+.code-check p,
+.code-check ul {
+  margin: var(--space-1) 0;
+  font-size: var(--font-size-small);
 }

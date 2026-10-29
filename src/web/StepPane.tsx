@@ -1,5 +1,5 @@
 import { useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
-import type { Flow, Range, SideEffect, Step, Tour } from '../shared/tour.js';
+import type { Flow, Mark, Range, SideEffect, Step, Tour } from '../shared/tour.js';
 import type { Focus as CodeFocus, Reveal } from './code-lines.js';
 import { CodeView } from './CodeView.js';
 import { FlowEndNote } from './FlowEndNote.js';
@@ -71,7 +71,22 @@ const EFFECT_FACTS: Record<SideEffect['kind'], string> = {
   'external-call': 'calls an external service',
 };
 
-type Fact = { text: string; tone?: 'risk' | 'warn' };
+type Fact = {
+  text: string;
+  tone?: 'risk' | 'warn';
+  /** A line of the step's code the fact shows when clicked. */
+  show?: { file: string; line: number };
+};
+
+/** The db-write mark the "writes to DB" fact shows: one both sides agree on, else the code's, else Claude's. */
+function dbWriteMark(step: Step): Mark | undefined {
+  const marks = (step.marks ?? []).filter((m) => m.kind === 'db-write');
+  return (
+    marks.find((m) => m.source === 'both') ??
+    marks.find((m) => m.source === 'code') ??
+    marks.find((m) => m.source === 'claude')
+  );
+}
 
 /** The one line of facts under the title. */
 function facts(home: Home): Fact[] {
@@ -86,7 +101,9 @@ function facts(home: Home): Fact[] {
       const kinds = [...new Set(step.sideEffects.map((e) => e.kind))];
       for (const kind of kinds) {
         const n = step.sideEffects.filter((e) => e.kind === kind).length;
-        out.push({ text: n > 1 ? `${EFFECT_FACTS[kind]} ×${n}` : EFFECT_FACTS[kind] });
+        const text = n > 1 ? `${EFFECT_FACTS[kind]} ×${n}` : EFFECT_FACTS[kind];
+        const mark = kind === 'db-write' ? dbWriteMark(step) : undefined;
+        out.push(mark ? { text, show: { file: step.file, line: mark.line } } : { text });
       }
       if (step.tests.length > 0) {
         out.push({ text: `${step.tests.length} ${step.tests.length === 1 ? 'test' : 'tests'}` });
@@ -149,6 +166,8 @@ type Props = {
   onJump: (file: string, line: number, toStep?: string | null) => void;
   /** Shows a line of code from this step, with a way back: a look, not a move. */
   onShowLine: (file: string, line: number) => void;
+  /** Scrolls the step's own code to a line and flashes it. */
+  onRevealLine: (file: string, line: number) => void;
   onBack: () => void;
   onOpenHome: (homeId: string) => void;
   nav: PaneNav;
@@ -166,6 +185,7 @@ export function StepPane({
   reveal,
   onJump,
   onShowLine,
+  onRevealLine,
   onBack,
   onOpenHome,
   nav,
@@ -201,7 +221,18 @@ export function StepPane({
               {homeFacts.map((fact, i) => (
                 <li key={i} className={fact.tone ? `fact-${fact.tone}` : undefined}>
                   {fact.tone === 'risk' && <span className="rc-dot" aria-hidden="true" />}
-                  {fact.text}
+                  {fact.show ? (
+                    <button
+                      type="button"
+                      className="link-button"
+                      onClick={() => onRevealLine(fact.show!.file, fact.show!.line)}
+                      title={`Show line ${fact.show.line}`}
+                    >
+                      {fact.text}
+                    </button>
+                  ) : (
+                    fact.text
+                  )}
                 </li>
               ))}
             </ul>
@@ -288,7 +319,8 @@ const CAME_FROM_VERB: Record<CameFrom['how'], string> = {
 /**
  * How the flow gets to this step: "Called from Handle the request (step 1), line 14. Step 2
  * returned first." The line shows the call. Left out for a flow's first step, and for tours
- * from before steps said where they are called from.
+ * from before steps said where they are called from. A link the code check did not find says
+ * so; one only the code found says that.
  */
 function CameFromLine({
   flow,
@@ -301,33 +333,52 @@ function CameFromLine({
 }) {
   const from = cameFrom(flow, step);
   if (!from) return null;
-  const { caller, callerNo, line, how, via, returned } = from;
+  const { caller, callerNo, line, how, via, returned, check, source, others, claimedNo } = from;
+  if (check === 'not-found') {
+    return (
+      <p className="came-from came-from-warn" data-testid="came-from">
+        The tour says <strong>{caller.title}</strong> (step {callerNo}) calls this, but the code
+        does not show it.
+      </p>
+    );
+  }
   return (
-    <p className="came-from" data-testid="came-from">
-      {CAME_FROM_VERB[how]} <strong>{caller.title}</strong> (step {callerNo})
-      {line !== null && (
-        <>
-          ,{' '}
-          <button
-            type="button"
-            className="link-button"
-            onClick={() => onShowLine(caller.file, line)}
-            title={`Show line ${line} of ${caller.file}`}
-          >
-            line {line}
-          </button>
-        </>
+    <>
+      <p className="came-from" data-testid="came-from">
+        {CAME_FROM_VERB[how]} <strong>{caller.title}</strong> (step {callerNo})
+        {line !== null && (
+          <>
+            ,{' '}
+            <button
+              type="button"
+              className="link-button"
+              onClick={() => onShowLine(caller.file, line)}
+              title={`Show line ${line} of ${caller.file}`}
+            >
+              line {line}
+            </button>
+          </>
+        )}
+        {via !== undefined && <>, through {via}</>}
+        {source === 'code' && <>, found in the code</>}.
+        {returned && (
+          <span className="muted">
+            {' '}
+            {returned[0] === returned[1]
+              ? `Step ${returned[0]} returned first.`
+              : `Steps ${returned[0]} to ${returned[1]} returned first.`}
+          </span>
+        )}
+        {others.length > 0 && (
+          <> Also called from {others.map((o) => `step ${o.callerNo}`).join(', ')}.</>
+        )}
+      </p>
+      {claimedNo !== undefined && (
+        <p className="came-from came-from-warn" data-testid="came-conflict">
+          The tour says step {claimedNo} calls this. The code says step {callerNo} does.
+        </p>
       )}
-      {via !== undefined && <>, through {via}</>}.
-      {returned && (
-        <span className="muted">
-          {' '}
-          {returned[0] === returned[1]
-            ? `Step ${returned[0]} returned first.`
-            : `Steps ${returned[0]} to ${returned[1]} returned first.`}
-        </span>
-      )}
-    </p>
+    </>
   );
 }
 
@@ -338,7 +389,7 @@ function CameFromLine({
 function NextFrom({ flow, step }: { flow: Flow; step: Step }) {
   const next = flow.steps[flow.steps.indexOf(step) + 1];
   const from = next && cameFrom(flow, next);
-  if (!from || from.caller === step) return null;
+  if (!from || from.caller === step || from.others.some((o) => o.caller === step)) return null;
   return (
     <p className="next-from" data-testid="next-from">
       Next step is called from <strong>{from.caller.title}</strong> (step {from.callerNo}), not from
