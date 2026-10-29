@@ -24,6 +24,9 @@ type FuncInfo struct {
 type FunctionsOutput struct {
 	Version   int        `json:"version"`
 	Functions []FuncInfo `json:"functions"`
+	// Problems names the files that were skipped (unparsable, or outside
+	// the root).
+	Problems []string `json:"problems,omitempty"`
 }
 
 type Call struct {
@@ -104,9 +107,11 @@ type Link struct {
 }
 
 type StepResult struct {
-	Anchor    *Anchor    `json:"anchor,omitempty"`
-	Marks     []Mark     `json:"marks"`
-	CallSites []CallSite `json:"callSites"`
+	Anchor *Anchor `json:"anchor,omitempty"`
+	Marks  []Mark  `json:"marks"`
+	// CallSites is set only for steps whose function was type-checked: nil
+	// (left out of the JSON) means not checked, empty means no calls.
+	CallSites []CallSite `json:"callSites,omitzero"`
 }
 
 type CheckOutput struct {

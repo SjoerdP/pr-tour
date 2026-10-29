@@ -307,3 +307,74 @@ func TestTypedBuildTags(t *testing.T) {
 		t.Errorf("a file left out of the normal build must not degrade the run")
 	}
 }
+
+// In typed mode too, a link into a step that is no function is unchecked.
+func TestCheckTypedLinkToNonFunctionStep(t *testing.T) {
+	typedEnv(t)
+	in := CheckInput{Flows: []CheckFlow{{ID: "F1", Steps: []CheckStep{
+		{ID: "S1", File: "service/service.go", Symbol: "OrderService.Place", StartLine: 19, EndLine: 25},
+		{ID: "S2", File: "migrations/001_orders.sql", StartLine: 1, EndLine: 5,
+			From: &From{Step: 1, Line: 20, How: "call"}},
+		{ID: "S3", File: "service/service.go", Symbol: "OrderService", StartLine: 13, EndLine: 16,
+			From: &From{Step: 1, Line: 20, How: "call"}},
+	}}}}
+	out, err := checkTyped("testdata/flow", in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, to := range []string{"S2", "S3"} {
+		l := findLink(t, out, "S1", to)
+		if l.Check != "unchecked" || l.Line != 20 || l.Note != "the called step is not a function" {
+			t.Errorf("S1->%s %+v", to, l)
+		}
+	}
+	raw, _ := json.Marshal(out.Steps)
+	var steps map[string]map[string]any
+	_ = json.Unmarshal(raw, &steps)
+	if _, ok := steps["S1"]["callSites"]; !ok {
+		t.Errorf("typed step S1 has no callSites key: %s", raw)
+	}
+	for _, id := range []string{"S2", "S3"} {
+		if _, ok := steps[id]["callSites"]; ok {
+			t.Errorf("unchecked step %s has a callSites key: %s", id, raw)
+		}
+	}
+}
+
+// A typed step with no project calls says so with an empty list.
+func TestCheckTypedEmptyCallSites(t *testing.T) {
+	typedEnv(t)
+	in := CheckInput{Flows: []CheckFlow{{ID: "F1", Steps: []CheckStep{
+		{ID: "A", File: "service/service.go", Symbol: "OrderService.notify", StartLine: 27, EndLine: 29},
+	}}}}
+	out, err := checkTyped("testdata/flow", in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, _ := json.Marshal(out.Steps["A"])
+	if !strings.Contains(string(raw), `"callSites":[]`) {
+		t.Errorf("A %s", raw)
+	}
+}
+
+// An interface with two implementations that are both steps: Claude's link
+// is proven to its target, the other gets its own code-found link.
+func TestCheckTypedTwoImplementations(t *testing.T) {
+	typedEnv(t)
+	in := CheckInput{Flows: []CheckFlow{{ID: "F1", Steps: []CheckStep{
+		{ID: "A", File: "api/api.go", Symbol: "Handler.Create", StartLine: 17, EndLine: 20,
+			Calls: []Call{{Symbol: "OrderService.Place", File: "service/service.go", Line: 19}}},
+		{ID: "B", File: "service/service.go", Symbol: "OrderService.Place", StartLine: 19, EndLine: 25},
+		{ID: "C", File: "service/service.go", Symbol: "AuditOrders.Place", StartLine: 41, EndLine: 43},
+	}}}}
+	out, err := checkTyped("testdata/flow", in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if l := findLink(t, out, "A", "B"); l.Check != "proven" || l.Source != "both" || l.Line != 19 {
+		t.Errorf("A->B %+v", l)
+	}
+	if l := findLink(t, out, "A", "C"); l.Check != "proven" || l.Source != "code" || l.Line != 19 || l.How != "call" {
+		t.Errorf("A->C %+v", l)
+	}
+}

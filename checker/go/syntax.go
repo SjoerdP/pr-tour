@@ -137,7 +137,7 @@ func findSites(g *goFile, fn *goFunc) []site {
 			p := g.Fset.Position(x.Pos())
 			sites = append(sites, site{Line: p.Line, Col: p.Column, IsGo: true})
 		case *ast.CallExpr:
-			switch f := x.Fun.(type) {
+			switch f := callFun(x.Fun).(type) {
 			case *ast.Ident:
 				skip[f] = true
 				add(f, f.Name, true, false)
@@ -167,6 +167,23 @@ func findSites(g *goFile, fn *goFunc) []site {
 	return sites
 }
 
+// callFun strips parentheses and explicit instantiation from a callee:
+// (f)() and f[int]() call f.
+func callFun(e ast.Expr) ast.Expr {
+	for {
+		switch x := e.(type) {
+		case *ast.ParenExpr:
+			e = x.X
+		case *ast.IndexExpr:
+			e = x.X
+		case *ast.IndexListExpr:
+			e = x.X
+		default:
+			return e
+		}
+	}
+}
+
 func lastName(sym string) string {
 	if i := strings.LastIndex(sym, "."); i >= 0 {
 		return sym[i+1:]
@@ -180,7 +197,7 @@ func matchSite(sites []site, name string, wantLine int) (site, bool) {
 	var best site
 	rank := -1
 	for _, s := range sites {
-		if s.Name != name {
+		if s.IsGo || s.Name != name {
 			continue
 		}
 		r := 0
@@ -251,7 +268,7 @@ func (ss *stepState) setAnchor(a *Anchor, anchorProblem string) {
 		ss.problems = append(ss.problems, anchorProblem)
 	}
 	ss.anchor = a
-	ss.res = StepResult{Marks: []Mark{}, CallSites: []CallSite{}}
+	ss.res = StepResult{Marks: []Mark{}}
 	ss.sites = nil
 	if a == nil {
 		return
@@ -293,7 +310,7 @@ func syntaxStates(root string, in CheckInput) [][]*stepState {
 	for fi, flow := range in.Flows {
 		states := make([]*stepState, len(flow.Steps))
 		for i, st := range flow.Steps {
-			ss := &stepState{step: st, res: StepResult{Marks: []Mark{}, CallSites: []CallSite{}}}
+			ss := &stepState{step: st, res: StepResult{Marks: []Mark{}}}
 			states[i] = ss
 			if !strings.HasSuffix(st.File, ".go") {
 				continue
@@ -378,11 +395,13 @@ func nameCheck(l Link, caller, callee *stepState) Link {
 		l.Note = "calling step has no anchor"
 		return l
 	}
-	name := lastName(callee.step.Symbol)
-	if callee.anchor != nil {
-		name = lastName(callee.anchor.Name)
+	if callee.anchor == nil {
+		// A SQL file, a template, a type: there is no function to find.
+		l.Check = "unchecked"
+		l.Note = "the called step is not a function"
+		return l
 	}
-	s, ok := matchSite(caller.sites, name, claimed)
+	s, ok := matchSite(caller.sites, lastName(callee.anchor.Name), claimed)
 	if !ok {
 		l.Check = "not-found"
 		return l

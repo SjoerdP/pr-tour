@@ -620,13 +620,14 @@ func (fc *flowCheck) discover(claude []Link) []Link {
 }
 
 // callSites lists every call and reference in a step's function that lands
-// on a project function, with the step it goes to when there is one.
+// on a project function, with the step it goes to when there is one. It is
+// nil when the step's function was not type-checked.
 func (fc *flowCheck) callSites(ss *stepState) []CallSite {
-	out := []CallSite{}
 	t := fc.typed[ss]
 	if t == nil {
-		return out
+		return nil
 	}
+	out := []CallSite{}
 	for _, s := range t.sites {
 		if s.Closure {
 			continue

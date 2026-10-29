@@ -187,3 +187,68 @@ func TestCheckSyntaxCallsEntryToMissingSymbol(t *testing.T) {
 		t.Errorf("A->B %+v", l)
 	}
 }
+
+// A link into a step that is no function (a SQL file, a type) cannot be
+// checked: it is unchecked, never matched by an empty name against a go
+// statement.
+func TestCheckSyntaxLinkToNonFunctionStep(t *testing.T) {
+	in := CheckInput{Flows: []CheckFlow{{ID: "F1", Steps: []CheckStep{
+		{ID: "S1", File: "service/service.go", Symbol: "OrderService.Place", StartLine: 19, EndLine: 25},
+		{ID: "S2", File: "migrations/001_orders.sql", StartLine: 1, EndLine: 5,
+			From: &From{Step: 1, Line: 20, How: "call"}},
+		{ID: "S3", File: "service/service.go", Symbol: "OrderService", StartLine: 13, EndLine: 16,
+			From: &From{Step: 1, Line: 20, How: "call"}},
+	}}}}
+	out, err := checkSyntax("testdata/flow", in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, to := range []string{"S2", "S3"} {
+		l := findLink(t, out, "S1", to)
+		if l.Check != "unchecked" || l.How != "call" || l.Line != 20 || l.Note != "the called step is not a function" {
+			t.Errorf("S1->%s %+v", to, l)
+		}
+	}
+}
+
+// A go statement has no name and never matches one.
+func TestMatchSiteSkipsGoStatements(t *testing.T) {
+	sites := []site{{Line: 3, IsGo: true}}
+	if s, ok := matchSite(sites, "", 1); ok {
+		t.Errorf("matched %+v", s)
+	}
+}
+
+// Syntax mode checks nothing by position: no step carries callSites.
+func TestCheckSyntaxOmitsCallSites(t *testing.T) {
+	out, err := checkSyntax("testdata/flow", loadCheckInput(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, _ := json.Marshal(out)
+	if strings.Contains(string(raw), "callSites") {
+		t.Errorf("callSites in syntax output: %s", raw)
+	}
+}
+
+// Calls with explicit instantiation or a parenthesised callee are calls.
+func TestCheckSyntaxGenericAndParenCalls(t *testing.T) {
+	in := CheckInput{Flows: []CheckFlow{{ID: "F1", Steps: []CheckStep{
+		{ID: "A", File: "service/generic.go", Symbol: "UseGenerics", StartLine: 11, EndLine: 15,
+			Calls: []Call{{Symbol: "Max", File: "service/service.go", Line: 14}}},
+		{ID: "B", File: "service/service.go", Symbol: "Max", StartLine: 46, EndLine: 51},
+		{ID: "C", File: "service/generic.go", Symbol: "Paren", StartLine: 17, EndLine: 19,
+			Calls: []Call{{Symbol: "Run", File: "service/service.go", Line: 18}}},
+		{ID: "D", File: "service/service.go", Symbol: "Run", StartLine: 54, EndLine: 55},
+	}}}}
+	out, err := checkSyntax("testdata/flow", in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if l := findLink(t, out, "A", "B"); l.Check != "name-match" || l.How != "call" || l.Line != 14 {
+		t.Errorf("A->B %+v", l)
+	}
+	if l := findLink(t, out, "C", "D"); l.Check != "name-match" || l.How != "call" || l.Line != 18 {
+		t.Errorf("C->D %+v", l)
+	}
+}

@@ -5,20 +5,27 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
-	"path/filepath"
 	"sort"
 )
 
 // listFunctions returns the functions and methods of the input files that
 // contain a changed line. Parsing is syntax only, so build tags are ignored.
-// The doc comment of a function does not count as part of it.
+// The doc comment of a function does not count as part of it. A file that
+// cannot be read or parsed, or that is outside root, is skipped and named in
+// Problems.
 func listFunctions(root string, in FunctionsInput) (FunctionsOutput, error) {
 	out := FunctionsOutput{Version: CheckerVersion, Functions: []FuncInfo{}}
 	fset := token.NewFileSet()
 	for _, f := range in.Files {
-		file, err := parser.ParseFile(fset, filepath.Join(root, filepath.FromSlash(f.Path)), nil, parser.ParseComments)
+		full, ok := safeJoin(root, f.Path)
+		if !ok {
+			out.Problems = append(out.Problems, fmt.Sprintf("%s is outside the repository; skipped", f.Path))
+			continue
+		}
+		file, err := parser.ParseFile(fset, full, nil, parser.ParseComments)
 		if err != nil {
-			return out, fmt.Errorf("parse %s: %w", f.Path, err)
+			out.Problems = append(out.Problems, fmt.Sprintf("cannot read or parse %s; skipped", f.Path))
+			continue
 		}
 		for _, decl := range file.Decls {
 			fn, ok := decl.(*ast.FuncDecl)

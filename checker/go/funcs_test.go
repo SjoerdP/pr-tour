@@ -79,8 +79,12 @@ func TestFunctionsIgnoresDocComment(t *testing.T) {
 
 func TestFunctionsMissingFile(t *testing.T) {
 	in := FunctionsInput{Files: []FileLines{{Path: "nope.go", Lines: []int{1}}}}
-	if _, err := listFunctions("testdata/flow", in); err == nil {
-		t.Error("want error for missing file")
+	out, err := listFunctions("testdata/flow", in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(out.Functions) != 0 || len(out.Problems) != 1 || !strings.Contains(out.Problems[0], "nope.go") {
+		t.Errorf("want nope.go skipped with a problem, got %+v", out)
 	}
 }
 
@@ -100,5 +104,44 @@ func TestRun(t *testing.T) {
 	}
 	if code := run([]string{"functions"}, strings.NewReader("{}"), &so, &se); code != 2 {
 		t.Errorf("no root: code %d", code)
+	}
+}
+
+// A generic receiver is named without its type parameters.
+func TestFunctionsGenericReceiver(t *testing.T) {
+	in := FunctionsInput{Files: []FileLines{{Path: "service/generic.go", Lines: []int{8}}}}
+	out, err := listFunctions("testdata/flow", in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(out.Functions) != 1 || out.Functions[0].Name != "List.Add" {
+		t.Errorf("got %+v", out.Functions)
+	}
+}
+
+// A file that does not parse, or that leaves the root, is skipped and named
+// in problems; the other files are still listed.
+func TestFunctionsSkipsBadFiles(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(dir+"/bad.go", []byte("package x\nfunc {"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(dir+"/good.go", []byte("package x\n\nfunc Good() {\n}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	in := FunctionsInput{Files: []FileLines{
+		{Path: "bad.go", Lines: []int{2}},
+		{Path: "../escape.go", Lines: []int{1}},
+		{Path: "good.go", Lines: []int{3}},
+	}}
+	out, err := listFunctions(dir, in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(out.Functions) != 1 || out.Functions[0].Name != "Good" {
+		t.Errorf("functions %+v", out.Functions)
+	}
+	if len(out.Problems) != 2 || !strings.Contains(out.Problems[0], "bad.go") || !strings.Contains(out.Problems[1], "../escape.go") {
+		t.Errorf("problems %v", out.Problems)
 	}
 }

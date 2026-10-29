@@ -11,8 +11,7 @@
         "endLine": 25,
         "source": "symbol"
       },
-      "marks": [],
-      "callSites": []
+      "marks": []
     },
     "S2": {
       "anchor": {
@@ -21,8 +20,7 @@
         "endLine": 20,
         "source": "symbol"
       },
-      "marks": [],
-      "callSites": []
+      "marks": []
     },
     "S3": {
       "anchor": {
@@ -49,8 +47,7 @@
           "kind": "async",
           "source": "code"
         }
-      ],
-      "callSites": []
+      ]
     },
     "S4": {
       "anchor": {
@@ -59,8 +56,7 @@
         "endLine": 33,
         "source": "symbol"
       },
-      "marks": [],
-      "callSites": []
+      "marks": []
     },
     "S5": {
       "anchor": {
@@ -69,8 +65,7 @@
         "endLine": 50,
         "source": "range"
       },
-      "marks": [],
-      "callSites": []
+      "marks": []
     },
     "S6": {
       "anchor": {
@@ -79,12 +74,10 @@
         "endLine": 58,
         "source": "symbol"
       },
-      "marks": [],
-      "callSites": []
+      "marks": []
     },
     "S7": {
-      "marks": [],
-      "callSites": []
+      "marks": []
     },
     "S8": {
       "anchor": {
@@ -99,8 +92,7 @@
           "kind": "async",
           "source": "code"
         }
-      ],
-      "callSites": []
+      ]
     }
   },
   "links": {
