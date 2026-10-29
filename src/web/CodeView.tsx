@@ -61,6 +61,11 @@ export type CodeViewProps = {
   onJump: JumpFn;
   /** Open another home of the tour (from a "belongs to" label). */
   onOpenHome: (homeId: string) => void;
+  /**
+   * Go to the next step. Given only for a step's own code: then the line that calls the
+   * next step gets a "next step →" marker.
+   */
+  onNextStep?: () => void;
   /** The PR's review: threads and drafts are shown in place, new comments go here. */
   review: ReviewState;
 };
@@ -77,6 +82,7 @@ export function CodeView({
   plain = false,
   onJump,
   onOpenHome,
+  onNextStep,
   review,
 }: CodeViewProps) {
   const { load, tokens } = useCodeFile(repo, pr, tour, file, plain);
@@ -116,6 +122,7 @@ export function CodeView({
         reveal={reveal}
         onJump={onJump}
         onOpenHome={onOpenHome}
+        onNextStep={onNextStep}
         review={review}
       />
     );
@@ -137,6 +144,7 @@ type FileCodeProps = {
   reveal: Reveal | null;
   onJump: JumpFn;
   onOpenHome: (homeId: string) => void;
+  onNextStep: (() => void) | undefined;
   review: ReviewState;
 };
 
@@ -157,6 +165,7 @@ function FileCode({
   reveal,
   onJump,
   onOpenHome,
+  onNextStep,
   review,
 }: FileCodeProps) {
   const rows = useMemo(() => buildRows(file.newText, file.oldText, file.diff?.hunks ?? []), [file]);
@@ -170,6 +179,7 @@ function FileCode({
   const marksAt = useMemo(() => stepMarks(tour, homeId, file.path), [tour, homeId, file.path]);
   const sites = useMemo(() => stepSites(tour, homeId, file.path), [tour, homeId, file.path]);
   const siteTitle = useMemo(() => siteTitler(tour, homeId), [tour, homeId]);
+  const nextCall = useMemo(() => nextStepCall(tour, homeId, file.path), [tour, homeId, file.path]);
   // An added file has no old side: no empty column for old line numbers.
   const showOld = useMemo(() => rows.some((r) => r.oldNo !== undefined), [rows]);
   // Line-number columns as wide as the longest number.
@@ -493,6 +503,11 @@ function FileCode({
                     sites={inFocus && row.newNo !== undefined ? sites : undefined}
                     marks={inFocus && row.newNo !== undefined ? marksAt.get(row.newNo) : undefined}
                     siteTitle={siteTitle}
+                    next={
+                      onNextStep && nextCall && row.newNo === nextCall.line
+                        ? { title: nextCall.title, go: onNextStep }
+                        : undefined
+                    }
                     label={label}
                     onPick={diff ? pick : null}
                     drag={lineDrag}
@@ -631,6 +646,32 @@ function siteTitler(tour: Tour, homeId: string): (site: CallSite) => string {
   };
 }
 
+/**
+ * The line of `homeId` that calls the next step of its flow, when the code check backs
+ * that link up (proven or matched by name): the lowest such line, with the next step's
+ * title. Undefined for other homes, other files, the last step, or no such link.
+ */
+function nextStepCall(
+  tour: Tour,
+  homeId: string,
+  path: string,
+): { line: number; title: string } | undefined {
+  const home = homesInOrder(tour).find((h) => h.id === homeId);
+  if (home?.kind !== 'step' || home.step.file !== path) return undefined;
+  const { flow, step } = home;
+  const next = flow.steps[flow.steps.indexOf(step) + 1];
+  if (!next) return undefined;
+  const lines = (flow.links ?? [])
+    .filter(
+      (l) =>
+        l.from === step.id &&
+        l.to === next.id &&
+        (l.check === 'proven' || l.check === 'name-match'),
+    )
+    .map((l) => l.line);
+  return lines.length > 0 ? { line: Math.min(...lines), title: next.title } : undefined;
+}
+
 /** The traced calls of `homeId` when it is a step in `path`; none otherwise. */
 function stepCalls(tour: Tour, homeId: string, path: string): CallRef[] {
   const home = homesInOrder(tour).find((h) => h.id === homeId);
@@ -662,6 +703,8 @@ type CodeRowProps = {
   siteTitle: (site: CallSite) => string;
   /** What the code check or the tour says happens on this line. */
   marks: Mark[] | undefined;
+  /** Set on the line that calls the next step: its title, and the way there. */
+  next: { title: string; go: () => void } | undefined;
   label: Owner | null;
   /** Picks a line for a comment (`extend` on shift+click); null when comments are not possible. */
   onPick: ((side: DiffSide, line: number, extend: boolean) => void) | null;
@@ -727,6 +770,7 @@ function CodeRow({
   sites,
   siteTitle,
   marks,
+  next,
   label,
   onPick,
   drag,
@@ -771,6 +815,16 @@ function CodeRow({
           {MARK_TEXT[mark.kind]}
         </span>
       ))}
+      {next && (
+        <button
+          type="button"
+          className="next-step-marker"
+          title={`Next step: ${next.title}`}
+          onClick={next.go}
+        >
+          next step →
+        </button>
+      )}
       {label && (
         <button type="button" className="owner-label" onClick={() => onOpenHome(label.id)}>
           belongs to {label.title}
