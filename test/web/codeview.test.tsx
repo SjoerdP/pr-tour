@@ -328,6 +328,62 @@ describe('CodeView', () => {
     expect(onJump).toHaveBeenCalledWith('src/fees.ts', 12);
   });
 
+  it('with call sites, only the exact columns are clickable', async () => {
+    const text = '  chargeFee(chargeFee(x));';
+    serve(modified('src/repay.ts', [replaceHunk(5, 'old five', text)]), {
+      [`${HEAD}:src/repay.ts`]: lines(10, { 5: text }),
+      [`${BASE}:src/repay.ts`]: lines(10, { 5: 'old five' }),
+    });
+    const tour = makeTour();
+    const step = tour.flows[0]!.steps[0]!;
+    step.calls = [{ symbol: 'chargeFee', file: 'src/fees.ts', line: 12 }];
+    // Only the inner call (columns 12..21) was resolved.
+    step.callSites = [{ line: 5, col: 12, endCol: 21, to: { file: 'src/fees.ts', line: 12 } }];
+    const { onJump } = renderView({ tour });
+
+    const call = await screen.findByRole('button', { name: 'chargeFee' });
+    expect(screen.getAllByRole('button', { name: 'chargeFee' })).toHaveLength(1);
+    expect(call.title).toBe('Show the called function');
+    fireEvent.click(call);
+    expect(onJump).toHaveBeenCalledWith('src/fees.ts', 12, null);
+  });
+
+  it('names the target of a call site: its step number, or its function', async () => {
+    const text = '  a(); b();';
+    serve(modified('src/repay.ts', [replaceHunk(5, 'old five', text)]), {
+      [`${HEAD}:src/repay.ts`]: lines(10, { 5: text }),
+      [`${BASE}:src/repay.ts`]: lines(10, { 5: 'old five' }),
+    });
+    const tour = makeTour();
+    const flow = tour.flows[0]!;
+    const first = flow.steps[0]!;
+    const second = { ...first, id: 'F1.S2', title: 'Second', file: 'src/other.ts' };
+    flow.steps.push(second);
+    tour.flows.push({
+      ...flow,
+      id: 'F2',
+      steps: [
+        {
+          ...first,
+          id: 'F2.S1',
+          title: 'Place',
+          anchor: { name: 'OrderService.place', startLine: 1, endLine: 2, source: 'symbol' },
+        },
+      ],
+    });
+    first.callSites = [
+      { line: 5, col: 2, endCol: 3, to: { file: 'src/other.ts', line: 1 }, toStep: 'F1.S2' },
+      { line: 5, col: 7, endCol: 8, to: { file: 'src/o.ts', line: 1 }, toStep: 'F2.S1' },
+    ];
+    const { onJump } = renderView({ tour });
+
+    const a = await screen.findByRole('button', { name: 'a' });
+    expect(a.title).toBe('Go to step 2');
+    expect(screen.getByRole('button', { name: 'b' }).title).toBe('Show OrderService.place');
+    fireEvent.click(a);
+    expect(onJump).toHaveBeenCalledWith('src/other.ts', 1, 'F1.S2');
+  });
+
   it('shows an unchanged file (a followed call) with the line in view', async () => {
     getDiff.mockRejectedValue(new api.ApiError(404, 'src/fees.ts is not changed in this tour'));
     getFile.mockResolvedValue({ text: lines(40) });

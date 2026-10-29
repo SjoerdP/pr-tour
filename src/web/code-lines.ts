@@ -8,7 +8,7 @@ import {
   type ReviewThread,
 } from '../shared/review.js';
 import type { Row } from '../shared/rows.js';
-import type { CallRef, Tour } from '../shared/tour.js';
+import type { CallRef, CallSite, Tour } from '../shared/tour.js';
 import { homeRanges, homesInOrder, homeTitle } from './homes.js';
 
 /** Head line numbers, or base line numbers with `side: 'old'` (deleted lines). */
@@ -118,7 +118,8 @@ export function draftRows(
   return placed;
 }
 
-export type CallMatch = { from: number; to: number; call: CallRef };
+/** `site`: set when found by position (a call site of the code check). */
+export type CallMatch = { from: number; to: number; call: CallRef; site?: CallSite };
 
 function isWordChar(ch: string | undefined): boolean {
   return ch !== undefined && /[\w$]/.test(ch);
@@ -155,4 +156,31 @@ export function callMatches(text: string, calls: CallRef[]): CallMatch[] {
     if (!prev || m.from >= prev.to) kept.push(m);
   }
   return kept;
+}
+
+/**
+ * The call sites on this row, by the exact columns of the callee name (head side only; a
+ * deleted row has none). Columns count characters of the row's text; Go counts bytes, so a
+ * non-ASCII character before the call shifts it. Sites that do not fit the text are dropped.
+ */
+export function siteMatches(row: Row, sites: CallSite[]): CallMatch[] {
+  if (row.newNo === undefined || row.kind === 'del') return [];
+  const found: CallMatch[] = [];
+  for (const site of sites) {
+    if (site.line !== row.newNo || site.endCol <= site.col || site.endCol > row.text.length) {
+      continue;
+    }
+    found.push({
+      from: site.col,
+      to: site.endCol,
+      call: {
+        symbol: row.text.slice(site.col, site.endCol),
+        file: site.to.file,
+        line: site.to.line,
+      },
+      site,
+    });
+  }
+  found.sort((a, b) => a.from - b.from);
+  return found.filter((m, i) => i === 0 || m.from >= found[i - 1]!.to);
 }

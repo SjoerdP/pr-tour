@@ -27,11 +27,14 @@ function firstRange(homes: Range[], file: string): Focus {
 
 function codeTarget(home: Home): { file: string; focus: Focus } {
   switch (home.kind) {
-    case 'step':
+    case 'step': {
+      // The function the code check pinned the step to, else the step's own lines.
+      const { anchor, startLine, endLine } = home.step;
       return {
         file: home.step.file,
-        focus: { start: home.step.startLine, end: home.step.endLine },
+        focus: { start: anchor?.startLine ?? startLine, end: anchor?.endLine ?? endLine },
       };
+    }
     case 'foundation':
       return {
         file: home.foundation.file,
@@ -143,7 +146,7 @@ type Props = {
   jump: { file: string; line: number } | null;
   /** A place to bring into view in the code, after a jump from the review panel. */
   reveal: Reveal | null;
-  onJump: (file: string, line: number) => void;
+  onJump: (file: string, line: number, toStep?: string | null) => void;
   /** Shows a line of code from this step, with a way back: a look, not a move. */
   onShowLine: (file: string, line: number) => void;
   onBack: () => void;
