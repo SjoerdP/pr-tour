@@ -25,14 +25,16 @@ vi.mock('../../src/web/CodeView.js', () => ({
     plain,
     onJump,
     onOpenHome,
+    onNextStep,
     review,
   }: {
     file: string;
     focus: { start: number } | null;
     homeId: string;
     plain?: boolean;
-    onJump: (file: string, line: number) => void;
+    onJump: (file: string, line: number, toStep?: string | null) => void;
     onOpenHome: (homeId: string) => void;
+    onNextStep?: () => void;
     review?: { state: string };
   }) => (
     <div>
@@ -42,9 +44,20 @@ vi.mock('../../src/web/CodeView.js', () => ({
       <button type="button" onClick={() => onJump('src/fees.ts', 12)}>
         follow chargeFee
       </button>
+      <button type="button" onClick={() => onJump('src/fees.ts', 12, 'F1.S2')}>
+        site to step
+      </button>
+      <button type="button" onClick={() => onJump('src/fees.ts', 12, null)}>
+        site to nothing
+      </button>
       <button type="button" onClick={() => onOpenHome('o1.1')}>
         open o1.1
       </button>
+      {onNextStep && (
+        <button type="button" onClick={onNextStep}>
+          next step marker
+        </button>
+      )}
     </div>
   ),
 }));
@@ -604,6 +617,48 @@ describe('TourView', () => {
     expect(markSeen).toHaveBeenCalledWith('acme/loans', 42, 'F1.S1', 'h-s1');
   });
 
+  it('focuses the anchor of a checked step, the step lines otherwise', async () => {
+    const tour = makeTour();
+    tour.flows[0]!.steps[0]!.anchor = {
+      name: 'repay',
+      startLine: 12,
+      endLine: 30,
+      source: 'symbol',
+    };
+    getPr.mockResolvedValue(response({ tour }));
+    render(<TourView repo="acme/loans" pr={42} />);
+    await screen.findByRole('navigation', { name: 'Tour outline' });
+    fireEvent.click(outlineItem('Validate and record'));
+    expect(screen.getByTestId('code-focus').textContent).toBe('12');
+  });
+
+  it('a call site goes to its step; one without a step opens a quick look', async () => {
+    const tour = makeTour();
+    const flow = tour.flows[0]!;
+    // The step is not at the call's line: only its id says where to go.
+    const charge = { ...flow.steps[0]!, id: 'F1.S2', title: 'Charge the fee', file: 'src/x.ts' };
+    getPr.mockResolvedValue(
+      response({
+        tour: {
+          ...tour,
+          flows: [{ ...flow, steps: [...flow.steps, charge] }],
+          hashes: { ...tour.hashes, 'F1.S2': 'h-s2' },
+        },
+      }),
+    );
+    render(<TourView repo="acme/loans" pr={42} />);
+    await screen.findByRole('navigation', { name: 'Tour outline' });
+    fireEvent.click(outlineItem('Validate and record'));
+
+    fireEvent.click(screen.getByRole('button', { name: 'site to nothing' }));
+    expect(screen.getByTestId('code-view').textContent).toBe('F1.S1 src/fees.ts');
+    expect(screen.getByRole('button', { name: 'Back to this step' })).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Back to this step' }));
+
+    fireEvent.click(screen.getByRole('button', { name: 'site to step' }));
+    expect(screen.getByTestId('code-view').textContent).toBe('F1.S2 src/x.ts');
+  });
+
   it('a call into a step of another flow stays a look from this step', async () => {
     const tour = makeTour();
     const flow = tour.flows[0]!;
@@ -646,5 +701,19 @@ describe('TourView', () => {
     fireEvent.click(screen.getByRole('button', { name: 'open o1.1' }));
     expect(outlineItem('Repay tests').getAttribute('aria-current')).toBe('step');
     expect(markSeen).toHaveBeenCalledWith('acme/loans', 42, 'f1', 'h-f1');
+  });
+
+  it("the code's next-step marker goes to the next step; a quick look has none", async () => {
+    getPr.mockResolvedValue(response());
+    render(<TourView repo="acme/loans" pr={42} />);
+    await screen.findByRole('navigation', { name: 'Tour outline' });
+    fireEvent.click(outlineItem('Validate and record'));
+
+    fireEvent.click(screen.getByRole('button', { name: 'follow chargeFee' }));
+    expect(screen.queryByRole('button', { name: 'next step marker' })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Back to this step' }));
+
+    fireEvent.click(screen.getByRole('button', { name: 'next step marker' }));
+    expect(outlineItem('Repay tests').getAttribute('aria-current')).toBe('step');
   });
 });

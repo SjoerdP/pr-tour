@@ -153,6 +153,9 @@ async function openPanel() {
 const rowOf = (n: number) =>
   screen.getByRole('button', { name: `Comment on line ${n}` }).closest('.code-row')!;
 
+/** Same budget as findBy* (test/web/setup.ts): vi.waitFor has its own 1 s default. */
+const SETTLE = { timeout: 3000 };
+
 const lastScrolled = () => scrollIntoView.mock.contexts.at(-1) as Element | undefined;
 
 describe('review panel: a jump shows its line', () => {
@@ -163,7 +166,7 @@ describe('review panel: a jump shows its line', () => {
     fireEvent.click(await within(panel).findByRole('button', { name: 'src/a.ts:81' }));
     await screen.findByText('src/a.ts new 2');
 
-    await vi.waitFor(() => expect(lastScrolled()).toBe(rowOf(81)));
+    await vi.waitFor(() => expect(lastScrolled()).toBe(rowOf(81)), SETTLE);
     expect(scrollIntoView).toHaveBeenLastCalledWith({ block: 'center' });
     expect(rowOf(81).classList.contains('reveal-flash')).toBe(true);
     expect(rowOf(1).classList.contains('reveal-flash')).toBe(false);
@@ -176,7 +179,7 @@ describe('review panel: a jump shows its line', () => {
     fireEvent.click(await within(panel).findByRole('button', { name: 'src/a.ts:60' }));
     await screen.findByText('src/a.ts new 2');
 
-    await vi.waitFor(() => expect(lastScrolled()).toBe(rowOf(60)));
+    await vi.waitFor(() => expect(lastScrolled()).toBe(rowOf(60)), SETTLE);
     expect(rowOf(60).classList.contains('reveal-flash')).toBe(true);
   });
 
@@ -187,7 +190,7 @@ describe('review panel: a jump shows its line', () => {
     fireEvent.click(await within(panel).findByRole('button', { name: 'src/a.ts' }));
     const block = await screen.findByRole('region', { name: 'Comments on this file' });
 
-    await vi.waitFor(() => expect(lastScrolled()).toBe(block));
+    await vi.waitFor(() => expect(lastScrolled()).toBe(block), SETTLE);
     expect(block.classList.contains('reveal-flash')).toBe(true);
   });
 
@@ -198,11 +201,11 @@ describe('review panel: a jump shows its line', () => {
 
     fireEvent.click(link);
     await screen.findByText('src/a.ts new 2');
-    await vi.waitFor(() => expect(lastScrolled()).toBe(rowOf(81)));
+    await vi.waitFor(() => expect(lastScrolled()).toBe(rowOf(81)), SETTLE);
     scrollIntoView.mockClear();
 
     fireEvent.click(link);
-    await vi.waitFor(() => expect(lastScrolled()).toBe(rowOf(81)));
+    await vi.waitFor(() => expect(lastScrolled()).toBe(rowOf(81)), SETTLE);
   });
 
   it('"Go to it" in the approve reminder shows the start of that home', async () => {
@@ -217,7 +220,7 @@ describe('review panel: a jump shows its line', () => {
     fireEvent.click(within(item).getByRole('button', { name: 'Go to it' }));
     await screen.findByText('src/a.ts new 2');
 
-    await vi.waitFor(() => expect(lastScrolled()).toBe(rowOf(1)));
+    await vi.waitFor(() => expect(lastScrolled()).toBe(rowOf(1)), SETTLE);
     expect(rowOf(1).classList.contains('reveal-flash')).toBe(true);
   });
 

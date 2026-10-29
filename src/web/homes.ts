@@ -2,6 +2,7 @@
 
 import type {
   Flow,
+  FlowLink,
   Foundation,
   OtherGroup,
   OtherItem,
@@ -87,34 +88,108 @@ export type CameFrom = {
   via: string | undefined;
   /** Steps between the caller and this one, which returned before the call: [first, last]. */
   returned: [number, number] | null;
+  /** What the code check made of the link; 'unchecked' for a tour without a check. */
+  check: FlowLink['check'];
+  source: FlowLink['source'];
+  /** Other steps that call this one, by the code or the tour. */
+  others: Array<{ caller: Step; callerNo: number }>;
+  reason?: string;
+  /** The step the tour names as the caller, when the code says another one does. */
+  claimedNo?: number;
 };
 
+type Found = Omit<CameFrom, 'returned'>;
+
 /**
- * Where `step` is called from, by its `from`. A tour from before `from` existed has only the
+ * Where `step` is called from. A checked tour has `flow.links`: the main one is a proven
+ * link, else Claude's. Otherwise `from`; a tour from before `from` existed has only the
  * calls each step lists: then the nearest earlier step that calls into this one. Null for a
  * flow's first step, or when nothing says.
  */
 export function cameFrom(flow: Flow, step: Step): CameFrom | null {
   const no = flow.steps.indexOf(step) + 1;
-  const link = step.from ? fromLink(flow, step.from) : callLink(flow, step, no);
+  const link =
+    linkFound(flow, step) ?? (step.from ? fromLink(flow, step.from) : callLink(flow, step, no));
   if (!link) return null;
   const { callerNo } = link;
   return { ...link, returned: callerNo < no - 1 ? [callerNo + 1, no - 1] : null };
 }
 
-function fromLink(flow: Flow, from: StepFrom): Omit<CameFrom, 'returned'> | null {
-  const caller = flow.steps[from.step - 1];
-  if (!caller) return null;
-  return { caller, callerNo: from.step, line: from.line, how: from.how, via: from.via };
+/** Proven by the code first, then found by name, then the tour's own claim. */
+function rank(link: FlowLink): number {
+  if (link.source !== 'claude' && link.check === 'proven') return 0;
+  if (link.source !== 'claude') return 1;
+  return 2;
 }
 
-function callLink(flow: Flow, step: Step, no: number): Omit<CameFrom, 'returned'> | null {
+function linkFound(flow: Flow, step: Step): Found | null {
+  const incoming = (flow.links ?? [])
+    .filter((l) => l.to === step.id)
+    .map((link) => ({ link, callerNo: flow.steps.findIndex((s) => s.id === link.from) + 1 }))
+    .filter((c) => c.callerNo > 0 && flow.steps[c.callerNo - 1] !== step)
+    .sort((x, y) => rank(x.link) - rank(y.link) || x.callerNo - y.callerNo);
+  const main = incoming[0];
+  if (!main) return null;
+  const { link, callerNo } = main;
+  const real = incoming.filter((c) => c.link.check !== 'not-found');
+  const seen = new Set([callerNo]);
+  const others: Found['others'] = [];
+  for (const c of real) {
+    if (seen.has(c.callerNo)) continue;
+    seen.add(c.callerNo);
+    others.push({ caller: flow.steps[c.callerNo - 1]!, callerNo: c.callerNo });
+  }
+  others.sort((x, y) => x.callerNo - y.callerNo);
+  const claim = incoming.find((c) => c.link.check === 'not-found' && c.callerNo !== callerNo);
+  return {
+    caller: flow.steps[callerNo - 1]!,
+    callerNo,
+    line: link.line,
+    how: link.how === 'register' ? 'call' : link.how,
+    via: link.via && link.via.length > 0 ? link.via.join(', ') : undefined,
+    check: link.check,
+    source: link.source,
+    others: link.check === 'not-found' ? [] : others,
+    ...(link.reason !== undefined && { reason: link.reason }),
+    ...(claim &&
+      link.check !== 'not-found' &&
+      link.source !== 'claude' && { claimedNo: claim.callerNo }),
+  };
+}
+
+function fromLink(flow: Flow, from: StepFrom): Found | null {
+  const caller = flow.steps[from.step - 1];
+  if (!caller) return null;
+  return {
+    caller,
+    callerNo: from.step,
+    line: from.line,
+    how: from.how,
+    via: from.via,
+    check: 'unchecked',
+    source: 'claude',
+    others: [],
+  };
+}
+
+function callLink(flow: Flow, step: Step, no: number): Found | null {
   for (let i = no - 2; i >= 0; i--) {
     const caller = flow.steps[i]!;
     const calls = caller.calls.some(
       (c) => c.file === step.file && step.startLine <= c.line && c.line <= step.endLine,
     );
-    if (calls) return { caller, callerNo: i + 1, line: null, how: 'call', via: undefined };
+    if (calls) {
+      return {
+        caller,
+        callerNo: i + 1,
+        line: null,
+        how: 'call',
+        via: undefined,
+        check: 'unchecked',
+        source: 'claude',
+        others: [],
+      };
+    }
   }
   return null;
 }

@@ -12,6 +12,18 @@ import {
   type TourMeta,
 } from '../shared/tour.js';
 import { z } from 'zod';
+import { findings } from './analysis/findings.js';
+import { applyCheck, checkInput } from './analysis/merge.js';
+import {
+  applyReview,
+  functionCode,
+  ReviewAnswerSchema,
+  reviewChangeText,
+  reviewPrompt,
+  type ReviewChange,
+} from './analysis/review.js';
+import type { FunctionsInput, FunctionsOutput } from './analysis/contract.js';
+import type { CheckerResult, runCheck, runFunctions } from './analysis/runner.js';
 import { checkTour, contains } from './check.js';
 import { lineChanges, parseDiff, type FileDiff, type LineChange } from './diff.js';
 import { firstLine, type Runner } from './exec.js';
@@ -21,6 +33,8 @@ import type { RepoManager } from './repo.js';
 import { StoreError, type Store } from './store.js';
 
 const CLAUDE_TIMEOUT_MS = 15 * 60 * 1000;
+/** Pass C, Claude's one review of the code check's findings. */
+const REVIEW_TIMEOUT_MS = 180_000;
 /** How much raw output to keep in `TourBuildError.details`. */
 const EXCERPT_CHARS = 4000;
 
@@ -203,7 +217,26 @@ export type TourBuilderDeps = {
   store: Store;
   /** The pr-tour data dir; temp diff files go to `<home>/tmp`. */
   home: string;
+  /** The Go checker passes; tests inject fakes. A checker that fails never fails a build. */
+  checker: { functions: typeof runFunctions; check: typeof runCheck };
 };
+
+const NO_GO_FILES = 'no Go files in this PR';
+
+/** Whether the PR touches a `.go` file that still exists at its head (added lines or not). */
+function hasGoAtHead(files: FileDiff[]): boolean {
+  return files.some((f) => f.status !== 'deleted' && f.path.endsWith('.go'));
+}
+
+/** Head-side changed lines of the PR's `.go` files, for the checker's `functions` pass. */
+function goInput(files: FileDiff[]): FunctionsInput {
+  const byFile = new Map<string, number[]>();
+  for (const c of lineChanges(files.filter((f) => f.path.endsWith('.go')))) {
+    if (c.kind !== 'add') continue;
+    byFile.set(c.file, [...(byFile.get(c.file) ?? []), c.line]);
+  }
+  return { files: [...byFile].map(([path, lines]) => ({ path, lines })) };
+}
 
 /** Builds tours with the user's `claude` CLI, or imports author-made ones, and stores them. */
 export class TourBuilder {
@@ -214,16 +247,91 @@ export class TourBuilder {
     const { summary, worktree, diff, mergeBase } = await this.checkout(repo, pr, onLog);
 
     const diffPath = join(this.deps.home, 'tmp', `${slug(repo)}-${pr}-${summary.headSha}.diff`);
+    const functionsPath = diffPath.replace(/\.diff$/, '.functions.json');
     mkdirSync(dirname(diffPath), { recursive: true });
     writeFileSync(diffPath, diff);
     let body: TourBodyInput;
     try {
-      body = await this.askClaude(summary, worktree, diffPath, onLog);
+      // Pass A: the functions that hold changed lines, so Claude can name them exactly.
+      const table = await this.functions(worktree, diff, onLog);
+      const hasTable = table !== null && table.functions.length > 0;
+      if (hasTable) writeFileSync(functionsPath, JSON.stringify(table, null, 2));
+      body = await this.askClaude(
+        summary,
+        worktree,
+        diffPath,
+        hasTable ? functionsPath : undefined,
+        onLog,
+      );
     } finally {
       rmSync(diffPath, { force: true });
+      rmSync(functionsPath, { force: true });
     }
 
-    return this.finishAndSave(body, summary, mergeBase, 'inferred', diff, onLog);
+    return this.finishAndSave(body, summary, mergeBase, 'inferred', diff, worktree, onLog);
+  }
+
+  /** Pass A on a checkout; null when there are no Go files, no checker, or the checker fails. */
+  private async functions(
+    worktree: string,
+    diff: string,
+    onLog: (line: string) => void,
+  ): Promise<FunctionsOutput | null> {
+    const input = goInput(parseDiff(diff));
+    if (input.files.length === 0) return null;
+    onLog('Finding the changed Go functions');
+    let result: CheckerResult<FunctionsOutput>;
+    try {
+      result = await this.deps.checker.functions(this.deps.run, worktree, input);
+    } catch (err) {
+      result = { ok: false, problem: (err as Error).message, ms: 0 };
+    }
+    if (!result.ok) {
+      onLog(`Function table skipped: ${result.problem}`);
+      return null;
+    }
+    for (const problem of result.output.problems ?? []) onLog(`Function table: ${problem}`);
+    return result.output;
+  }
+
+  /** The table of changed Go functions of a PR's head (null: no Go files, no checker). */
+  async functionsOf(repo: string, pr: number): Promise<FunctionsOutput | null> {
+    const { worktree, diff } = await this.checkout(repo, pr, () => {});
+    return this.functions(worktree, diff, () => {});
+  }
+
+  /**
+   * Run the code check again on the stored tour of a PR, and store the result. It checks the
+   * commits the tour was made for, even when the PR has moved on since.
+   */
+  async recheck(repo: string, pr: number): Promise<Tour> {
+    const stored = this.deps.store.getTour(repo, pr);
+    if (stored === null) {
+      throw new TourBuildError(
+        `No tour is stored for ${repo}#${pr}.`,
+        'Build or import one first.',
+      );
+    }
+    // `baseSha` is the merge base, so this diff is the tour's own diff.
+    const { baseSha, headSha } = stored;
+    const worktree = await this.deps.repos.ensureWorktree(repo, pr, baseSha, headSha);
+    const diff = await this.deps.repos.diffText(repo, baseSha, headSha);
+    const tour = await this.passB(stored, worktree, diff);
+    this.deps.store.saveTour(tour);
+    return tour;
+  }
+
+  /** Pass B: check the tour against the code. Never throws; a failure becomes a problem. */
+  private async passB(tour: Tour, worktree: string, diff: string): Promise<Tour> {
+    if (!hasGoAtHead(parseDiff(diff))) return applyCheck(tour, null, NO_GO_FILES);
+    try {
+      return applyCheck(
+        tour,
+        await this.deps.checker.check(this.deps.run, worktree, checkInput(tour)),
+      );
+    } catch (err) {
+      return applyCheck(tour, null, `the Go check failed: ${(err as Error).message}`);
+    }
   }
 
   /**
@@ -240,8 +348,8 @@ export class TourBuilder {
     const parsed = parseBody(bodyJson);
     if (!parsed.ok) throw new TourBuildError('The tour file is not a valid tour.', parsed.error);
     checkReplace(this.deps.store, repo, pr, replace);
-    const { summary, diff, mergeBase } = await this.checkout(repo, pr, () => {});
-    return this.finishAndSave(parsed.body, summary, mergeBase, 'author', diff, () => {});
+    const { summary, worktree, diff, mergeBase } = await this.checkout(repo, pr, () => {});
+    return this.finishAndSave(parsed.body, summary, mergeBase, 'author', diff, worktree, () => {});
   }
 
   private async checkout(repo: string, pr: number, onLog: (line: string) => void) {
@@ -265,6 +373,7 @@ export class TourBuilder {
     pr: PrSummary,
     worktree: string,
     diffPath: string,
+    functionsPath: string | undefined,
     onLog: (line: string) => void,
   ): Promise<TourBodyInput> {
     const jsonSchema = tourBodyJsonSchema();
@@ -274,8 +383,14 @@ export class TourBuilder {
       onLog(
         attempt === 1 ? 'Asking Claude for a tour' : 'Answer was not a valid tour; asking again',
       );
-      const prompt = tourPrompt({ diffPath, pr, jsonSchema, retryError });
-      lastAnswer = await this.runClaude(prompt, worktree, diffPath);
+      const prompt = tourPrompt({ diffPath, functionsPath, pr, jsonSchema, retryError });
+      lastAnswer = await this.runClaude(
+        prompt,
+        worktree,
+        dirname(diffPath),
+        CLAUDE_TIMEOUT_MS,
+        'the tour',
+      );
       const parsed = parseBody(extractJson(lastAnswer));
       if (parsed.ok) return parsed.body;
       onLog(parsed.error);
@@ -287,8 +402,18 @@ export class TourBuilder {
     );
   }
 
-  /** One `claude -p` run; returns its final answer text. */
-  private async runClaude(prompt: string, worktree: string, diffPath: string): Promise<string> {
+  /**
+   * One `claude -p` run in `worktree`; returns its final answer text. `addDir` is one more
+   * directory the file tools may read (the diff's).
+   */
+  private async runClaude(
+    prompt: string,
+    worktree: string,
+    addDir: string | undefined,
+    timeoutMs: number,
+    /** What the run is for, as it reads after "before finishing": `the tour`, `the review`. */
+    what: string,
+  ): Promise<string> {
     // Read-only and predictable:
     // - `--tools` makes Read, Grep and Glob the only tools that exist (no Bash, Edit,
     //   WebFetch), and `--allowedTools` lets them run without a permission prompt.
@@ -303,8 +428,7 @@ export class TourBuilder {
       'json',
       '--tools',
       'Read,Grep,Glob',
-      '--add-dir',
-      dirname(diffPath),
+      ...(addDir !== undefined ? ['--add-dir', addDir] : []),
       '--strict-mcp-config',
       '--disable-slash-commands',
       '--no-session-persistence',
@@ -316,7 +440,7 @@ export class TourBuilder {
     const result = await this.deps.run('claude', args, {
       cwd: worktree,
       input: prompt,
-      timeoutMs: CLAUDE_TIMEOUT_MS,
+      timeoutMs,
     });
     if (result.code !== 0) {
       const reason = firstLine(result.stderr) ?? `exit code ${result.code}`;
@@ -333,22 +457,89 @@ export class TourBuilder {
     }
     const { result: text, is_error: isError } = output as { result?: unknown; is_error?: unknown };
     if (isError === true || typeof text !== 'string') {
-      throw new TourBuildError('Claude stopped before finishing the tour.', excerpt(result.stdout));
+      throw new TourBuildError(`Claude stopped before finishing ${what}.`, excerpt(result.stdout));
     }
     return text;
   }
 
-  private finishAndSave(
+  /**
+   * Pass C: Claude reviews the findings once and may fix the story; pass B then checks the
+   * changed tour. Never throws: on any failure the pass B tour is kept, with a problem line.
+   */
+  private async passC(
+    tour: Tour,
+    worktree: string,
+    diff: string,
+    onLog: (line: string) => void,
+  ): Promise<Tour> {
+    const list = findings(tour);
+    onLog(`Asking Claude to review ${list.length} code check findings`);
+    const start = Date.now();
+    let changes: ReviewChange[];
+    try {
+      const prompt = reviewPrompt(tour, list, functionCode(worktree, tour, list));
+      const answer = await this.runClaude(
+        prompt,
+        worktree,
+        undefined,
+        REVIEW_TIMEOUT_MS,
+        'the review',
+      );
+      const json = extractJson(answer);
+      if (json === null) throw new Error('no JSON object found in the answer');
+      const parsed = ReviewAnswerSchema.safeParse(JSON.parse(json));
+      if (!parsed.success) {
+        const why = z.prettifyError(parsed.error).replace(/\s*\n\s*/g, ' ');
+        throw new Error(`invalid answer: ${why}`);
+      }
+      changes = parsed.data.changes;
+    } catch (err) {
+      const analysis = tour.analysis!;
+      onLog(`Review skipped: ${(err as Error).message}`);
+      const problem = `the review by Claude failed: ${(err as Error).message}`;
+      return {
+        ...tour,
+        analysis: {
+          ...analysis,
+          problems: [...analysis.problems, problem],
+          review: { ran: false, ms: Date.now() - start, changes: [], problems: [problem] },
+        },
+      };
+    }
+    const { tour: reviewed, applied, dropped } = applyReview(tour, changes);
+    const ms = Date.now() - start;
+    onLog(`Claude made ${applied.length} changes; ${dropped.length} dropped`);
+    // Its result is final: there is no second review.
+    const checked = applied.length > 0 ? await this.passB(reviewed, worktree, diff) : reviewed;
+    const analysis = checked.analysis!;
+    const droppedProblems = dropped.map((d) => `a review change by Claude was dropped: ${d.why}`);
+    return {
+      ...checked,
+      analysis: {
+        ...analysis,
+        problems: [...analysis.problems, ...droppedProblems],
+        review: {
+          ran: true,
+          ms,
+          changes: applied.map((c) => reviewChangeText(tour, reviewed, c)),
+          ...(droppedProblems.length > 0 ? { problems: droppedProblems } : {}),
+        },
+      },
+    };
+  }
+
+  private async finishAndSave(
     body: TourBodyInput,
     pr: PrSummary,
     /** Stored as the tour's `baseSha`: the old side of the diff is this commit, not the base tip. */
     mergeBase: string,
     source: TourMeta['source'],
     diff: string,
+    worktree: string,
     onLog: (line: string) => void,
-  ): Tour {
+  ): Promise<Tour> {
     onLog('Checking the tour against the diff');
-    const tour = finishTour(
+    const finished = finishTour(
       body,
       {
         repo: pr.repo,
@@ -360,6 +551,12 @@ export class TourBuilder {
       },
       parseDiff(diff),
     );
+    onLog('Checking the tour against the code');
+    let tour = await this.passB(finished, worktree, diff);
+    // Author tours get no extra Claude call: the import prints the findings instead.
+    if (source === 'inferred' && findings(tour).length > 0) {
+      tour = await this.passC(tour, worktree, diff, onLog);
+    }
     this.deps.store.saveTour(tour);
     onLog(`Saved the tour (${homeIds(tour).length} homes, ${tour.check.problems.length} problems)`);
     return tour;

@@ -56,6 +56,7 @@ src/server/      Everything that runs under Node, flat, one module per concern.
   app.ts         createApp: Hono routes, localhost guard, static web app
   http.ts        HttpError, prParams, parse, jsonBody: request helpers for the routes
   review-routes.ts registerReviewRoutes: drafts, review state, submit, resolve
+src/server/analysis/ The Node side of the code check: runner (runs the Go checker), merge, findings, review
 src/cli.ts       pr-tour binary: parseArgs + wiring of real dependencies
 src/web/         React app. Components PascalCase.tsx, hooks useX.ts, api.ts client.
 test/            Vitest tests mirroring src/ (test/server, test/shared, test/web, test/cli.test.ts)
@@ -144,6 +145,29 @@ without a CORS preflight, which the server never approves). As a second line, a
 write whose `Origin` is not our own, or whose `Sec-Fetch-Site` is not
 `same-origin` or `none`, is refused. All responses forbid framing
 (`X-Frame-Options: DENY`, `frame-ancestors 'none'`).
+
+## Code check
+
+An optional Go program, `checker/go` (module `pr-tour/checker`, Go 1.26+), reads the
+Go files of a PR and answers as JSON. `scripts/build-checker.mjs` builds it into
+`dist/bin/pr-tour-check-go` during `npm run build` (`GOTOOLCHAIN=local`). Without a
+suitable `go` the script prints one line and exits 0; a compile error is a real
+failure. `src/server/analysis/runner.ts` runs the binary (`checkerPath()`, or
+`PR_TOUR_CHECKER`). If it is missing, tours still build and the check is skipped.
+
+`build.ts` uses the checker in three passes:
+
+- **Pass A** lists the functions that hold changed lines, so the tour writer (Claude, or
+  the author through `pr-tour functions`) names steps by real `symbol`s.
+- **Pass B** checks the finished tour against the code and records what does not match
+  as findings (and a `note` when there is nothing to check, or the check fails). It never
+  fails a build.
+- **Pass C** (inferred tours only) asks Claude once to review the findings and fix the
+  story, then runs pass B again on the changed tour. `pr-tour recheck` runs pass B again
+  on a stored tour.
+
+`pr-tour import` prints `finding:` lines (the author should fix them) and `note:`
+lines (status only, such as "no Go files in this PR").
 
 ## Dependency rules
 
@@ -290,7 +314,7 @@ not fail while `src/` is still empty.
 
 ```
 npm run dev          server (tsx watch, no browser open) + Vite on :5173 with /api proxied
-npm run build        clean, tsc -> dist/, vite -> dist/web
+npm run build        clean, tsc -> dist/, Go checker -> dist/bin (if Go 1.26+), vite -> dist/web
 npm test             all tests once;  npm run test:watch  for watch mode
 npx vitest run test/server/diff.test.ts      one file (works across projects)
 npm run typecheck    both tsconfigs

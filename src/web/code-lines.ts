@@ -8,7 +8,7 @@ import {
   type ReviewThread,
 } from '../shared/review.js';
 import type { Row } from '../shared/rows.js';
-import type { CallRef, Tour } from '../shared/tour.js';
+import type { CallRef, CallSite, Tour } from '../shared/tour.js';
 import { homeRanges, homesInOrder, homeTitle } from './homes.js';
 
 /** Head line numbers, or base line numbers with `side: 'old'` (deleted lines). */
@@ -118,7 +118,8 @@ export function draftRows(
   return placed;
 }
 
-export type CallMatch = { from: number; to: number; call: CallRef };
+/** `site`: set when found by position (a call site of the code check). */
+export type CallMatch = { from: number; to: number; call: CallRef; site?: CallSite };
 
 function isWordChar(ch: string | undefined): boolean {
   return ch !== undefined && /[\w$]/.test(ch);
@@ -155,4 +156,48 @@ export function callMatches(text: string, calls: CallRef[]): CallMatch[] {
     if (!prev || m.from >= prev.to) kept.push(m);
   }
   return kept;
+}
+
+/** The UTF-16 index in `text` where UTF-8 byte offset `byte` starts, or -1 (not a boundary). */
+function indexOfByte(text: string, byte: number): number {
+  let bytes = 0;
+  let at = 0;
+  for (const ch of text) {
+    if (bytes === byte) return at;
+    if (bytes > byte) return -1;
+    const cp = ch.codePointAt(0)!;
+    bytes += cp < 0x80 ? 1 : cp < 0x800 ? 2 : cp < 0x10000 ? 3 : 4;
+    at += ch.length;
+  }
+  return bytes === byte ? at : -1;
+}
+
+const IDENTIFIER = /^[\p{L}_][\p{L}\p{N}_]*$/u;
+
+/**
+ * The call sites on this row, by the exact columns of the callee name (head side only; a
+ * deleted row has none). The columns are Go's: 1-based UTF-8 byte columns, `endCol` the
+ * column just after the name. They are converted to string indexes, so a non-ASCII
+ * character earlier on the line does not shift the button. A site whose columns do not
+ * fall on a Go identifier of the row is dropped, never shown on the wrong text.
+ */
+export function siteMatches(row: Row, sites: CallSite[]): CallMatch[] {
+  if (row.newNo === undefined || row.kind === 'del') return [];
+  const found: CallMatch[] = [];
+  for (const site of sites) {
+    if (site.line !== row.newNo || site.col < 1 || site.endCol <= site.col) continue;
+    const from = indexOfByte(row.text, site.col - 1);
+    const to = indexOfByte(row.text, site.endCol - 1);
+    if (from < 0 || to <= from) continue;
+    const name = row.text.slice(from, to);
+    if (!IDENTIFIER.test(name)) continue;
+    found.push({
+      from,
+      to,
+      call: { symbol: name, file: site.to.file, line: site.to.line },
+      site,
+    });
+  }
+  found.sort((a, b) => a.from - b.from);
+  return found.filter((m, i) => i === 0 || m.from >= found[i - 1]!.to);
 }

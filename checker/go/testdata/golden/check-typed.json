@@ -1,0 +1,391 @@
+{
+  "version": 1,
+  "engine": "go-types",
+  "engineVersion": "",
+  "degraded": false,
+  "steps": {
+    "S1": {
+      "anchor": {
+        "name": "Routes",
+        "startLine": 22,
+        "endLine": 25,
+        "source": "symbol"
+      },
+      "marks": [],
+      "callSites": [
+        {
+          "line": 23,
+          "col": 4,
+          "endCol": 10,
+          "to": {
+            "file": "api/api.go",
+            "line": 11
+          }
+        },
+        {
+          "line": 23,
+          "col": 24,
+          "endCol": 30,
+          "to": {
+            "file": "api/api.go",
+            "line": 17
+          },
+          "toStep": "S2"
+        },
+        {
+          "line": 24,
+          "col": 4,
+          "endCol": 10,
+          "to": {
+            "file": "api/api.go",
+            "line": 11
+          }
+        },
+        {
+          "line": 24,
+          "col": 31,
+          "endCol": 35,
+          "to": {
+            "file": "api/api.go",
+            "line": 27
+          }
+        }
+      ]
+    },
+    "S10": {
+      "anchor": {
+        "name": "OrderService.notify",
+        "startLine": 27,
+        "endLine": 29,
+        "source": "symbol"
+      },
+      "marks": [],
+      "callSites": []
+    },
+    "S11": {
+      "anchor": {
+        "name": "Boot",
+        "startLine": 30,
+        "endLine": 32,
+        "source": "symbol"
+      },
+      "marks": [],
+      "callSites": [
+        {
+          "line": 31,
+          "col": 2,
+          "endCol": 17,
+          "to": {
+            "file": "api/zz_generated.go",
+            "line": 5
+          },
+          "toStep": "S13"
+        }
+      ]
+    },
+    "S12": {
+      "anchor": {
+        "name": "Reload",
+        "startLine": 34,
+        "endLine": 36,
+        "source": "symbol"
+      },
+      "marks": [],
+      "callSites": [
+        {
+          "line": 35,
+          "col": 2,
+          "endCol": 17,
+          "to": {
+            "file": "api/zz_generated.go",
+            "line": 5
+          },
+          "toStep": "S13"
+        }
+      ]
+    },
+    "S13": {
+      "anchor": {
+        "name": "GeneratedHelper",
+        "startLine": 5,
+        "endLine": 6,
+        "source": "symbol"
+      },
+      "marks": [],
+      "callSites": []
+    },
+    "S14": {
+      "anchor": {
+        "name": "Routes",
+        "startLine": 22,
+        "endLine": 25,
+        "source": "range"
+      },
+      "marks": [],
+      "callSites": [
+        {
+          "line": 23,
+          "col": 4,
+          "endCol": 10,
+          "to": {
+            "file": "api/api.go",
+            "line": 11
+          }
+        },
+        {
+          "line": 23,
+          "col": 24,
+          "endCol": 30,
+          "to": {
+            "file": "api/api.go",
+            "line": 17
+          },
+          "toStep": "S2"
+        },
+        {
+          "line": 24,
+          "col": 4,
+          "endCol": 10,
+          "to": {
+            "file": "api/api.go",
+            "line": 11
+          }
+        },
+        {
+          "line": 24,
+          "col": 31,
+          "endCol": 35,
+          "to": {
+            "file": "api/api.go",
+            "line": 27
+          }
+        }
+      ]
+    },
+    "S2": {
+      "anchor": {
+        "name": "Handler.Create",
+        "startLine": 17,
+        "endLine": 20,
+        "source": "symbol"
+      },
+      "marks": [],
+      "callSites": [
+        {
+          "line": 19,
+          "col": 18,
+          "endCol": 23,
+          "to": {
+            "file": "service/service.go",
+            "line": 19
+          },
+          "toStep": "S3"
+        }
+      ]
+    },
+    "S3": {
+      "anchor": {
+        "name": "OrderService.Place",
+        "startLine": 19,
+        "endLine": 25,
+        "source": "symbol"
+      },
+      "marks": [
+        {
+          "line": 20,
+          "kind": "db-write",
+          "label": "insert order",
+          "source": "both"
+        },
+        {
+          "line": 21,
+          "kind": "db-write",
+          "label": "returns early",
+          "source": "claude"
+        },
+        {
+          "line": 23,
+          "kind": "async",
+          "source": "code"
+        }
+      ],
+      "callSites": [
+        {
+          "line": 20,
+          "col": 20,
+          "endCol": 31,
+          "to": {
+            "file": "repo/repo.go",
+            "line": 5
+          },
+          "toStep": "S9"
+        },
+        {
+          "line": 23,
+          "col": 7,
+          "endCol": 13,
+          "to": {
+            "file": "service/service.go",
+            "line": 27
+          },
+          "toStep": "S10"
+        }
+      ]
+    },
+    "S4": {
+      "anchor": {
+        "name": "OrderService.PlaceWrapped",
+        "startLine": 31,
+        "endLine": 33,
+        "source": "symbol"
+      },
+      "marks": [],
+      "callSites": [
+        {
+          "line": 32,
+          "col": 11,
+          "endCol": 16,
+          "to": {
+            "file": "service/service.go",
+            "line": 35
+          }
+        }
+      ]
+    },
+    "S5": {
+      "anchor": {
+        "name": "Max",
+        "startLine": 45,
+        "endLine": 50,
+        "source": "range"
+      },
+      "marks": [],
+      "callSites": []
+    },
+    "S6": {
+      "anchor": {
+        "name": "Job.Run",
+        "startLine": 57,
+        "endLine": 58,
+        "source": "symbol"
+      },
+      "marks": [],
+      "callSites": []
+    },
+    "S7": {
+      "marks": []
+    },
+    "S8": {
+      "anchor": {
+        "name": "Spawn",
+        "startLine": 60,
+        "endLine": 62,
+        "source": "symbol"
+      },
+      "marks": [
+        {
+          "line": 61,
+          "kind": "async",
+          "source": "code"
+        }
+      ],
+      "callSites": []
+    },
+    "S9": {
+      "anchor": {
+        "name": "Store.InsertOrder",
+        "startLine": 5,
+        "endLine": 7,
+        "source": "symbol"
+      },
+      "marks": [],
+      "callSites": []
+    }
+  },
+  "links": {
+    "F1": [
+      {
+        "from": "S1",
+        "to": "S2",
+        "line": 23,
+        "how": "register",
+        "source": "both",
+        "check": "proven"
+      },
+      {
+        "from": "S1",
+        "to": "S14",
+        "line": 24,
+        "how": "register",
+        "source": "both",
+        "check": "proven"
+      },
+      {
+        "from": "S11",
+        "to": "S13",
+        "line": 31,
+        "how": "call",
+        "source": "both",
+        "check": "proven"
+      },
+      {
+        "from": "S2",
+        "to": "S3",
+        "line": 19,
+        "how": "call",
+        "source": "both",
+        "check": "proven",
+        "note": "tour says line 18"
+      },
+      {
+        "from": "S3",
+        "to": "S9",
+        "line": 20,
+        "how": "call",
+        "source": "code",
+        "check": "proven"
+      },
+      {
+        "from": "S3",
+        "to": "S8",
+        "line": 21,
+        "how": "service",
+        "source": "claude",
+        "check": "unchecked"
+      },
+      {
+        "from": "S3",
+        "to": "S10",
+        "line": 23,
+        "how": "call",
+        "source": "code",
+        "check": "proven"
+      },
+      {
+        "from": "S4",
+        "to": "S3",
+        "line": 32,
+        "how": "call",
+        "source": "claude",
+        "check": "not-found"
+      },
+      {
+        "from": "S4",
+        "to": "S9",
+        "line": 32,
+        "how": "call",
+        "via": [
+          "OrderService.place"
+        ],
+        "source": "both",
+        "check": "proven"
+      }
+    ]
+  },
+  "problems": [
+    "step S3: side effect line 40 (event) is outside OrderService.Place (lines 19-25); dropped",
+    "step S5: symbol Nope not found in service/service.go; anchored by range to Max",
+    "step S7: file missing/gone.go not found",
+    "link S4-\u003eS3: line 32 calls OrderService.place, not OrderService.Place"
+  ]
+}

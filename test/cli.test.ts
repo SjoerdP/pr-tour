@@ -297,6 +297,96 @@ describe('pr-tour import', () => {
   }, 30_000);
 });
 
+describe('functions and recheck', () => {
+  it.each(['functions', 'recheck'] as const)('%s parses a PR ref', (cmd) => {
+    expect(parseArgs([cmd, 'a/b#7'])).toEqual({ cmd, repo: 'a/b', pr: 7 });
+  });
+
+  it.each(['functions', 'recheck'])('%s rejects bad refs', (cmd) => {
+    expect(() => parseArgs([cmd, 'a/b'])).toThrow(UsageError);
+    expect(() => parseArgs([cmd, 'a/b#x'])).toThrow(UsageError);
+    expect(() => parseArgs([cmd])).toThrow(UsageError);
+  });
+
+  it('importReport prints findings as finding lines and analysis problems as notes', () => {
+    const tour = {
+      check: { problems: [] },
+      other: [],
+      flows: [
+        {
+          id: 'F1',
+          title: 'Pay',
+          steps: [
+            {
+              id: 'F1.S1',
+              title: 'Take it',
+              file: 'x/pay.go',
+              symbol: 'Payy',
+              anchor: { name: 'Pay', startLine: 3, endLine: 3, source: 'range' },
+            },
+          ],
+          links: [],
+        },
+      ],
+      analysis: { engine: 'go-syntax', problems: ['the Go checker is not installed'] },
+    } as unknown as Tour;
+    expect(importReport(tour)).toEqual([
+      'finding: step 1 "Take it" (F1.S1): the code has no function Payy in x/pay.go; the step was pinned to Pay instead',
+      'note: the Go checker is not installed',
+    ]);
+  });
+
+  it('importReport prints no note that repeats a finding', () => {
+    const step = (id: string, symbol: string) => ({
+      id,
+      title: id,
+      file: 'x/pay.go',
+      symbol,
+      anchor: { name: symbol, startLine: 3, endLine: 3, source: 'symbol' },
+    });
+    const tour = {
+      check: { problems: [] },
+      other: [],
+      flows: [
+        {
+          id: 'F1',
+          title: 'Pay',
+          steps: [
+            {
+              ...step('F1.S1', 'Payy'),
+              anchor: { name: 'Pay', startLine: 3, endLine: 3, source: 'range' },
+            },
+            step('F1.S2', 'Save'),
+            step('F1.S3', 'Load'),
+          ],
+          links: [
+            {
+              from: 'F1.S2',
+              to: 'F1.S3',
+              line: 9,
+              how: 'call',
+              source: 'claude',
+              check: 'not-found',
+            },
+          ],
+        },
+      ],
+      analysis: {
+        engine: 'go-types',
+        problems: [
+          'step F1.S1: symbol Payy not found in x/pay.go; anchored by range to Pay',
+          'link F1.S2->F1.S3: line 9 calls Store, not Load',
+          'step F1.S2: side effect line 40 (event) is outside Save (lines 3-3); dropped',
+        ],
+      },
+    } as unknown as Tour;
+    const notes = importReport(tour).filter((l) => l.startsWith('note: '));
+    expect(notes).toEqual([
+      'note: step F1.S2: side effect line 40 (event) is outside Save (lines 3-3); dropped',
+    ]);
+  });
+});
+
 describe('importReport', () => {
   const tour = {
     check: { problems: ['f1 home a.ts:1-3 covers no changed lines'] },

@@ -1,6 +1,6 @@
 import { useEffect, useId, useRef, useState, type KeyboardEvent } from 'react';
 import type { PrSummary } from '../shared/api.js';
-import { reviewableHomeIds, type Tour } from '../shared/tour.js';
+import { reviewableHomeIds, type Analysis, type Tour } from '../shared/tour.js';
 import type { RevealPlace } from './code-lines.js';
 import { inKeepOpenArea, keepsReviewOpen } from './keep-review-open.js';
 import { isReviewColumn } from './review-column.js';
@@ -185,6 +185,7 @@ export function TopBar({
               </ul>
             </div>
           )}
+          {tour.analysis && <CodeCheck analysis={tour.analysis} />}
           <button type="button" className="link-button" onClick={() => onAboutChange(false)}>
             Close
           </button>
@@ -241,4 +242,49 @@ function status(tour: Tour, isSeen: (homeId: string) => boolean): string {
   const seen = ids.filter(isSeen).length;
   const source = tour.source === 'author' ? 'notes by the author' : 'notes inferred by Claude';
   return `${flows} ${flows === 1 ? 'flow' : 'flows'} · ${seen} / ${ids.length} seen · ${source}`;
+}
+
+/** What the code check found, under the check problems in About. */
+function CodeCheck({ analysis }: { analysis: Analysis }) {
+  const { coverage, engine, problems, review } = analysis;
+  const changes = review?.changes ?? [];
+  const reviewProblems = review?.problems ?? [];
+  // No engine ran: one line says why, and there are no numbers to show.
+  const notRun = engine === 'none';
+  const why = problems[0];
+  const listed = [
+    ...new Set([...(notRun ? problems.slice(1) : problems), ...reviewProblems]),
+  ].filter((problem) => !(notRun && problem === why));
+  return (
+    <div className="code-check">
+      <h2>Code check</h2>
+      {notRun ? (
+        <p>The code check did not run{why !== undefined ? `: ${why}` : '.'}</p>
+      ) : (
+        <p>
+          {coverage.anchored} of {coverage.functionSteps} steps on their function, {coverage.proven}{' '}
+          of {coverage.links} links proven
+        </p>
+      )}
+      {engine === 'go-syntax' && (
+        <p>The project did not load with types: links are matched by name.</p>
+      )}
+      {listed.length > 0 && (
+        <ul>
+          {listed.map((problem, i) => (
+            <li key={i}>{problem}</li>
+          ))}
+        </ul>
+      )}
+      {changes.length > 0 && (
+        <ul className="code-check-changes">
+          {changes.map((change, i) => (
+            <li key={i}>
+              {change.what} — {change.reason}
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
 }

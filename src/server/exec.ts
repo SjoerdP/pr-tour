@@ -1,6 +1,12 @@
 import { execFile } from 'node:child_process';
 
-export type RunOptions = { cwd?: string; input?: string; timeoutMs?: number };
+export type RunOptions = {
+  cwd?: string;
+  input?: string;
+  timeoutMs?: number;
+  /** Extra environment variables, merged over the process environment. */
+  env?: Record<string, string>;
+};
 export type RunResult = { stdout: string; stderr: string; code: number };
 
 /** The one way out of the process: run an external command (gh, git, claude). */
@@ -78,7 +84,7 @@ export const realRunner: Runner = (cmd, args, opts = {}) =>
         timeout: opts.timeoutMs,
         maxBuffer: MAX_BUFFER,
         encoding: 'utf8',
-        env: ENV,
+        env: opts.env ? { ...ENV, ...opts.env } : ENV,
       },
       (error, stdout, stderr) => {
         if (!error) return resolve({ stdout, stderr, code: 0 });

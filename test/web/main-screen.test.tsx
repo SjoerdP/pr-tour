@@ -73,6 +73,71 @@ describe('top bar', () => {
   });
 });
 
+describe('About: code check', () => {
+  const analysis: NonNullable<Tour['analysis']> = {
+    engine: 'go-syntax',
+    ms: 10,
+    degraded: true,
+    coverage: { functionSteps: 4, anchored: 3, links: 5, proven: 2, foundByCode: 1 },
+    problems: ['could not read go.mod'],
+    review: { ran: true, ms: 5, changes: [{ what: 'Moved step 2', reason: 'it runs first' }] },
+  };
+
+  it('shows coverage, the engine note and the review changes', async () => {
+    await open({ ...baseTour, analysis });
+    const text = screen.getByRole('region', { name: 'About this PR' }).textContent;
+    expect(text).toContain('3 of 4 steps on their function, 2 of 5 links proven');
+    expect(text).toContain('The project did not load with types: links are matched by name.');
+    expect(text).toContain('could not read go.mod');
+    expect(text).toContain('Moved step 2 — it runs first');
+  });
+
+  it('shows a pass C problem once, even when both lists hold it', async () => {
+    const both = {
+      ...analysis,
+      problems: ['review failed'],
+      review: { ran: false, ms: 1, changes: [], problems: ['review failed'] },
+    };
+    await open({ ...baseTour, analysis: both });
+    const text = screen.getByRole('region', { name: 'About this PR' }).textContent ?? '';
+    expect(text.split('review failed')).toHaveLength(2);
+  });
+
+  it('shows review problems when only that list has them', async () => {
+    const only = {
+      ...analysis,
+      problems: [],
+      review: { ran: false, ms: 1, changes: [], problems: ['review dropped a change'] },
+    };
+    await open({ ...baseTour, analysis: only });
+    expect(screen.getByRole('region', { name: 'About this PR' }).textContent).toContain(
+      'review dropped a change',
+    );
+  });
+
+  it('says the check did not run, without coverage numbers, when no engine ran', async () => {
+    const none: NonNullable<Tour['analysis']> = {
+      engine: 'none',
+      ms: 0,
+      degraded: false,
+      coverage: { functionSteps: 0, anchored: 0, links: 0, proven: 0, foundByCode: 0 },
+      problems: ['no Go files in this PR'],
+    };
+    await open({ ...baseTour, analysis: none });
+    const text = screen.getByRole('region', { name: 'About this PR' }).textContent ?? '';
+    expect(text).toContain('The code check did not run: no Go files in this PR');
+    expect(text).not.toContain('steps on their function');
+    expect(text.split('no Go files in this PR')).toHaveLength(2);
+  });
+
+  it('is left out for a tour without an analysis', async () => {
+    await open();
+    expect(screen.getByRole('region', { name: 'About this PR' }).textContent).not.toContain(
+      'Code check',
+    );
+  });
+});
+
 describe('About this PR', () => {
   it('is open on the first visit to a tour and closed on the next', async () => {
     const first = await open();

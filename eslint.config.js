@@ -50,7 +50,7 @@ const noLayer = (layer, message) => [
 
 export default tseslint.config(
   {
-    ignores: ['dist/**', 'node_modules/**', 'coverage/**', '.superpowers/**'],
+    ignores: ['dist/**', 'node_modules/**', 'coverage/**', '.superpowers/**', 'test/fixtures/**'],
   },
   js.configs.recommended,
   ...tseslint.configs.recommendedTypeChecked,
@@ -65,7 +65,7 @@ export default tseslint.config(
   },
   {
     // Plain JS at the repo root (this file) is not covered by a tsconfig.
-    files: ['**/*.js'],
+    files: ['**/*.{js,mjs}'],
     ...tseslint.configs.disableTypeChecked,
   },
   {

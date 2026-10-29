@@ -18,6 +18,8 @@ export const RangeSchema = z.union([
 export const SideEffectSchema = z.object({
   kind: z.enum(['db-write', 'event', 'external-call']),
   label: z.string(),
+  /** The head line of the call that does it. Optional: the code checker finds it when absent. */
+  line: line.optional(),
 });
 
 export const TestRefSchema = z.object({ file: z.string(), name: z.string() });
@@ -40,11 +42,96 @@ export const StepFromSchema = z.object({
   via: z.string().optional(),
 });
 
+/** The code range a step is pinned to, and how it was found. */
+export const AnchorSchema = z.object({
+  /** e.g. 'OAuthService.Authorize' */
+  name: z.string(),
+  startLine: line,
+  endLine: line,
+  source: z.enum(['symbol', 'incoming-link', 'range']),
+});
+
+/** A side effect found on a line: from the code, from Claude, or both. */
+export const MarkSchema = z.object({
+  line,
+  kind: z.enum(['db-write', 'event', 'external-call', 'async']),
+  label: z.string().optional(),
+  source: z.enum(['code', 'claude', 'both']),
+});
+
+/**
+ * A call in a step, with the column range of the callee name. As Go writes them: 1-based
+ * UTF-8 byte columns on the head line, `endCol` the column just after the name.
+ */
+export const CallSiteSchema = z.object({
+  line,
+  col: z.number().int().min(0),
+  endCol: z.number().int().min(0),
+  /** The called function's first line. */
+  to: z.object({ file: z.string(), line }),
+  /** Set when the callee is another step of the tour. */
+  toStep: z.string().optional(),
+});
+
+/** A link between two steps (ids) and how well the code backs it up. */
+export const FlowLinkSchema = z.object({
+  from: z.string(),
+  to: z.string(),
+  /** The call or registration line in `from`. */
+  line,
+  how: z.enum(['call', 'register', 'service', 'event']),
+  /** Thin wrappers in between. */
+  via: z.array(z.string()).optional(),
+  source: z.enum(['claude', 'code', 'both']),
+  check: z.enum(['proven', 'name-match', 'not-found', 'conflict', 'unchecked']),
+  note: z.string().optional(),
+  reason: z.string().optional(),
+});
+
+/** What the code check found out about a tour (stored tours only). */
+export const AnalysisSchema = z.object({
+  engine: z.enum(['go-types', 'go-syntax', 'none']),
+  engineVersion: z.string().optional(),
+  ms: z.number(),
+  degraded: z.boolean(),
+  coverage: z.object({
+    functionSteps: z.number().int(),
+    anchored: z.number().int(),
+    links: z.number().int(),
+    proven: z.number().int(),
+    foundByCode: z.number().int(),
+  }),
+  problems: z.array(z.string()),
+  review: z
+    .object({
+      ran: z.boolean(),
+      ms: z.number(),
+      changes: z.array(
+        z.object({ step: z.string().optional(), what: z.string(), reason: z.string() }),
+      ),
+      /** Why the review did not run, or which of its changes were dropped. */
+      problems: z.array(z.string()).optional(),
+    })
+    .optional(),
+});
+
 // Claude's output has no ids (the builder assigns them); a stored tour has
 // them. Both schemas are built from the same shapes so they cannot drift.
+// `stored`: also take the fields the code check fills in (anchor, marks, callSites, links).
+// The input schema leaves them out, so zod strips them: Claude cannot inject them.
 // `requireFrom`: every step after a flow's first must say how the flow gets there. Only
 // new tours must; stored tours from before `from` existed have none.
-function bodySchema<Id extends z.ZodType<string | undefined>>(id: Id, requireFrom: boolean) {
+function bodySchema<Id extends z.ZodType<string | undefined>>(
+  id: Id,
+  requireFrom: boolean,
+  stored: boolean,
+) {
+  const storedStep = {
+    anchor: AnchorSchema.optional(),
+    marks: z.array(MarkSchema).optional(),
+    callSites: z.array(CallSiteSchema).optional(),
+  };
+  const storedFlow = { links: z.array(FlowLinkSchema).optional() };
   const foundation = z.object({
     id,
     kind: z.enum(['migration', 'model', 'config', 'dependency']),
@@ -74,6 +161,8 @@ function bodySchema<Id extends z.ZodType<string | undefined>>(id: Id, requireFro
     /** Left out on a flow's first step: the entry starts the flow. */
     from: StepFromSchema.optional(),
     homes: z.array(RangeSchema),
+    // Typed as always present; the input schema leaves them out at runtime (see `stored`).
+    ...((stored ? storedStep : {}) as typeof storedStep),
   });
 
   const flow = z
@@ -87,6 +176,7 @@ function bodySchema<Id extends z.ZodType<string | undefined>>(id: Id, requireFro
         label: z.string(),
       }),
       steps: z.array(step),
+      ...((stored ? storedFlow : {}) as typeof storedFlow),
     })
     .superRefine((flow, ctx) => {
       // Whether `from.line` lies in the calling step is a check problem, not a parse error.
@@ -130,10 +220,10 @@ function bodySchema<Id extends z.ZodType<string | undefined>>(id: Id, requireFro
 }
 
 /** What Claude produces. Ids are optional; the builder assigns them. */
-export const TourBodyInputSchema = bodySchema(z.string().optional(), true);
+export const TourBodyInputSchema = bodySchema(z.string().optional(), true, false);
 
 /** A tour body with every id assigned. */
-export const TourBodySchema = bodySchema(z.string(), false);
+export const TourBodySchema = bodySchema(z.string(), false, true);
 
 export const TourMetaSchema = z.object({
   repo: z.string(),
@@ -151,6 +241,7 @@ export const TourMetaSchema = z.object({
  */
 export const TourSchema = TourBodySchema.extend(TourMetaSchema.shape).extend({
   check: z.object({ problems: z.array(z.string()) }),
+  analysis: AnalysisSchema.optional(),
   hashes: z.record(z.string(), z.string()),
 });
 
@@ -158,6 +249,11 @@ export type Range = z.infer<typeof RangeSchema>;
 export type SideEffect = z.infer<typeof SideEffectSchema>;
 export type TestRef = z.infer<typeof TestRefSchema>;
 export type CallRef = z.infer<typeof CallRefSchema>;
+export type Anchor = z.infer<typeof AnchorSchema>;
+export type Mark = z.infer<typeof MarkSchema>;
+export type CallSite = z.infer<typeof CallSiteSchema>;
+export type FlowLink = z.infer<typeof FlowLinkSchema>;
+export type Analysis = z.infer<typeof AnalysisSchema>;
 export type StepFrom = z.infer<typeof StepFromSchema>;
 export type Risk = z.infer<typeof RiskSchema>;
 export type TourBodyInput = z.infer<typeof TourBodyInputSchema>;

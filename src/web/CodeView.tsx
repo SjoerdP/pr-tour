@@ -17,13 +17,14 @@ import {
   type ReviewThread,
 } from '../shared/review.js';
 import { buildRows, changeBlocks, foldRows, type Row, type Segment } from '../shared/rows.js';
-import type { CallRef, Tour } from '../shared/tour.js';
+import type { CallRef, CallSite, Mark, Tour } from '../shared/tour.js';
 import {
   callMatches,
   draftRows,
   focusRows,
   rowOf,
   rowOwners,
+  siteMatches,
   threadRows,
   type CallMatch,
   type Focus,
@@ -40,6 +41,8 @@ import { useCodeFile, type CodeFile, type Tokens } from './useCodeFile.js';
 import { useKeys } from './useKeys.js';
 import type { ReviewState } from './useReview.js';
 
+export type JumpFn = (file: string, line: number, toStep?: string | null) => void;
+
 export type CodeViewProps = {
   repo: string;
   pr: number;
@@ -51,10 +54,18 @@ export type CodeViewProps = {
   reveal?: Reveal | null;
   /** Show the code without syntax colours (generated code: skimmed, and often huge). */
   plain?: boolean;
-  /** Follow a traced call: show `file` around `line`. */
-  onJump: (file: string, line: number) => void;
+  /**
+   * Follow a traced call: show `file` around `line`. `toStep` comes from a call site of the
+   * code check: a step id to go to, or null for a callee that is no step (look only).
+   */
+  onJump: JumpFn;
   /** Open another home of the tour (from a "belongs to" label). */
   onOpenHome: (homeId: string) => void;
+  /**
+   * Go to the next step. Given only for a step's own code: then the line that calls the
+   * next step gets a "next step →" marker.
+   */
+  onNextStep?: () => void;
   /** The PR's review: threads and drafts are shown in place, new comments go here. */
   review: ReviewState;
 };
@@ -71,6 +82,7 @@ export function CodeView({
   plain = false,
   onJump,
   onOpenHome,
+  onNextStep,
   review,
 }: CodeViewProps) {
   const { load, tokens } = useCodeFile(repo, pr, tour, file, plain);
@@ -110,6 +122,7 @@ export function CodeView({
         reveal={reveal}
         onJump={onJump}
         onOpenHome={onOpenHome}
+        onNextStep={onNextStep}
         review={review}
       />
     );
@@ -129,8 +142,9 @@ type FileCodeProps = {
   focus: Focus | null;
   homeId: string;
   reveal: Reveal | null;
-  onJump: (file: string, line: number) => void;
+  onJump: JumpFn;
   onOpenHome: (homeId: string) => void;
+  onNextStep: (() => void) | undefined;
   review: ReviewState;
 };
 
@@ -151,6 +165,7 @@ function FileCode({
   reveal,
   onJump,
   onOpenHome,
+  onNextStep,
   review,
 }: FileCodeProps) {
   const rows = useMemo(() => buildRows(file.newText, file.oldText, file.diff?.hunks ?? []), [file]);
@@ -161,6 +176,10 @@ function FileCode({
     [tour, rows, file.path, file.oldPath],
   );
   const calls = useMemo(() => stepCalls(tour, homeId, file.path), [tour, homeId, file.path]);
+  const marksAt = useMemo(() => stepMarks(tour, homeId, file.path), [tour, homeId, file.path]);
+  const sites = useMemo(() => stepSites(tour, homeId, file.path), [tour, homeId, file.path]);
+  const siteTitle = useMemo(() => siteTitler(tour, homeId), [tour, homeId]);
+  const nextCall = useMemo(() => nextStepCall(tour, homeId, file.path), [tour, homeId, file.path]);
   // An added file has no old side: no empty column for old line numbers.
   const showOld = useMemo(() => rows.some((r) => r.oldNo !== undefined), [rows]);
   // Line-number columns as wide as the longest number.
@@ -481,6 +500,14 @@ function FileCode({
                     selected={selected}
                     showOld={showOld}
                     calls={inFocus && row.newNo !== undefined ? calls : NO_CALLS}
+                    sites={inFocus && row.newNo !== undefined ? sites : undefined}
+                    marks={inFocus && row.newNo !== undefined ? marksAt.get(row.newNo) : undefined}
+                    siteTitle={siteTitle}
+                    next={
+                      onNextStep && nextCall && row.newNo === nextCall.line
+                        ? { title: nextCall.title, go: onNextStep }
+                        : undefined
+                    }
                     label={label}
                     onPick={diff ? pick : null}
                     drag={lineDrag}
@@ -580,6 +607,71 @@ function rowRange(from: number, to: number): number[] {
   return Array.from({ length: to - from + 1 }, (_, k) => from + k);
 }
 
+/** The call sites the code check found in `homeId`, when it is a checked step in `path`. */
+function stepSites(tour: Tour, homeId: string, path: string): CallSite[] | undefined {
+  const home = homesInOrder(tour).find((h) => h.id === homeId);
+  return home?.kind === 'step' && home.step.file === path ? home.step.callSites : undefined;
+}
+
+/** The marks the code check put on lines of `homeId`, by line, when it is a step in `path`. */
+function stepMarks(tour: Tour, homeId: string, path: string): Map<number, Mark[]> {
+  const home = homesInOrder(tour).find((h) => h.id === homeId);
+  const out = new Map<number, Mark[]>();
+  if (home?.kind !== 'step' || home.step.file !== path) return out;
+  for (const mark of home.step.marks ?? [])
+    out.set(mark.line, [...(out.get(mark.line) ?? []), mark]);
+  return out;
+}
+
+const MARK_TEXT: Record<Mark['kind'], string> = {
+  'db-write': 'DB write',
+  event: 'event',
+  'external-call': 'outside call',
+  async: 'goroutine',
+};
+
+/** The button title of a call site: "Go to step 3" in the same flow, else "Show <name>". */
+function siteTitler(tour: Tour, homeId: string): (site: CallSite) => string {
+  const home = homesInOrder(tour).find((h) => h.id === homeId);
+  return (site) => {
+    if (site.toStep !== undefined) {
+      const no =
+        home?.kind === 'step' ? home.flow.steps.findIndex((s) => s.id === site.toStep) : -1;
+      if (no >= 0) return `Go to step ${no + 1}`;
+      const target = tour.flows.flatMap((f) => f.steps).find((s) => s.id === site.toStep);
+      const name = target?.anchor?.name ?? target?.title;
+      if (name) return `Show ${name}`;
+    }
+    return 'Show the called function';
+  };
+}
+
+/**
+ * The line of `homeId` that calls the next step of its flow, when the code check backs
+ * that link up (proven or matched by name): the lowest such line, with the next step's
+ * title. Undefined for other homes, other files, the last step, or no such link.
+ */
+function nextStepCall(
+  tour: Tour,
+  homeId: string,
+  path: string,
+): { line: number; title: string } | undefined {
+  const home = homesInOrder(tour).find((h) => h.id === homeId);
+  if (home?.kind !== 'step' || home.step.file !== path) return undefined;
+  const { flow, step } = home;
+  const next = flow.steps[flow.steps.indexOf(step) + 1];
+  if (!next) return undefined;
+  const lines = (flow.links ?? [])
+    .filter(
+      (l) =>
+        l.from === step.id &&
+        l.to === next.id &&
+        (l.check === 'proven' || l.check === 'name-match'),
+    )
+    .map((l) => l.line);
+  return lines.length > 0 ? { line: Math.min(...lines), title: next.title } : undefined;
+}
+
 /** The traced calls of `homeId` when it is a step in `path`; none otherwise. */
 function stepCalls(tour: Tour, homeId: string, path: string): CallRef[] {
   const home = homesInOrder(tour).find((h) => h.id === homeId);
@@ -606,11 +698,18 @@ type CodeRowProps = {
   /** False when the file has no old side (an added file). */
   showOld: boolean;
   calls: CallRef[];
+  /** The step's call sites, when the code check found them: they replace `calls`. `[]` means checked, no calls: name matching is not used. */
+  sites: CallSite[] | undefined;
+  siteTitle: (site: CallSite) => string;
+  /** What the code check or the tour says happens on this line. */
+  marks: Mark[] | undefined;
+  /** Set on the line that calls the next step: its title, and the way there. */
+  next: { title: string; go: () => void } | undefined;
   label: Owner | null;
   /** Picks a line for a comment (`extend` on shift+click); null when comments are not possible. */
   onPick: ((side: DiffSide, line: number, extend: boolean) => void) | null;
   drag: LineDrag;
-  onJump: (file: string, line: number) => void;
+  onJump: JumpFn;
   onOpenHome: (homeId: string) => void;
 };
 
@@ -668,6 +767,10 @@ function CodeRow({
   selected,
   showOld,
   calls,
+  sites,
+  siteTitle,
+  marks,
+  next,
   label,
   onPick,
   drag,
@@ -677,7 +780,11 @@ function CodeRow({
   // Tokens that do not spell the row's text (a stale highlight) are not trusted.
   const parts =
     tokens && tokens.map((t) => t.content).join('') === row.text ? tokens : [{ content: row.text }];
-  const matches = calls.length > 0 ? callMatches(row.text, calls) : [];
+  const matches = sites
+    ? siteMatches(row, sites)
+    : calls.length > 0
+      ? callMatches(row.text, calls)
+      : [];
   const focus = inFocus
     ? ` code-focus${focusFirst ? ' code-focus-first' : ''}${focusLast ? ' code-focus-last' : ''}`
     : '';
@@ -692,7 +799,32 @@ function CodeRow({
       )}
       <LineNo no={row.newNo} side="new" onPick={onPick} drag={drag} />
       <span className="code-marker">{MARKERS[row.kind]}</span>
-      <code className="code-text">{lineContent(parts, row.text.length, matches, onJump)}</code>
+      <code className="code-text">
+        {lineContent(parts, row.text.length, matches, onJump, siteTitle)}
+      </code>
+      {marks?.map((mark, k) => (
+        <span
+          key={k}
+          className={`mark-badge${mark.source === 'claude' ? ' mark-claude' : ''}`}
+          title={
+            mark.source === 'claude'
+              ? `${mark.label ?? MARK_TEXT[mark.kind]} (not found in the code)`
+              : mark.label
+          }
+        >
+          {MARK_TEXT[mark.kind]}
+        </span>
+      ))}
+      {next && (
+        <button
+          type="button"
+          className="next-step-marker"
+          title={`Next step: ${next.title}`}
+          onClick={next.go}
+        >
+          next step →
+        </button>
+      )}
       {label && (
         <button type="button" className="owner-label" onClick={() => onOpenHome(label.id)}>
           belongs to {label.title}
@@ -729,7 +861,8 @@ function lineContent(
   tokens: Token[],
   length: number,
   matches: CallMatch[],
-  onJump: (file: string, line: number) => void,
+  onJump: JumpFn,
+  siteTitle: (site: CallSite) => string,
 ): ReactNode[] {
   const out: ReactNode[] = [];
   let pos = 0;
@@ -740,8 +873,12 @@ function lineContent(
         key={`call${k}`}
         type="button"
         className="call-link"
-        title={`${m.call.file}:${m.call.line}`}
-        onClick={() => onJump(m.call.file, m.call.line)}
+        title={m.site ? siteTitle(m.site) : `${m.call.file}:${m.call.line}`}
+        onClick={() =>
+          m.site
+            ? onJump(m.call.file, m.call.line, m.site.toStep ?? null)
+            : onJump(m.call.file, m.call.line)
+        }
       >
         {spans(slice(tokens, m.from, m.to), 'c')}
       </button>,
