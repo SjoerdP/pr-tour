@@ -85,6 +85,22 @@
     "S7": {
       "marks": [],
       "callSites": []
+    },
+    "S8": {
+      "anchor": {
+        "name": "Spawn",
+        "startLine": 60,
+        "endLine": 62,
+        "source": "symbol"
+      },
+      "marks": [
+        {
+          "line": 61,
+          "kind": "async",
+          "source": "code"
+        }
+      ],
+      "callSites": []
     }
   },
   "links": {
@@ -105,6 +121,14 @@
         "source": "claude",
         "check": "name-match",
         "note": "tour says line 18"
+      },
+      {
+        "from": "S3",
+        "to": "S8",
+        "line": 21,
+        "how": "service",
+        "source": "claude",
+        "check": "unchecked"
       },
       {
         "from": "S4",

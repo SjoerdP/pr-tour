@@ -112,6 +112,12 @@ func TestCheckSyntax(t *testing.T) {
 	if !hasProblem(out, "S3", "40") {
 		t.Errorf("no problem for the line outside the function: %v", out.Problems)
 	}
+	if m := out.Steps["S8"].Marks; len(m) != 1 || m[0] != (Mark{Line: 61, Kind: "async", Source: "code"}) {
+		t.Errorf("S8 marks %+v", m)
+	}
+	if l := findLink(t, out, "S3", "S8"); l.How != "service" || l.Check != "unchecked" || l.Line != 21 {
+		t.Errorf("S3->S8 %+v", l)
+	}
 	for id, s := range out.Steps {
 		if len(s.CallSites) != 0 {
 			t.Errorf("%s has call sites in syntax mode", id)

@@ -34,7 +34,7 @@ type site struct {
 	Col    int // 1-based, in bytes
 	EndCol int
 	IsCall bool
-	IsGo   bool // the call is the operand of a go statement
+	IsGo   bool // a go statement (no name)
 }
 
 // safeJoin joins a slash path to root and refuses paths that leave it.
@@ -126,7 +126,6 @@ func findSites(g *goFile, fn *goFunc) []site {
 		return sites
 	}
 	skip := map[ast.Node]bool{} // call targets, counted as calls already
-	goCalls := map[*ast.CallExpr]bool{}
 	add := func(n ast.Node, name string, isCall bool, isGo bool) {
 		p, e := g.Fset.Position(n.Pos()), g.Fset.Position(n.End())
 		sites = append(sites, site{Name: name, Line: p.Line, Col: p.Column, EndCol: e.Column, IsCall: isCall, IsGo: isGo})
@@ -134,15 +133,17 @@ func findSites(g *goFile, fn *goFunc) []site {
 	ast.Inspect(fn.Decl.Body, func(n ast.Node) bool {
 		switch x := n.(type) {
 		case *ast.GoStmt:
-			goCalls[x.Call] = true
+			// The mark comes from the statement itself, whatever it calls.
+			p := g.Fset.Position(x.Pos())
+			sites = append(sites, site{Line: p.Line, Col: p.Column, IsGo: true})
 		case *ast.CallExpr:
 			switch f := x.Fun.(type) {
 			case *ast.Ident:
 				skip[f] = true
-				add(f, f.Name, true, goCalls[x])
+				add(f, f.Name, true, false)
 			case *ast.SelectorExpr:
 				skip[f] = true
-				add(f.Sel, f.Sel.Name, true, goCalls[x])
+				add(f.Sel, f.Sel.Name, true, false)
 			}
 			// A bare function name passed as an argument is a reference.
 			for _, arg := range x.Args {

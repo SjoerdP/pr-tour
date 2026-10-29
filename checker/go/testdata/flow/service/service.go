@@ -56,3 +56,7 @@ func Run() {
 
 func (j *Job) Run() {
 }
+
+func Spawn() {
+	go func() {}()
+}
