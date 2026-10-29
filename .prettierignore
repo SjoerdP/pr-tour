@@ -7,3 +7,5 @@ docs/superpowers/
 .superpowers/
 # Test fixtures must stay byte-exact (real diffs, canned JSON).
 test/fixtures/
+# Go checker goldens must stay byte-exact.
+checker/go/testdata/
