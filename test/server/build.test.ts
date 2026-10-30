@@ -251,6 +251,12 @@ function claudeAnswer(result: string): RunResult {
   return ok(`${resultLine(result)}\n`);
 }
 
+/** A streamed piece of text Claude is writing. */
+const TEXT_DELTA = JSON.stringify({
+  type: 'stream_event',
+  event: { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: '{' } },
+});
+
 /** A streamed assistant message that uses the tools named in `tools`. */
 function toolUse(...tools: string[]): string {
   const content = tools.map((name, i) => ({ type: 'tool_use', id: `t${i}`, name, input: {} }));
@@ -485,6 +491,50 @@ describe('TourBuilder.build', () => {
       'Claude has read 2 files and run 2 searches',
       undefined,
     ]);
+  });
+
+  it('build says when claude is writing after its last step', async () => {
+    const progress: (string | undefined)[] = [];
+    const { tours } = builder((call) => {
+      call.opts?.onLine?.(toolUse('Read'));
+      call.opts?.onLine?.(TEXT_DELTA);
+      call.opts?.onLine?.(TEXT_DELTA);
+      call.opts?.onLine?.(toolUse('Grep'));
+      return validAnswer();
+    });
+
+    await tours.build(
+      'acme/greet',
+      7,
+      () => {},
+      (line) => progress.push(line),
+    );
+
+    expect(progress).toEqual([
+      'Claude has read 1 file and run 0 searches',
+      'Claude has read 1 file and run 0 searches, and is writing',
+      'Claude has read 1 file and run 1 search',
+      undefined,
+    ]);
+  });
+
+  it('build clears the progress line when claude fails', async () => {
+    const progress: (string | undefined)[] = [];
+    const { tours } = builder((call) => {
+      call.opts?.onLine?.(toolUse('Read'));
+      return { stdout: '', stderr: 'claude printed nothing for 300 s', code: 1 };
+    });
+
+    await tours
+      .build(
+        'acme/greet',
+        7,
+        () => {},
+        (line) => progress.push(line),
+      )
+      .catch(() => {});
+
+    expect(progress.at(-1)).toBeUndefined();
   });
 
   it('build retries once on invalid JSON', async () => {
@@ -920,7 +970,11 @@ describe('pass C: Claude reviews the findings', () => {
     expect(args.join(' ')).toContain('--tools Read,Grep,Glob');
     expect(args.join(' ')).toContain('--allowedTools Read Grep Glob');
     expect(opts?.cwd).toBe(worktree);
+    expect(args.join(' ')).toContain('--output-format stream-json');
+    expect(args.join(' ')).toContain('disableAllHooks');
+    // The review is short: its total limit is all it needs.
     expect(opts?.timeoutMs).toBe(180_000);
+    expect(opts?.idleTimeoutMs).toBeUndefined();
     expect(checker.symbols).toEqual(['Payy', 'Pay']);
     expect(tour.flows[0]!.steps[0]!.symbol).toBe('Pay');
     expect(tour.flows[0]!.steps[0]!.anchor?.source).toBe('symbol');

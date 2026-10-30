@@ -61,6 +61,31 @@ describe('realRunner', () => {
     expect(result.stdout).toBe('0\n1\n2\n3\n4\n5\n');
   });
 
+  it('names the total limit when it hits first, even with an idle limit set', async () => {
+    const script = 'setInterval(() => console.log("busy"), 50)';
+    const result = await realRunner(process.execPath, ['-e', script], {
+      timeoutMs: 500,
+      idleTimeoutMs: 300,
+    });
+    expect(result.code).not.toBe(0);
+    expect(result.stderr.split('\n')[0]).toBe(`${process.execPath} timed out after 0.5 s`);
+  });
+
+  it('force-stops a command that ignores the stop signal', async () => {
+    const script = 'process.on("SIGTERM", () => {}); setInterval(() => {}, 1000)';
+    const result = await realRunner(process.execPath, ['-e', script], { idleTimeoutMs: 300 });
+    expect(result.code).not.toBe(0);
+    expect(result.stderr.split('\n')[0]).toBe(`${process.execPath} printed nothing for 0.3 s`);
+  }, 15_000);
+
+  it('passes a last stdout line without a newline to onLine', async () => {
+    const lines: string[] = [];
+    await realRunner(process.execPath, ['-e', 'process.stdout.write("a\\nb")'], {
+      onLine: (line) => lines.push(line),
+    });
+    expect(lines).toEqual(['a', 'b']);
+  });
+
   it('calls onLine with each stdout line as it arrives', async () => {
     const lines: string[] = [];
     const script =

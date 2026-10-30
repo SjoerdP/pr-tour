@@ -218,25 +218,43 @@ function parseEvent(line: string): Record<string, unknown> | null {
   }
 }
 
-/** The last `result` event in Claude's streamed output: it holds the final answer. */
+/**
+ * The last `result` event in Claude's streamed output: it holds the final answer. Walks back
+ * from the end, line by line, as the output of a long run is large.
+ */
 function resultEvent(stdout: string): Record<string, unknown> | null {
-  const lines = stdout.split('\n');
-  for (let i = lines.length - 1; i >= 0; i--) {
-    const event = parseEvent(lines[i]!);
+  let end = stdout.length;
+  while (end > 0) {
+    const start = stdout.lastIndexOf('\n', end - 1) + 1;
+    const event = parseEvent(stdout.slice(start, end));
     if (event?.type === 'result') return event;
+    end = start - 1;
   }
   return null;
 }
 
 /**
  * Reads Claude's streamed events and reports how many files it read and searches it ran,
- * after each step that used a tool.
+ * after each step that used a tool, and once when it starts writing text after a step.
  */
 function progressReader(onProgress: (line: string) => void): (line: string) => void {
   let reads = 0;
   let searches = 0;
+  let writing = false;
+  const counts = () => {
+    const files = `${reads} ${reads === 1 ? 'file' : 'files'}`;
+    const runs = `${searches} ${searches === 1 ? 'search' : 'searches'}`;
+    return `Claude has read ${files} and run ${runs}`;
+  };
   return (line) => {
     const event = parseEvent(line);
+    if (event?.type === 'stream_event') {
+      const delta = (event.event as { delta?: { type?: unknown } } | undefined)?.delta;
+      if (delta?.type !== 'text_delta' || writing) return;
+      writing = true;
+      onProgress(`${counts()}, and is writing`);
+      return;
+    }
     if (event?.type !== 'assistant') return;
     const content = (event.message as { content?: unknown } | undefined)?.content;
     if (!Array.isArray(content)) return;
@@ -246,9 +264,8 @@ function progressReader(onProgress: (line: string) => void): (line: string) => v
       if (tool.name === 'Read') reads++;
       else searches++;
     }
-    const files = `${reads} ${reads === 1 ? 'file' : 'files'}`;
-    const runs = `${searches} ${searches === 1 ? 'search' : 'searches'}`;
-    onProgress(`Claude has read ${files} and run ${runs}`);
+    writing = false;
+    onProgress(counts());
   };
 }
 
@@ -293,8 +310,8 @@ function goInput(files: FileDiff[]): FunctionsInput {
 export class TourBuilder {
   constructor(private readonly deps: TourBuilderDeps) {}
 
-  /** Ask Claude for a tour of the PR, check it, and store it as an `inferred` tour. */
   /**
+   * Ask Claude for a tour of the PR, check it, and store it as an `inferred` tour.
    * `onProgress` gets a short line on what Claude is doing while it writes the tour, and
    * `undefined` when it is done.
    */
@@ -450,7 +467,7 @@ export class TourBuilder {
         prompt,
         worktree,
         dirname(diffPath),
-        CLAUDE_TIMEOUT_MS,
+        { timeoutMs: CLAUDE_TIMEOUT_MS, idleTimeoutMs: CLAUDE_IDLE_MS },
         'the tour',
         onProgress,
       );
@@ -467,14 +484,15 @@ export class TourBuilder {
 
   /**
    * One `claude -p` run in `worktree`; returns its final answer text. `addDir` is one more
-   * directory the file tools may read (the diff's). `onProgress` gets what Claude has done so
-   * far while it runs, and `undefined` when the run ends.
+   * directory the file tools may read (the diff's). `limits` are the total and silent times
+   * after which the run is stopped. `onProgress` gets what Claude has done so far while it
+   * runs, and `undefined` when the run ends.
    */
   private async runClaude(
     prompt: string,
     worktree: string,
     addDir: string | undefined,
-    timeoutMs: number,
+    limits: { timeoutMs: number; idleTimeoutMs?: number },
     /** What the run is for, as it reads after "before finishing": `the tour`, `the review`. */
     what: string,
     onProgress: (line: string | undefined) => void = () => {},
@@ -513,8 +531,7 @@ export class TourBuilder {
       .run('claude', args, {
         cwd: worktree,
         input: prompt,
-        timeoutMs,
-        idleTimeoutMs: CLAUDE_IDLE_MS,
+        ...limits,
         onLine: progressReader(onProgress),
       })
       .finally(() => onProgress(undefined));
@@ -556,7 +573,7 @@ export class TourBuilder {
         prompt,
         worktree,
         undefined,
-        REVIEW_TIMEOUT_MS,
+        { timeoutMs: REVIEW_TIMEOUT_MS },
         'the review',
       );
       const json = extractJson(answer);

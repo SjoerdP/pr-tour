@@ -47,7 +47,7 @@ export function BuildStatus({
   }
   return (
     <div className="build-status" aria-busy="true">
-      <p className="muted">Building the tour… this can take a few minutes.</p>
+      <p className="muted">Building the tour… A large pull request can take 15 minutes or more.</p>
       {build.state === 'running' && build.pollError && (
         <p className="warn" role="status">
           {build.pollError}
