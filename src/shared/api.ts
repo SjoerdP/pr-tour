@@ -44,6 +44,8 @@ export type Job = {
   /** Short, readable reason when `state` is `failed`. */
   error?: string;
   log: string[];
+  /** What the build is doing right now, such as how many files Claude has read. */
+  progress?: string;
 };
 
 /**

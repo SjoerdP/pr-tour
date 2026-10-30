@@ -4,6 +4,10 @@ export type RunOptions = {
   cwd?: string;
   input?: string;
   timeoutMs?: number;
+  /** Stop the command when it prints nothing, on stdout or stderr, for this long. */
+  idleTimeoutMs?: number;
+  /** Called with each line of stdout as it arrives, without the newline. */
+  onLine?: (line: string) => void;
   /** Extra environment variables, merged over the process environment. */
   env?: Record<string, string>;
 };
@@ -71,11 +75,21 @@ const ENV = { ...process.env, GIT_TERMINAL_PROMPT: '0' };
 /**
  * `execFile` behind the `Runner` type. Never throws: a non-zero exit returns its code.
  * When the command does not exit normally (not found, killed by the timeout, output over
- * `maxBuffer`) the code is non-zero and the reason is the first line of stderr, so
- * `CommandError.shortMessage` and other first-line messages show it.
+ * `maxBuffer`, silent for `idleTimeoutMs`) the code is non-zero and the reason is the first
+ * line of stderr, so `CommandError.shortMessage` and other first-line messages show it.
  */
 export const realRunner: Runner = (cmd, args, opts = {}) =>
   new Promise((resolve) => {
+    let idle: NodeJS.Timeout | undefined;
+    let idleKilled = false;
+    const waitForOutput = () => {
+      if (opts.idleTimeoutMs === undefined) return;
+      clearTimeout(idle);
+      idle = setTimeout(() => {
+        idleKilled = true;
+        child.kill();
+      }, opts.idleTimeoutMs);
+    };
     const child = execFile(
       cmd,
       args,
@@ -87,7 +101,12 @@ export const realRunner: Runner = (cmd, args, opts = {}) =>
         env: opts.env ? { ...ENV, ...opts.env } : ENV,
       },
       (error, stdout, stderr) => {
+        clearTimeout(idle);
         if (!error) return resolve({ stdout, stderr, code: 0 });
+        if (idleKilled && opts.idleTimeoutMs !== undefined) {
+          const reason = `${cmd} printed nothing for ${opts.idleTimeoutMs / 1000} s`;
+          return resolve({ stdout, stderr: `${reason}\n${stderr}`, code: 1 });
+        }
         if (error.killed && opts.timeoutMs !== undefined) {
           const reason = `${cmd} timed out after ${opts.timeoutMs / 1000} s`;
           return resolve({ stdout, stderr: `${reason}\n${stderr}`, code: 1 });
@@ -98,6 +117,19 @@ export const realRunner: Runner = (cmd, args, opts = {}) =>
         resolve({ stdout, stderr: `${reason}\n${stderr}`, code: 1 });
       },
     );
+    waitForOutput();
+    child.stderr?.on('data', waitForOutput);
+    let partial = '';
+    child.stdout?.on('data', (chunk: string) => {
+      waitForOutput();
+      if (!opts.onLine) return;
+      const lines = (partial + chunk).split('\n');
+      partial = lines.pop() ?? '';
+      for (const line of lines) opts.onLine(line);
+    });
+    child.stdout?.on('end', () => {
+      if (partial !== '') opts.onLine?.(partial);
+    });
     // A command that exits before reading all input closes stdin early; that is not our error.
     child.stdin?.on('error', () => undefined);
     child.stdin?.end(opts.input);

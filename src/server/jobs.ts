@@ -12,8 +12,17 @@ const LOG_LINES = 50;
 export class Jobs {
   private readonly jobs = new Map<string, Job>();
 
-  /** Run `fn` as the job for `key`, unless that job is still running. */
-  start(key: string, fn: (log: (line: string) => void) => Promise<unknown>): void {
+  /**
+   * Run `fn` as the job for `key`, unless that job is still running. `fn` adds lines to the
+   * log, and sets or clears (`undefined`) one progress line that replaces itself.
+   */
+  start(
+    key: string,
+    fn: (
+      log: (line: string) => void,
+      progress: (line: string | undefined) => void,
+    ) => Promise<unknown>,
+  ): void {
     if (this.jobs.get(key)?.state === 'running') return;
     const job: Job = { state: 'running', log: [] };
     this.jobs.set(key, job);
@@ -21,8 +30,12 @@ export class Jobs {
       job.log.push(line);
       if (job.log.length > LOG_LINES) job.log.splice(0, job.log.length - LOG_LINES);
     };
+    const progress = (line: string | undefined) => {
+      if (line === undefined) delete job.progress;
+      else job.progress = line;
+    };
     // Calls `fn` now; a synchronous throw becomes a rejection like any other failure.
-    const run = new Promise<unknown>((resolve) => resolve(fn(log)));
+    const run = new Promise<unknown>((resolve) => resolve(fn(log, progress)));
     void run.then(
       () => {
         job.state = 'done';

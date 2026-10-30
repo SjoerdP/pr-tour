@@ -496,7 +496,12 @@ describe('POST /api/pr/:owner/:name/:pr/tour', () => {
     expect(await json<{ job: Job }>(first)).toEqual({ job: { state: 'running', log: [] } });
     expect(second.status).toBe(202);
     expect(fakes.builder.build).toHaveBeenCalledTimes(1);
-    expect(fakes.builder.build).toHaveBeenCalledWith('acme/greet', 7, expect.any(Function));
+    expect(fakes.builder.build).toHaveBeenCalledWith(
+      'acme/greet',
+      7,
+      expect.any(Function),
+      expect.any(Function),
+    );
   });
 
   it('POST tour with drafts → 409 with count', async () => {
@@ -567,7 +572,12 @@ describe('POST /api/pr/:owner/:name/:pr/tour', () => {
     await api('/api/pr/acme/greet/7/tour', { method: 'POST' });
 
     expect(fakes.builder.build).toHaveBeenCalledTimes(1);
-    expect(fakes.builder.build).toHaveBeenCalledWith('acme/greet', 7, expect.any(Function));
+    expect(fakes.builder.build).toHaveBeenCalledWith(
+      'acme/greet',
+      7,
+      expect.any(Function),
+      expect.any(Function),
+    );
   });
 
   it('jobs of different PRs run side by side', async () => {

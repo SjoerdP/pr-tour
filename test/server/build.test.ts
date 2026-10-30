@@ -241,9 +241,20 @@ const pr: PrSummary = {
   viewerIsAuthor: false,
 };
 
-/** What `claude -p --output-format json` prints for a final answer `result`. */
+/** The last line `claude -p --output-format stream-json` prints, for a final answer `result`. */
+function resultLine(result: string): string {
+  return JSON.stringify({ type: 'result', subtype: 'success', is_error: false, result });
+}
+
+/** What claude prints for a final answer `result`, with no steps before it. */
 function claudeAnswer(result: string): RunResult {
-  return ok(JSON.stringify({ type: 'result', subtype: 'success', is_error: false, result }));
+  return ok(`${resultLine(result)}\n`);
+}
+
+/** A streamed assistant message that uses the tools named in `tools`. */
+function toolUse(...tools: string[]): string {
+  const content = tools.map((name, i) => ({ type: 'tool_use', id: `t${i}`, name, input: {} }));
+  return JSON.stringify({ type: 'assistant', message: { content } });
 }
 
 let home: string;
@@ -421,6 +432,59 @@ describe('TourBuilder.build', () => {
     expect(args).toContain('--strict-mcp-config');
     expect(args).not.toContain('--dangerously-skip-permissions');
     expect(opts?.cwd).toBe(WORKTREE);
+  });
+
+  it('build streams claude output without the user hooks', async () => {
+    const { tours, calls } = builder(validAnswer);
+
+    await tours.build('acme/greet', 7);
+
+    const args = calls[0]!.args.join(' ');
+    expect(args).toContain('--output-format stream-json --verbose --include-partial-messages');
+    expect(args).toContain(`--settings ${JSON.stringify({ disableAllHooks: true })}`);
+  });
+
+  it('build stops claude only when it is silent, with a long limit as a backstop', async () => {
+    const { tours, calls } = builder(validAnswer);
+
+    await tours.build('acme/greet', 7);
+
+    expect(calls[0]!.opts?.idleTimeoutMs).toBe(5 * 60 * 1000);
+    expect(calls[0]!.opts?.timeoutMs).toBe(45 * 60 * 1000);
+  });
+
+  it('build reads the answer from the result line after the streamed steps', async () => {
+    const steps = [toolUse('Read'), '{"type":"stream_event"}', ''];
+    const { tours } = builder(() =>
+      ok([...steps, resultLine(JSON.stringify(FULL_GREET)), ''].join('\n')),
+    );
+
+    const tour = await tours.build('acme/greet', 7);
+
+    expect(tour.summary).toBe(FULL_GREET.summary);
+  });
+
+  it('build shows what claude is doing while it works, then clears it', async () => {
+    const progress: (string | undefined)[] = [];
+    const { tours } = builder((call) => {
+      call.opts?.onLine?.(toolUse('Read', 'Grep'));
+      call.opts?.onLine?.('not json');
+      call.opts?.onLine?.(toolUse('Read', 'Glob'));
+      return validAnswer();
+    });
+
+    await tours.build(
+      'acme/greet',
+      7,
+      () => {},
+      (line) => progress.push(line),
+    );
+
+    expect(progress).toEqual([
+      'Claude has read 1 file and run 1 search',
+      'Claude has read 2 files and run 2 searches',
+      undefined,
+    ]);
   });
 
   it('build retries once on invalid JSON', async () => {
@@ -922,7 +986,11 @@ describe('pass C: Claude reviews the findings', () => {
     const { tours } = builderWith(
       { diff: GO_DIFF, checker: anchoringChecker(), worktree },
       flowAnswer,
-      () => ({ stdout: JSON.stringify({ is_error: true, result: 'x' }), stderr: '', code: 0 }),
+      () => ({
+        stdout: JSON.stringify({ type: 'result', is_error: true, result: 'x' }),
+        stderr: '',
+        code: 0,
+      }),
     );
 
     const tour = await tours.build('acme/greet', 7);
