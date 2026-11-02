@@ -518,6 +518,11 @@ pre {
   font-size: var(--font-size-small);
 }
 
+/* The line on what Claude is doing now: it replaces itself, so it reads apart from the log. */
+.job-progress {
+  color: var(--fg-muted);
+}
+
 .tour-body {
   display: grid;
   flex: 1 1 auto;

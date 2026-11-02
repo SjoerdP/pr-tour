@@ -241,9 +241,26 @@ const pr: PrSummary = {
   viewerIsAuthor: false,
 };
 
-/** What `claude -p --output-format json` prints for a final answer `result`. */
+/** The last line `claude -p --output-format stream-json` prints, for a final answer `result`. */
+function resultLine(result: string): string {
+  return JSON.stringify({ type: 'result', subtype: 'success', is_error: false, result });
+}
+
+/** What claude prints for a final answer `result`, with no steps before it. */
 function claudeAnswer(result: string): RunResult {
-  return ok(JSON.stringify({ type: 'result', subtype: 'success', is_error: false, result }));
+  return ok(`${resultLine(result)}\n`);
+}
+
+/** A streamed piece of text Claude is writing. */
+const TEXT_DELTA = JSON.stringify({
+  type: 'stream_event',
+  event: { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: '{' } },
+});
+
+/** A streamed assistant message that uses the tools named in `tools`. */
+function toolUse(...tools: string[]): string {
+  const content = tools.map((name, i) => ({ type: 'tool_use', id: `t${i}`, name, input: {} }));
+  return JSON.stringify({ type: 'assistant', message: { content } });
 }
 
 let home: string;
@@ -421,6 +438,102 @@ describe('TourBuilder.build', () => {
     expect(args).toContain('--strict-mcp-config');
     expect(args).not.toContain('--dangerously-skip-permissions');
     expect(opts?.cwd).toBe(WORKTREE);
+  });
+
+  it('build streams claude output', async () => {
+    const { tours, calls } = builder(validAnswer);
+
+    await tours.build('acme/greet', 7);
+
+    const args = calls[0]!.args.join(' ');
+    expect(args).toContain('--output-format stream-json --verbose --include-partial-messages');
+  });
+
+  it('build stops claude only when it is silent, with a long limit as a backstop', async () => {
+    const { tours, calls } = builder(validAnswer);
+
+    await tours.build('acme/greet', 7);
+
+    expect(calls[0]!.opts?.idleTimeoutMs).toBe(5 * 60 * 1000);
+    expect(calls[0]!.opts?.timeoutMs).toBe(45 * 60 * 1000);
+  });
+
+  it('build reads the answer from the result line after the streamed steps', async () => {
+    const steps = [toolUse('Read'), '{"type":"stream_event"}', ''];
+    const { tours } = builder(() =>
+      ok([...steps, resultLine(JSON.stringify(FULL_GREET)), ''].join('\n')),
+    );
+
+    const tour = await tours.build('acme/greet', 7);
+
+    expect(tour.summary).toBe(FULL_GREET.summary);
+  });
+
+  it('build shows what claude is doing while it works, then clears it', async () => {
+    const progress: (string | undefined)[] = [];
+    const { tours } = builder((call) => {
+      call.opts?.onLine?.(toolUse('Read', 'Grep'));
+      call.opts?.onLine?.('not json');
+      call.opts?.onLine?.(toolUse('Read', 'Glob'));
+      return validAnswer();
+    });
+
+    await tours.build(
+      'acme/greet',
+      7,
+      () => {},
+      (line) => progress.push(line),
+    );
+
+    expect(progress).toEqual([
+      'Claude has read 1 file and run 1 search',
+      'Claude has read 2 files and run 2 searches',
+      undefined,
+    ]);
+  });
+
+  it('build says when claude is writing after its last step', async () => {
+    const progress: (string | undefined)[] = [];
+    const { tours } = builder((call) => {
+      call.opts?.onLine?.(toolUse('Read'));
+      call.opts?.onLine?.(TEXT_DELTA);
+      call.opts?.onLine?.(TEXT_DELTA);
+      call.opts?.onLine?.(toolUse('Grep'));
+      return validAnswer();
+    });
+
+    await tours.build(
+      'acme/greet',
+      7,
+      () => {},
+      (line) => progress.push(line),
+    );
+
+    expect(progress).toEqual([
+      'Claude has read 1 file and run 0 searches',
+      'Claude has read 1 file and run 0 searches, and is writing',
+      'Claude has read 1 file and run 1 search',
+      undefined,
+    ]);
+  });
+
+  it('build clears the progress line when claude fails', async () => {
+    const progress: (string | undefined)[] = [];
+    const { tours } = builder((call) => {
+      call.opts?.onLine?.(toolUse('Read'));
+      return { stdout: '', stderr: 'claude printed nothing for 300 s', code: 1 };
+    });
+
+    await tours
+      .build(
+        'acme/greet',
+        7,
+        () => {},
+        (line) => progress.push(line),
+      )
+      .catch(() => {});
+
+    expect(progress.at(-1)).toBeUndefined();
   });
 
   it('build retries once on invalid JSON', async () => {
@@ -856,7 +969,10 @@ describe('pass C: Claude reviews the findings', () => {
     expect(args.join(' ')).toContain('--tools Read,Grep,Glob');
     expect(args.join(' ')).toContain('--allowedTools Read Grep Glob');
     expect(opts?.cwd).toBe(worktree);
+    expect(args.join(' ')).toContain('--output-format stream-json');
+    // The review is short: its total limit is all it needs.
     expect(opts?.timeoutMs).toBe(180_000);
+    expect(opts?.idleTimeoutMs).toBeUndefined();
     expect(checker.symbols).toEqual(['Payy', 'Pay']);
     expect(tour.flows[0]!.steps[0]!.symbol).toBe('Pay');
     expect(tour.flows[0]!.steps[0]!.anchor?.source).toBe('symbol');
@@ -922,7 +1038,11 @@ describe('pass C: Claude reviews the findings', () => {
     const { tours } = builderWith(
       { diff: GO_DIFF, checker: anchoringChecker(), worktree },
       flowAnswer,
-      () => ({ stdout: JSON.stringify({ is_error: true, result: 'x' }), stderr: '', code: 0 }),
+      () => ({
+        stdout: JSON.stringify({ type: 'result', is_error: true, result: 'x' }),
+        stderr: '',
+        code: 0,
+      }),
     );
 
     const tour = await tours.build('acme/greet', 7);

@@ -24,12 +24,12 @@ export type Build =
   | { state: 'idle' }
   | { state: 'confirm'; drafts: number }
   | { state: 'starting' }
-  | { state: 'running'; log: string[]; pollError?: string }
+  | { state: 'running'; log: string[]; progress?: string; pollError?: string }
   | { state: 'failed'; error: string; log: string[] };
 
 function buildFromJob(job: Job | null): Build {
   if (!job || job.state === 'done') return { state: 'idle' };
-  if (job.state === 'running') return { state: 'running', log: job.log };
+  if (job.state === 'running') return { state: 'running', log: job.log, progress: job.progress };
   return { state: 'failed', error: job.error ?? 'The build failed.', log: job.log };
 }
 

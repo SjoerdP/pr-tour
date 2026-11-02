@@ -47,24 +47,26 @@ export function BuildStatus({
   }
   return (
     <div className="build-status" aria-busy="true">
-      <p className="muted">Building the tour… this can take a few minutes.</p>
+      <p className="muted">Building the tour… A large pull request can take 15 minutes or more.</p>
       {build.state === 'running' && build.pollError && (
         <p className="warn" role="status">
           {build.pollError}
         </p>
       )}
-      {build.state === 'running' && <JobLog log={build.log} />}
+      {build.state === 'running' && <JobLog log={build.log} progress={build.progress} />}
     </div>
   );
 }
 
-function JobLog({ log }: { log: string[] }) {
-  if (log.length === 0) return null;
+/** The log lines, and below them the progress line, which replaces itself as the build runs. */
+function JobLog({ log, progress }: { log: string[]; progress?: string }) {
+  if (log.length === 0 && progress === undefined) return null;
   return (
     <pre className="job-log" aria-label="Build log">
       {log.map((line, i) => (
         <div key={i}>{line}</div>
       ))}
+      {progress !== undefined && <div className="job-progress">{progress}</div>}
     </pre>
   );
 }

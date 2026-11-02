@@ -32,6 +32,22 @@ describe('Jobs', () => {
     expect(jobs.get('k')).toEqual({ state: 'done', log: [] });
   });
 
+  it('a job shows its latest progress line until it is cleared', () => {
+    const jobs = new Jobs();
+    let progress!: (line: string | undefined) => void;
+    jobs.start('k', (_log, setProgress) => {
+      progress = setProgress;
+      return new Promise(() => {});
+    });
+
+    progress('Claude has read 1 file and run 0 searches');
+    progress('Claude has read 2 files and run 0 searches');
+    expect(jobs.get('k')?.progress).toBe('Claude has read 2 files and run 0 searches');
+
+    progress(undefined);
+    expect(jobs.get('k')).toEqual({ state: 'running', log: [] });
+  });
+
   it('a job that throws is failed with the error message', async () => {
     const jobs = new Jobs();
     jobs.start('k', () => Promise.reject(new Error('Claude failed to run.')));

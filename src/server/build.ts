@@ -32,7 +32,14 @@ import { tourPrompt } from './prompt.js';
 import type { RepoManager } from './repo.js';
 import { StoreError, type Store } from './store.js';
 
-const CLAUDE_TIMEOUT_MS = 15 * 60 * 1000;
+/**
+ * Claude writing the tour. Its time varies a lot between runs (10 to over 15 minutes on a
+ * large PR), so it is stopped when it goes silent, not after a fixed time. The total limit
+ * is only a backstop.
+ */
+const CLAUDE_TIMEOUT_MS = 45 * 60 * 1000;
+/** How long a Claude run may print nothing before it counts as stuck. */
+const CLAUDE_IDLE_MS = 5 * 60 * 1000;
 /** Pass C, Claude's one review of the code check's findings. */
 const REVIEW_TIMEOUT_MS = 180_000;
 /** How much raw output to keep in `TourBuildError.details`. */
@@ -201,6 +208,67 @@ function parseBody(json: string | null): Parsed {
   return { ok: true, body: result.data };
 }
 
+/** Claude's streamed output as JSON events; lines that are not JSON objects are skipped. */
+function parseEvent(line: string): Record<string, unknown> | null {
+  try {
+    const value: unknown = JSON.parse(line);
+    return typeof value === 'object' && value !== null ? (value as Record<string, unknown>) : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The last `result` event in Claude's streamed output: it holds the final answer. Walks back
+ * from the end, line by line, as the output of a long run is large.
+ */
+function resultEvent(stdout: string): Record<string, unknown> | null {
+  let end = stdout.length;
+  while (end > 0) {
+    const start = stdout.lastIndexOf('\n', end - 1) + 1;
+    const event = parseEvent(stdout.slice(start, end));
+    if (event?.type === 'result') return event;
+    end = start - 1;
+  }
+  return null;
+}
+
+/**
+ * Reads Claude's streamed events and reports how many files it read and searches it ran,
+ * after each step that used a tool, and once when it starts writing text after a step.
+ */
+function progressReader(onProgress: (line: string) => void): (line: string) => void {
+  let reads = 0;
+  let searches = 0;
+  let writing = false;
+  const counts = () => {
+    const files = `${reads} ${reads === 1 ? 'file' : 'files'}`;
+    const runs = `${searches} ${searches === 1 ? 'search' : 'searches'}`;
+    return `Claude has read ${files} and run ${runs}`;
+  };
+  return (line) => {
+    const event = parseEvent(line);
+    if (event?.type === 'stream_event') {
+      const delta = (event.event as { delta?: { type?: unknown } } | undefined)?.delta;
+      if (delta?.type !== 'text_delta' || writing) return;
+      writing = true;
+      onProgress(`${counts()}, and is writing`);
+      return;
+    }
+    if (event?.type !== 'assistant') return;
+    const content = (event.message as { content?: unknown } | undefined)?.content;
+    if (!Array.isArray(content)) return;
+    const tools = content.filter((c: { type?: unknown }) => c.type === 'tool_use');
+    if (tools.length === 0) return;
+    for (const tool of tools as { name?: unknown }[]) {
+      if (tool.name === 'Read') reads++;
+      else searches++;
+    }
+    writing = false;
+    onProgress(counts());
+  };
+}
+
 function excerpt(text: string): string {
   return text.length > EXCERPT_CHARS ? `${text.slice(0, EXCERPT_CHARS)}\n[...]` : text;
 }
@@ -242,8 +310,17 @@ function goInput(files: FileDiff[]): FunctionsInput {
 export class TourBuilder {
   constructor(private readonly deps: TourBuilderDeps) {}
 
-  /** Ask Claude for a tour of the PR, check it, and store it as an `inferred` tour. */
-  async build(repo: string, pr: number, onLog: (line: string) => void = () => {}): Promise<Tour> {
+  /**
+   * Ask Claude for a tour of the PR, check it, and store it as an `inferred` tour.
+   * `onProgress` gets a short line on what Claude is doing while it writes the tour, and
+   * `undefined` when it is done.
+   */
+  async build(
+    repo: string,
+    pr: number,
+    onLog: (line: string) => void = () => {},
+    onProgress: (line: string | undefined) => void = () => {},
+  ): Promise<Tour> {
     const { summary, worktree, diff, mergeBase } = await this.checkout(repo, pr, onLog);
 
     const diffPath = join(this.deps.home, 'tmp', `${slug(repo)}-${pr}-${summary.headSha}.diff`);
@@ -262,6 +339,7 @@ export class TourBuilder {
         diffPath,
         hasTable ? functionsPath : undefined,
         onLog,
+        onProgress,
       );
     } finally {
       rmSync(diffPath, { force: true });
@@ -375,6 +453,7 @@ export class TourBuilder {
     diffPath: string,
     functionsPath: string | undefined,
     onLog: (line: string) => void,
+    onProgress: (line: string | undefined) => void,
   ): Promise<TourBodyInput> {
     const jsonSchema = tourBodyJsonSchema();
     let retryError: string | undefined;
@@ -388,8 +467,9 @@ export class TourBuilder {
         prompt,
         worktree,
         dirname(diffPath),
-        CLAUDE_TIMEOUT_MS,
+        { timeoutMs: CLAUDE_TIMEOUT_MS, idleTimeoutMs: CLAUDE_IDLE_MS },
         'the tour',
+        onProgress,
       );
       const parsed = parseBody(extractJson(lastAnswer));
       if (parsed.ok) return parsed.body;
@@ -404,15 +484,18 @@ export class TourBuilder {
 
   /**
    * One `claude -p` run in `worktree`; returns its final answer text. `addDir` is one more
-   * directory the file tools may read (the diff's).
+   * directory the file tools may read (the diff's). `limits` are the total and silent times
+   * after which the run is stopped. `onProgress` gets what Claude has done so far while it
+   * runs, and `undefined` when the run ends.
    */
   private async runClaude(
     prompt: string,
     worktree: string,
     addDir: string | undefined,
-    timeoutMs: number,
+    limits: { timeoutMs: number; idleTimeoutMs?: number },
     /** What the run is for, as it reads after "before finishing": `the tour`, `the review`. */
     what: string,
+    onProgress: (line: string | undefined) => void = () => {},
   ): Promise<string> {
     // Read-only and predictable:
     // - `--tools` makes Read, Grep and Glob the only tools that exist (no Bash, Edit,
@@ -421,11 +504,15 @@ export class TourBuilder {
     // - `--strict-mcp-config` with no `--mcp-config` loads none of the user's MCP servers.
     // - `--disable-slash-commands` keeps the user's skills and commands out of the run.
     // - `--no-session-persistence` keeps these runs out of the user's session history.
+    // - `stream-json` prints each step as it happens, so a silent run can be told from a slow
+    //   one; partial messages keep it printing while Claude writes a long answer.
     // The prompt goes on stdin, not argv: it holds the whole JSON schema.
     const args = [
       '-p',
       '--output-format',
-      'json',
+      'stream-json',
+      '--verbose',
+      '--include-partial-messages',
       '--tools',
       'Read,Grep,Glob',
       ...(addDir !== undefined ? ['--add-dir', addDir] : []),
@@ -437,11 +524,14 @@ export class TourBuilder {
       'Grep',
       'Glob',
     ];
-    const result = await this.deps.run('claude', args, {
-      cwd: worktree,
-      input: prompt,
-      timeoutMs,
-    });
+    const result = await this.deps
+      .run('claude', args, {
+        cwd: worktree,
+        input: prompt,
+        ...limits,
+        onLine: progressReader(onProgress),
+      })
+      .finally(() => onProgress(undefined));
     if (result.code !== 0) {
       const reason = firstLine(result.stderr) ?? `exit code ${result.code}`;
       throw new TourBuildError(
@@ -449,10 +539,8 @@ export class TourBuilder {
         `claude exited with code ${result.code}\n${excerpt(result.stderr)}\n${excerpt(result.stdout)}`,
       );
     }
-    let output: unknown;
-    try {
-      output = JSON.parse(result.stdout);
-    } catch {
+    const output = resultEvent(result.stdout);
+    if (output === null) {
       throw new TourBuildError('Claude gave output pr-tour cannot read.', excerpt(result.stdout));
     }
     const { result: text, is_error: isError } = output as { result?: unknown; is_error?: unknown };
@@ -482,7 +570,7 @@ export class TourBuilder {
         prompt,
         worktree,
         undefined,
-        REVIEW_TIMEOUT_MS,
+        { timeoutMs: REVIEW_TIMEOUT_MS },
         'the review',
       );
       const json = extractJson(answer);

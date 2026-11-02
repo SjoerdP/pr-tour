@@ -4,6 +4,10 @@ export type RunOptions = {
   cwd?: string;
   input?: string;
   timeoutMs?: number;
+  /** Stop the command when it prints nothing, on stdout or stderr, for this long. */
+  idleTimeoutMs?: number;
+  /** Called with each line of stdout as it arrives, without the newline. */
+  onLine?: (line: string) => void;
   /** Extra environment variables, merged over the process environment. */
   env?: Record<string, string>;
 };
@@ -68,29 +72,53 @@ const MAX_BUFFER = 256 * 1024 * 1024;
  */
 const ENV = { ...process.env, GIT_TERMINAL_PROMPT: '0' };
 
+/** How long a stopped command gets to exit before it is killed outright. */
+const KILL_GRACE_MS = 5000;
+
 /**
  * `execFile` behind the `Runner` type. Never throws: a non-zero exit returns its code.
- * When the command does not exit normally (not found, killed by the timeout, output over
- * `maxBuffer`) the code is non-zero and the reason is the first line of stderr, so
- * `CommandError.shortMessage` and other first-line messages show it.
+ * When the command does not exit normally (not found, over `timeoutMs`, silent for
+ * `idleTimeoutMs`, output over `maxBuffer`) the code is non-zero and the reason is the first
+ * line of stderr, so `CommandError.shortMessage` and other first-line messages show it.
+ * A command stopped by either limit that ignores the signal is killed after `KILL_GRACE_MS`.
  */
 export const realRunner: Runner = (cmd, args, opts = {}) =>
   new Promise((resolve) => {
+    /** Why pr-tour stopped the command; the first limit to hit wins. */
+    let stopped: string | undefined;
+    let idle: NodeJS.Timeout | undefined;
+    let total: NodeJS.Timeout | undefined;
+    let kill: NodeJS.Timeout | undefined;
+    const stop = (reason: string) => {
+      if (stopped !== undefined) return;
+      stopped = reason;
+      clearTimeout(idle);
+      clearTimeout(total);
+      child.kill();
+      kill = setTimeout(() => child.kill('SIGKILL'), KILL_GRACE_MS);
+    };
+    const waitForOutput = () => {
+      const ms = opts.idleTimeoutMs;
+      if (ms === undefined || stopped !== undefined) return;
+      clearTimeout(idle);
+      idle = setTimeout(() => stop(`${cmd} printed nothing for ${ms / 1000} s`), ms);
+    };
     const child = execFile(
       cmd,
       args,
       {
         cwd: opts.cwd,
-        timeout: opts.timeoutMs,
         maxBuffer: MAX_BUFFER,
         encoding: 'utf8',
         env: opts.env ? { ...ENV, ...opts.env } : ENV,
       },
       (error, stdout, stderr) => {
+        clearTimeout(idle);
+        clearTimeout(total);
+        clearTimeout(kill);
         if (!error) return resolve({ stdout, stderr, code: 0 });
-        if (error.killed && opts.timeoutMs !== undefined) {
-          const reason = `${cmd} timed out after ${opts.timeoutMs / 1000} s`;
-          return resolve({ stdout, stderr: `${reason}\n${stderr}`, code: 1 });
+        if (stopped !== undefined) {
+          return resolve({ stdout, stderr: `${stopped}\n${stderr}`, code: 1 });
         }
         const code = error.code;
         if (typeof code === 'number') return resolve({ stdout, stderr, code });
@@ -98,6 +126,23 @@ export const realRunner: Runner = (cmd, args, opts = {}) =>
         resolve({ stdout, stderr: `${reason}\n${stderr}`, code: 1 });
       },
     );
+    const ms = opts.timeoutMs;
+    if (ms !== undefined) {
+      total = setTimeout(() => stop(`${cmd} timed out after ${ms / 1000} s`), ms);
+    }
+    waitForOutput();
+    child.stderr?.on('data', waitForOutput);
+    let partial = '';
+    child.stdout?.on('data', (chunk: string) => {
+      waitForOutput();
+      if (!opts.onLine) return;
+      const lines = (partial + chunk).split('\n');
+      partial = lines.pop() ?? '';
+      for (const line of lines) opts.onLine(line);
+    });
+    child.stdout?.on('end', () => {
+      if (partial !== '') opts.onLine?.(partial);
+    });
     // A command that exits before reading all input closes stdin early; that is not our error.
     child.stdin?.on('error', () => undefined);
     child.stdin?.end(opts.input);

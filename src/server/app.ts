@@ -194,9 +194,9 @@ export function createApp(deps: AppDeps): Hono {
       if (!(err instanceof ReplaceNeedsConfirmError)) throw err;
       return c.json({ error: err.message, drafts: err.drafts }, 409);
     }
-    jobs.start(key, async (log) => {
+    jobs.start(key, async (log, progress) => {
       try {
-        await builder.build(repo, pr, log);
+        await builder.build(repo, pr, log, progress);
       } catch (err) {
         console.error(`Building the tour of ${key} failed:\n${logDetail(err)}`);
         throw new Error(userMessage(err) ?? INTERNAL_ERROR, { cause: err });
