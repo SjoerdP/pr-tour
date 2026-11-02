@@ -561,6 +561,23 @@ describe('TourBuilder.build', () => {
     expect(progress.at(-1)).toBeUndefined();
   });
 
+  it('build says in the log how many line ranges it fixed', async () => {
+    // DIFF adds new 4; this tour has it as old 4, where nothing changed.
+    const body = greetBody([lines('greet.js', 'old', 2, 3), lines('greet.js', 'new', 2, 3)]);
+    body.other[0]!.items.push({
+      file: 'greet.js',
+      title: 'Last line',
+      homes: [lines('greet.js', 'old', 4, 4)],
+    });
+    const log: string[] = [];
+    const { tours } = builder(answer(JSON.stringify(body)));
+
+    const tour = await tours.build('acme/greet', 7, (line) => log.push(line));
+
+    expect(tour.check.fixes).toHaveLength(1);
+    expect(log.at(-1)).toMatch(/, 1 line range fixed\)$/);
+  });
+
   it('build retries once on invalid JSON', async () => {
     const { tours, calls } = builder(answer('not json'), validAnswer);
 

@@ -248,13 +248,11 @@ function TourMap({ tour, onOpenHome }: { tour: Tour; onOpenHome: (homeId: string
   );
 }
 
-/** The line ranges pr-tour moved to the other side of the diff: one line, the list folded. */
+/** The line ranges pr-tour moved to the other side of the diff or removed: one line, the list folded. */
 function SideFixes({ fixes }: { fixes: string[] }) {
   if (fixes.length === 0) return null;
-  const what =
-    fixes.length === 1
-      ? '1 line range was on the wrong side of the diff (old instead of new, or the other way around). pr-tour fixed it.'
-      : `${fixes.length} line ranges were on the wrong side of the diff (old instead of new, or the other way around). pr-tour fixed them.`;
+  const ranges = fixes.length === 1 ? '1 line range' : `${fixes.length} line ranges`;
+  const what = `pr-tour fixed ${ranges} that pointed at the wrong lines: the wrong side of the diff (old instead of new, or the other way around), or lines that did not change.`;
   return (
     <div className="side-fixes">
       <p>{what}</p>

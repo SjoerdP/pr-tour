@@ -649,7 +649,8 @@ export class TourBuilder {
     }
     this.deps.store.saveTour(tour);
     const moved = tour.check.fixes?.length ?? 0;
-    const fixed = moved > 0 ? `, ${moved} on the wrong side fixed` : '';
+    const fixed =
+      moved === 0 ? '' : `, ${moved} ${moved === 1 ? 'line range' : 'line ranges'} fixed`;
     onLog(
       `Saved the tour (${homeIds(tour).length} homes, ${tour.check.problems.length} problems${fixed})`,
     );

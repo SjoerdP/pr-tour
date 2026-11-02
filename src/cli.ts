@@ -349,8 +349,8 @@ async function openTour(config: Config, repo: string, pr: number): Promise<void>
 /**
  * What `pr-tour import` tells the author to fix: each check problem, each code-check finding,
  * and each run of changed lines that no home covers (those land in the Unexplained group, not
- * in problems). The code check's status lines come as notes, and the homes pr-tour moved to
- * the other side of the diff as fixed lines.
+ * in problems). The code check's status lines come as notes, and the line ranges pr-tour
+ * moved to the other side of the diff or removed as fixed lines.
  */
 export function importReport(tour: Tour): string[] {
   const unexplained = tour.other.filter((g) => g.kind === 'unexplained').flatMap((g) => g.items);

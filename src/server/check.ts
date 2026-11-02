@@ -1,5 +1,5 @@
 import type { OtherGroup, OtherItem, Range, TourBody } from '../shared/tour.js';
-import { changedLines, type ChangedLine, type FileDiff } from './diff.js';
+import { changedLines, findFileDiff, type ChangedLine, type FileDiff } from './diff.js';
 
 export type CheckResult = { problems: string[]; unexplained: OtherGroup | null };
 
@@ -53,6 +53,12 @@ export function checkTour(body: TourBody, files: FileDiff[]): CheckResult {
  * file that does cover changes (Claude adds old-side ranges for the code around a change).
  * Each fix is one line in `fixes`; homes that cannot be fixed this way are left for
  * `checkTour` to report.
+ *
+ * A move trusts Claude's line numbers and only doubts the side. When Claude miscounted
+ * instead, the moved range can point at changed code its step was not written about; the
+ * fix line in About says so. Requiring a changed line at either end of the range would
+ * avoid that, but on real tours it skipped most true fixes: Claude's ranges usually include
+ * a few lines around the change.
  */
 export function fixSides(body: TourBody, files: FileDiff[]): { body: TourBody; fixes: string[] } {
   const fixed = structuredClone(body);
@@ -63,11 +69,11 @@ export function fixSides(body: TourBody, files: FileDiff[]): { body: TourBody; f
   ];
   const changed = changedLines(files).filter((l) => l.line > 0);
   const fixes: string[] = [];
-  const fileOf = (path: string) => files.find((f) => f.path === path || f.oldPath === path);
+  const fileOf = (path: string) => findFileDiff(files, path);
   const inRange = (range: Range) =>
     changed.filter((l) => {
       const file = fileOf(l.file);
-      return file !== undefined && contains(range, l, file);
+      return file !== null && contains(range, l, file);
     });
   /** A line range that covers no changed line, its file, and the same lines on the other side. */
   const emptyRange = (range: Range) => {
@@ -97,8 +103,13 @@ export function fixSides(body: TourBody, files: FileDiff[]): { body: TourBody; f
           `${owner.id}: removed ${where} on the ${range.side} side. Nothing changed there, and ${owner.id} already has the ${side} lines.`,
         );
       } else {
+        // The owner may now hold two overlapping ranges on one side; that is not a problem.
         owner.homes[at] = flipped;
-        fixes.push(`${owner.id}: moved ${where} from the ${range.side} side to the ${side} side.`);
+        const to =
+          flipped.file === range.file
+            ? `from the ${range.side} side to the ${side} side`
+            : `on the ${range.side} side to ${flipped.file}:${range.start}-${range.end} on the ${side} side`;
+        fixes.push(`${owner.id}: moved ${where} ${to}.`);
       }
     }
   }

@@ -236,7 +236,7 @@ describe('About this PR', () => {
     expect(within(about).queryByText(/check problem/)).toBeNull();
     expect(
       within(about).getByText(
-        '2 line ranges were on the wrong side of the diff (old instead of new, or the other way around). pr-tour fixed them.',
+        'pr-tour fixed 2 line ranges that pointed at the wrong lines: the wrong side of the diff (old instead of new, or the other way around), or lines that did not change.',
       ),
     ).toBeTruthy();
     const list = within(about).getByText('Show which').closest('details')!;
