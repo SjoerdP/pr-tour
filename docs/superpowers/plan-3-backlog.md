@@ -91,3 +91,21 @@ From the final review and the per-task reviews. Not blocking the merge.
 - "register" means a code registration and, in pass C, also dependency injection; split the wording.
 - The "next step →" marker can show outside the step's focus lines; limit it like the mark badges. Consider placing it right after the code instead of at the far right.
 - Speed: Claude writing the tour takes about 92% of a build (about 11m40s of 12m45s on a real PR). Make it faster without losing quality.
+
+## Follow-ups from the Claude time limit fix (2026-11-02)
+
+From the benchmark runs for #8. Three runs per version, same PR head commit.
+
+1. Catch homes on the wrong side. In one run, Claude put many homes on the `old` side for lines
+   that the PR adds. The check found 107 problems, against 2 to 8 in the other runs. pr-tour
+   saved the tour anyway. Find these homes before saving (a home that covers no changed lines on
+   its side, but would on the other side), and ask Claude to fix them, like pass C does for code
+   check findings. This improves quality and lowers the spread between runs.
+2. Change the benchmark method. With the same Claude input, check problems ranged from 2 to 107
+   between runs. With three runs, the rule "at least as good as the worst baseline run" cannot
+   tell this noise from a real change. Options: more runs per version, medians, or quality
+   numbers that vary less (such as shares instead of counts).
+3. Measure turning off the user's Claude Code hooks during builds
+   (`--settings '{"disableAllHooks":true}'`). Hooks can add their own context to every build, so
+   turning them off may make builds more predictable. It was left out of #8, because it changes
+   what Claude sees and was not measured on its own.
