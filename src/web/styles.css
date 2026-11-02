@@ -455,6 +455,22 @@ pre {
   font-weight: 600;
 }
 
+/* Calm, not a warning: pr-tour already fixed these. */
+.side-fixes {
+  margin-bottom: var(--space-3);
+  color: var(--fg-muted);
+  font-size: var(--font-size-small);
+}
+
+.side-fixes p {
+  margin: 0 0 var(--space-1);
+}
+
+.side-fixes ul {
+  margin: var(--space-1) 0 0;
+  padding-left: var(--space-4);
+}
+
 .check-problems ul {
   margin: 0;
   padding-left: var(--space-4);

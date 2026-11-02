@@ -123,6 +123,31 @@ describe('finishTour', () => {
     expect(tour.check.problems).toEqual(['greet.js:new:2 has 2 homes: o1.1, o1.2']);
   });
 
+  it('finishTour moves a home on the wrong side and keeps what it fixed', () => {
+    // DIFF deletes old 2-3 and adds new 2-4; old 4 did not change.
+    const body = greetBody([lines('greet.js', 'old', 2, 3), lines('greet.js', 'new', 2, 3)]);
+    body.other[0]!.items.push({
+      file: 'greet.js',
+      title: 'Last line',
+      homes: [lines('greet.js', 'old', 4, 4)],
+    });
+
+    const tour = finishTour(body, meta, parseDiff(DIFF));
+
+    expect(tour.other.map((g) => g.kind)).toEqual(['refactor']);
+    expect(tour.other[0]!.items[1]!.homes).toEqual([lines('greet.js', 'new', 4, 4)]);
+    expect(tour.check).toEqual({
+      problems: [],
+      fixes: ['o1.2: moved greet.js:4-4 from the old side to the new side.'],
+    });
+  });
+
+  it('finishTour stores no fixes when nothing was on the wrong side', () => {
+    const tour = finishTour(FULL_GREET, meta, parseDiff(DIFF));
+
+    expect(tour.check).toEqual({ problems: [] });
+  });
+
   it('finishTour hashes every home', () => {
     // Two files with the same change, and a binary file without lines.
     const diff = [

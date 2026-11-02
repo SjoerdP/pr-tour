@@ -240,7 +240,11 @@ export const TourMetaSchema = z.object({
  * unexplained group, if any, lives in `other`.
  */
 export const TourSchema = TourBodySchema.extend(TourMetaSchema.shape).extend({
-  check: z.object({ problems: z.array(z.string()) }),
+  check: z.object({
+    problems: z.array(z.string()),
+    /** Homes pr-tour moved to the other side of the diff, one line each (newer tours only). */
+    fixes: z.array(z.string()).optional(),
+  }),
   analysis: AnalysisSchema.optional(),
   hashes: z.record(z.string(), z.string()),
 });

@@ -226,6 +226,24 @@ describe('About this PR', () => {
     expect(within(about).getByText('src/a.ts:3 has two homes')).toBeTruthy();
   });
 
+  it('says how many line ranges pr-tour moved, with the list folded away', async () => {
+    const fixes = [
+      'F1.S1: moved src/a.ts:3-5 from the old side to the new side.',
+      'F1.S2: moved src/a.ts:9-9 from the old side to the new side.',
+    ];
+    await open({ ...baseTour, check: { problems: [], fixes } });
+    const about = screen.getByRole('region', { name: 'About this PR' });
+    expect(within(about).queryByText(/check problem/)).toBeNull();
+    expect(
+      within(about).getByText(
+        '2 line ranges were on the wrong side of the diff (old instead of new, or the other way around). pr-tour fixed them.',
+      ),
+    ).toBeTruthy();
+    const list = within(about).getByText('Show which').closest('details')!;
+    expect(list.open).toBe(false);
+    expect(within(list).getByText(fixes[1]!)).toBeTruthy();
+  });
+
   it('still works when storage is blocked', async () => {
     const spy = vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
       throw new Error('blocked');

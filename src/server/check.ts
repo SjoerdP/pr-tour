@@ -44,6 +44,81 @@ export function checkTour(body: TourBody, files: FileDiff[]): CheckResult {
   return { problems, unexplained: unexplainedGroup(unhomed) };
 }
 
+/**
+ * Fix homes Claude put on the wrong side of the diff: a line range that covers no changed
+ * line on its side, but does on the other side (Claude often writes `old` for added lines).
+ * Such a home moves to the other side, unless that puts lines in two places; when the same
+ * place already has those lines, the home is removed instead. After that, a range that
+ * covers nothing on either side is removed when the same place has another range in that
+ * file that does cover changes (Claude adds old-side ranges for the code around a change).
+ * Each fix is one line in `fixes`; homes that cannot be fixed this way are left for
+ * `checkTour` to report.
+ */
+export function fixSides(body: TourBody, files: FileDiff[]): { body: TourBody; fixes: string[] } {
+  const fixed = structuredClone(body);
+  const owners = [
+    ...fixed.foundations,
+    ...fixed.flows.flatMap((flow) => flow.steps),
+    ...fixed.other.flatMap((g) => g.items),
+  ];
+  const changed = changedLines(files).filter((l) => l.line > 0);
+  const fixes: string[] = [];
+  const fileOf = (path: string) => files.find((f) => f.path === path || f.oldPath === path);
+  const inRange = (range: Range) =>
+    changed.filter((l) => {
+      const file = fileOf(l.file);
+      return file !== undefined && contains(range, l, file);
+    });
+  /** A line range that covers no changed line, its file, and the same lines on the other side. */
+  const emptyRange = (range: Range) => {
+    if ('whole' in range || inRange(range).length > 0) return null;
+    const file = fileOf(range.file);
+    if (!file) return null;
+    const side = range.side === 'old' ? ('new' as const) : ('old' as const);
+    const flipped: Range = { ...range, file: side === 'new' ? file.path : file.oldPath, side };
+    return { range, file, side, flipped };
+  };
+
+  for (const owner of owners) {
+    for (const home of [...owner.homes]) {
+      const empty = emptyRange(home);
+      if (!empty) continue;
+      const { range, file, side, flipped } = empty;
+      const lines = inRange(flipped);
+      if (lines.length === 0) continue;
+      const homedBy = (o: { homes: Range[] }) => (l: ChangedLine) =>
+        o.homes.some((h) => h !== range && contains(h, l, file));
+      if (owners.some((o) => o !== owner && lines.some(homedBy(o)))) continue;
+      const where = `${range.file}:${range.start}-${range.end}`;
+      const at = owner.homes.indexOf(range);
+      if (lines.every(homedBy(owner))) {
+        owner.homes.splice(at, 1);
+        fixes.push(
+          `${owner.id}: removed ${where} on the ${range.side} side. Nothing changed there, and ${owner.id} already has the ${side} lines.`,
+        );
+      } else {
+        owner.homes[at] = flipped;
+        fixes.push(`${owner.id}: moved ${where} from the ${range.side} side to the ${side} side.`);
+      }
+    }
+  }
+
+  for (const owner of owners) {
+    for (const home of [...owner.homes]) {
+      const empty = emptyRange(home);
+      if (!empty || inRange(empty.flipped).length > 0) continue;
+      const { range, file } = empty;
+      const sameFile = (h: Range) => h.file === file.path || h.file === file.oldPath;
+      if (!owner.homes.some((h) => h !== range && sameFile(h) && inRange(h).length > 0)) continue;
+      owner.homes.splice(owner.homes.indexOf(range), 1);
+      fixes.push(
+        `${owner.id}: removed ${range.file}:${range.start}-${range.end} on the ${range.side} side. Nothing changed there on either side, and ${owner.id} has the changed lines of this file in another range.`,
+      );
+    }
+  }
+  return { body: fixed, fixes };
+}
+
 /** Steps whose "from" line lies outside the calling step's lines. */
 function fromProblems(body: TourBody): string[] {
   return body.flows.flatMap((flow) =>

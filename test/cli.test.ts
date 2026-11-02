@@ -336,6 +336,22 @@ describe('functions and recheck', () => {
     ]);
   });
 
+  it('importReport prints the homes pr-tour moved as fixed lines', () => {
+    const tour = {
+      check: {
+        problems: [],
+        fixes: ['F1.S1: moved x/pay.go:3-5 from the old side to the new side.'],
+      },
+      other: [],
+      flows: [],
+      foundations: [],
+    } as unknown as Tour;
+
+    expect(importReport(tour)).toEqual([
+      'fixed: F1.S1: moved x/pay.go:3-5 from the old side to the new side.',
+    ]);
+  });
+
   it('importReport prints no note that repeats a finding', () => {
     const step = (id: string, symbol: string) => ({
       id,
