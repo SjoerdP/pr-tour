@@ -5,6 +5,7 @@ import type { RevealPlace } from './code-lines.js';
 import { inKeepOpenArea, keepsReviewOpen } from './keep-review-open.js';
 import { isReviewColumn } from './review-column.js';
 import { ReviewPanel, type ReviewDraftText } from './ReviewPanel.js';
+import { safeHref } from './safe-href.js';
 import type { ReviewState } from './useReview.js';
 
 const EMPTY_REVIEW_TEXT: ReviewDraftText = { event: 'COMMENT', body: '' };
@@ -30,9 +31,10 @@ type Props = {
 };
 
 /**
- * One line above the tour: back to the inbox, the PR, a short status, "About this PR",
- * which shows the tour summary and check problems, and "Review", which opens the review
- * panel. A click outside a panel closes it (not the review panel when it has a column).
+ * One line above the tour: back to the inbox, the PR, a short status, a GitHub link (new
+ * tab), "About this PR", which shows the tour summary and check problems, and "Review",
+ * which opens the review panel. A click outside a panel closes it (not the review panel
+ * when it has a column).
  */
 export function TopBar({
   pr,
@@ -109,6 +111,7 @@ export function TopBar({
 
   const problems = tour?.check.problems ?? [];
   const drafts = review.drafts.length;
+  const githubHref = safeHref(pr.url);
 
   return (
     <header className="topbar" {...keepsReviewOpen}>
@@ -122,6 +125,18 @@ export function TopBar({
         <a href={pr.url}>{pr.title}</a>
       </h1>
       {tour && <p className="topbar-meta">{status(tour, isSeen)}</p>}
+      {githubHref !== null && (
+        <a
+          className="button-link"
+          href={githubHref}
+          target="_blank"
+          rel="noopener noreferrer"
+          aria-label="Open on GitHub"
+          title="Open on GitHub (new tab)"
+        >
+          GitHub ↗
+        </a>
+      )}
       {tour && (
         <button
           type="button"

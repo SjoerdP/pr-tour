@@ -79,10 +79,25 @@ function PrTable({ title, prs }: { title: string; prs: InboxPr[] }) {
 }
 
 function PrRow({ pr }: { pr: InboxPr }) {
+  const githubHref = safeHref(pr.url);
   return (
     <tr>
       <td className="pr-cell">
-        <span className="repo">{pr.repo}</span>
+        <span className="repo">
+          {pr.repo}
+          {githubHref !== null && (
+            <a
+              className="github-link"
+              href={githubHref}
+              target="_blank"
+              rel="noopener noreferrer"
+              aria-label={`Open ${pr.repo}#${pr.number} on GitHub`}
+              title="Open on GitHub (new tab)"
+            >
+              GitHub ↗
+            </a>
+          )}
+        </span>
         <a href={`/pr/${pr.repo}/${pr.number}`}>
           <span className="pr-number">#{pr.number}</span> {pr.title}
         </a>

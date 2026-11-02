@@ -67,6 +67,17 @@ describe('top bar', () => {
     expect(within(bar).getByText('2 flows · 1 / 4 seen · notes by the author')).toBeTruthy();
   });
 
+  it('has a button that opens the PR on GitHub in a new tab', async () => {
+    getPr.mockResolvedValue(response());
+    render(<TourView repo="acme/loans" pr={42} />);
+
+    const bar = await screen.findByRole('banner');
+    const link = within(bar).getByRole('link', { name: 'Open on GitHub' });
+    expect(link.getAttribute('href')).toBe('https://github.com/acme/loans/pull/42');
+    expect(link.getAttribute('target')).toBe('_blank');
+    expect(link.getAttribute('rel')).toBe('noopener noreferrer');
+  });
+
   it('an inferred tour says so', async () => {
     await open({ ...baseTour, source: 'inferred' });
     expect(screen.getByText(/notes inferred by Claude$/)).toBeTruthy();
