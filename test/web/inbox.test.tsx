@@ -73,6 +73,28 @@ describe('Inbox', () => {
     expect(fetchMock).toHaveBeenCalledWith('/api/inbox', expect.anything());
   });
 
+  it('each PR links to GitHub in a new tab, also before it has a tour', async () => {
+    serve(200, {
+      reviewRequested: [pr({ number: 12, url: 'https://github.com/acme/greet/pull/12' })],
+      mine: [],
+    });
+    render(<Inbox />);
+
+    const review = await tableNamed('Waiting for my review');
+    const link = within(review).getByRole('link', { name: 'Open acme/greet#12 on GitHub' });
+    expect(link.getAttribute('href')).toBe('https://github.com/acme/greet/pull/12');
+    expect(link.getAttribute('target')).toBe('_blank');
+    expect(link.getAttribute('rel')).toBe('noopener noreferrer');
+  });
+
+  it('shows no GitHub link when the PR URL is not safe', async () => {
+    serve(200, { reviewRequested: [pr({ url: 'javascript:alert(1)' })], mine: [] });
+    render(<Inbox />);
+
+    const review = await tableNamed('Waiting for my review');
+    expect(within(review).queryByRole('link', { name: /on GitHub/ })).toBeNull();
+  });
+
   it('shows "no tour yet" when no tour', async () => {
     serve(200, { reviewRequested: [pr({ tour: { exists: false } })], mine: [] });
     render(<Inbox />);

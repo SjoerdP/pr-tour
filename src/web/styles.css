@@ -313,6 +313,12 @@ pre {
   font-weight: 500;
 }
 
+.pr-cell .github-link {
+  margin-left: var(--space-2);
+  color: var(--fg-muted);
+  font-weight: 400;
+}
+
 .pr-number {
   color: var(--fg-muted);
   font-weight: 400;
