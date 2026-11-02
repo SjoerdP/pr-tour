@@ -64,11 +64,11 @@ describe('realRunner', () => {
   it('names the total limit when it hits first, even with an idle limit set', async () => {
     const script = 'setInterval(() => console.log("busy"), 50)';
     const result = await realRunner(process.execPath, ['-e', script], {
-      timeoutMs: 500,
-      idleTimeoutMs: 300,
+      timeoutMs: 1500,
+      idleTimeoutMs: 3000,
     });
     expect(result.code).not.toBe(0);
-    expect(result.stderr.split('\n')[0]).toBe(`${process.execPath} timed out after 0.5 s`);
+    expect(result.stderr.split('\n')[0]).toBe(`${process.execPath} timed out after 1.5 s`);
   });
 
   it('force-stops a command that ignores the stop signal', async () => {

@@ -504,7 +504,6 @@ export class TourBuilder {
     // - `--strict-mcp-config` with no `--mcp-config` loads none of the user's MCP servers.
     // - `--disable-slash-commands` keeps the user's skills and commands out of the run.
     // - `--no-session-persistence` keeps these runs out of the user's session history.
-    // - `disableAllHooks` keeps the user's hooks (and the context they add) out of the run.
     // - `stream-json` prints each step as it happens, so a silent run can be told from a slow
     //   one; partial messages keep it printing while Claude writes a long answer.
     // The prompt goes on stdin, not argv: it holds the whole JSON schema.
@@ -514,8 +513,6 @@ export class TourBuilder {
       'stream-json',
       '--verbose',
       '--include-partial-messages',
-      '--settings',
-      JSON.stringify({ disableAllHooks: true }),
       '--tools',
       'Read,Grep,Glob',
       ...(addDir !== undefined ? ['--add-dir', addDir] : []),

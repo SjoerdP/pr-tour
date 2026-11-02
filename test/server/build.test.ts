@@ -440,14 +440,13 @@ describe('TourBuilder.build', () => {
     expect(opts?.cwd).toBe(WORKTREE);
   });
 
-  it('build streams claude output without the user hooks', async () => {
+  it('build streams claude output', async () => {
     const { tours, calls } = builder(validAnswer);
 
     await tours.build('acme/greet', 7);
 
     const args = calls[0]!.args.join(' ');
     expect(args).toContain('--output-format stream-json --verbose --include-partial-messages');
-    expect(args).toContain(`--settings ${JSON.stringify({ disableAllHooks: true })}`);
   });
 
   it('build stops claude only when it is silent, with a long limit as a backstop', async () => {
@@ -971,7 +970,6 @@ describe('pass C: Claude reviews the findings', () => {
     expect(args.join(' ')).toContain('--allowedTools Read Grep Glob');
     expect(opts?.cwd).toBe(worktree);
     expect(args.join(' ')).toContain('--output-format stream-json');
-    expect(args.join(' ')).toContain('disableAllHooks');
     // The review is short: its total limit is all it needs.
     expect(opts?.timeoutMs).toBe(180_000);
     expect(opts?.idleTimeoutMs).toBeUndefined();
