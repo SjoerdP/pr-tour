@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { checkTour } from '../../src/server/check.js';
+import { checkTour, fixSides } from '../../src/server/check.js';
 import { parseDiff, type FileDiff } from '../../src/server/diff.js';
 import type { Foundation, OtherItem, Range, Step, TourBody } from '../../src/shared/tour.js';
 
@@ -255,5 +255,207 @@ describe('checkTour', () => {
       [lines('a.txt', 'old', 2, 2)],
       [lines('a.txt', 'new', 2, 2)],
     ]);
+  });
+});
+
+describe('fixSides', () => {
+  // gaps.diff: deletes old 5, adds new 10-13 in src/app.ts.
+  const gaps = () => fixture('gaps');
+
+  it('moves a home to the other side when only that side has changed lines', () => {
+    const tour = body({ steps: [step('F1.S1', [lines('src/app.ts', 'old', 10, 13)])] });
+
+    const { body: fixed, fixes } = fixSides(tour, gaps());
+
+    expect(fixed.flows[0]!.steps[0]!.homes).toEqual([lines('src/app.ts', 'new', 10, 13)]);
+    expect(fixes).toEqual(['F1.S1: moved src/app.ts:10-13 from the old side to the new side.']);
+    expect(checkTour(fixed, gaps()).problems).toEqual([]);
+  });
+
+  it('moves a new-side home to the old side too', () => {
+    const tour = body({ items: [item('o1.1', [lines('src/app.ts', 'new', 5, 5)])] });
+
+    const { body: fixed, fixes } = fixSides(tour, gaps());
+
+    expect(fixed.other[0]!.items[0]!.homes).toEqual([lines('src/app.ts', 'old', 5, 5)]);
+    expect(fixes).toEqual(['o1.1: moved src/app.ts:5-5 from the new side to the old side.']);
+  });
+
+  it('removes the home when its lines are already in the same place on the other side', () => {
+    const tour = body({
+      steps: [
+        step('F1.S1', [lines('src/app.ts', 'new', 10, 13), lines('src/app.ts', 'old', 10, 11)]),
+      ],
+    });
+
+    const { body: fixed, fixes } = fixSides(tour, gaps());
+
+    expect(fixed.flows[0]!.steps[0]!.homes).toEqual([lines('src/app.ts', 'new', 10, 13)]);
+    expect(fixes).toEqual([
+      'F1.S1: removed src/app.ts:10-11 on the old side. Nothing changed there, and F1.S1 already has the new lines.',
+    ]);
+    expect(checkTour(fixed, gaps()).problems).toEqual([]);
+  });
+
+  it('leaves a home alone when the other side would put lines in two places', () => {
+    const tour = body({
+      foundations: [foundation('f1', [lines('src/app.ts', 'new', 10, 13)])],
+      steps: [step('F1.S1', [lines('src/app.ts', 'old', 10, 11)])],
+    });
+
+    const { body: fixed, fixes } = fixSides(tour, gaps());
+
+    expect(fixed).toEqual(tour);
+    expect(fixes).toEqual([]);
+  });
+
+  it('leaves a home alone when neither side has changed lines, or its own side has some', () => {
+    const tour = body({
+      steps: [
+        step('F1.S1', [lines('src/app.ts', 'old', 20, 30)]),
+        step('F1.S2', [lines('src/app.ts', 'old', 1, 12)]),
+        step('F1.S3', [whole('src/app.ts')]),
+      ],
+    });
+
+    expect(fixSides(tour, gaps())).toEqual({ body: tour, fixes: [] });
+  });
+
+  it('removes a range with no changes on either side when the same place covers the file', () => {
+    const tour = body({
+      steps: [
+        step('F1.S1', [lines('src/app.ts', 'old', 20, 30), lines('src/app.ts', 'new', 10, 13)]),
+      ],
+    });
+
+    const { body: fixed, fixes } = fixSides(tour, gaps());
+
+    expect(fixed.flows[0]!.steps[0]!.homes).toEqual([lines('src/app.ts', 'new', 10, 13)]);
+    expect(fixes).toEqual([
+      'F1.S1: removed src/app.ts:20-30 on the old side. Nothing changed there on either side, and F1.S1 has the changed lines of this file in another range.',
+    ]);
+  });
+
+  it('keeps a range with no changes on either side when it is the only one in its file', () => {
+    const tour = body({
+      foundations: [foundation('f1', [lines('src/app.ts', 'new', 10, 13)])],
+      steps: [step('F1.S1', [lines('src/app.ts', 'old', 20, 30)])],
+    });
+
+    expect(fixSides(tour, gaps())).toEqual({ body: tour, fixes: [] });
+  });
+
+  it('moves a range first, then removes one beside it that covers nothing', () => {
+    const tour = body({
+      steps: [
+        step('F1.S1', [lines('src/app.ts', 'old', 10, 13), lines('src/app.ts', 'old', 20, 30)]),
+      ],
+    });
+
+    const { body: fixed, fixes } = fixSides(tour, gaps());
+
+    expect(fixed.flows[0]!.steps[0]!.homes).toEqual([lines('src/app.ts', 'new', 10, 13)]);
+    expect(fixes).toHaveLength(2);
+    expect(checkTour(fixed, gaps()).problems).toEqual([]);
+  });
+
+  it('moves only the first of two places with the same wrong range', () => {
+    const tour = body({
+      foundations: [foundation('f1', [lines('src/app.ts', 'old', 10, 13)])],
+      steps: [step('F1.S1', [lines('src/app.ts', 'old', 10, 13)])],
+    });
+
+    const { body: fixed, fixes } = fixSides(tour, gaps());
+
+    expect(fixed.foundations[0]!.homes).toEqual([lines('src/app.ts', 'new', 10, 13)]);
+    expect(fixed.flows[0]!.steps[0]!.homes).toEqual([lines('src/app.ts', 'old', 10, 13)]);
+    expect(fixes).toHaveLength(1);
+  });
+
+  it('does not move a range onto lines another place has as a whole file', () => {
+    const tour = body({
+      foundations: [foundation('f1', [whole('src/app.ts')])],
+      steps: [step('F1.S1', [lines('src/app.ts', 'old', 10, 13)])],
+    });
+
+    expect(fixSides(tour, gaps())).toEqual({ body: tour, fixes: [] });
+  });
+
+  it('leaves ranges in a file without changed lines alone', () => {
+    // binary.diff: a binary file, which has no lines.
+    const files = fixture('binary');
+    const tour = body({ steps: [step('F1.S1', [lines(files[0]!.path, 'old', 1, 2)])] });
+
+    expect(fixSides(tour, files)).toEqual({ body: tour, fixes: [] });
+  });
+
+  it('picks the file by its new path before an old path of a renamed file', () => {
+    // a.ts is renamed to b.ts with a line added, and a new a.ts is added too.
+    const files = parseDiff(
+      [
+        'diff --git a/a.ts b/b.ts',
+        'similarity index 90%',
+        'rename from a.ts',
+        'rename to b.ts',
+        '--- a/a.ts',
+        '+++ b/b.ts',
+        '@@ -1,0 +2 @@',
+        '+two',
+        'diff --git a/a.ts b/a.ts',
+        'new file mode 100644',
+        '--- /dev/null',
+        '+++ b/a.ts',
+        '@@ -0,0 +1,3 @@',
+        '+one',
+        '+two',
+        '+three',
+        '',
+      ].join('\n'),
+    );
+    const tour = body({ steps: [step('F1.S1', [lines('a.ts', 'old', 1, 3)])] });
+
+    const { body: fixed, fixes } = fixSides(tour, files);
+
+    // The new a.ts, not the renamed file.
+    expect(fixed.flows[0]!.steps[0]!.homes).toEqual([lines('a.ts', 'new', 1, 3)]);
+    expect(fixes).toEqual(['F1.S1: moved a.ts:1-3 from the old side to the new side.']);
+  });
+
+  it('names the other path when a moved range changes file', () => {
+    // renamed.diff: config.txt → settings.txt, deletes old 5 and adds new 5.
+    const tour = body({ steps: [step('F1.S1', [lines('config.txt', 'old', 3, 4)])] });
+    const files = fixture('renamed');
+    files[0]!.hunks[0]!.lines.push({ kind: 'add', text: 'extra', newNo: 4 });
+
+    const { body: fixed, fixes } = fixSides(tour, files);
+
+    expect(fixed.flows[0]!.steps[0]!.homes).toEqual([lines('settings.txt', 'new', 3, 4)]);
+    expect(fixes).toEqual([
+      'F1.S1: moved config.txt:3-4 on the old side to settings.txt:3-4 on the new side.',
+    ]);
+  });
+
+  it('uses the right path for each side of a renamed file', () => {
+    // renamed.diff: config.txt → settings.txt, deletes old 5 and adds new 5.
+    const tour = body({ steps: [step('F1.S1', [lines('settings.txt', 'old', 9, 9)])] });
+    const added = parseDiff(
+      [
+        'diff --git a/config.txt b/settings.txt',
+        'similarity index 80%',
+        'rename from config.txt',
+        'rename to settings.txt',
+        '--- a/config.txt',
+        '+++ b/settings.txt',
+        '@@ -8,0 +9 @@',
+        '+line nine',
+        '',
+      ].join('\n'),
+    );
+
+    const { body: fixed } = fixSides(tour, added);
+
+    expect(fixed.flows[0]!.steps[0]!.homes).toEqual([lines('settings.txt', 'new', 9, 9)]);
+    const reverse = body({ steps: [step('F1.S1', [lines('settings.txt', 'new', 5, 5)])] });
+    expect(fixSides(reverse, fixture('renamed')).body).toEqual(reverse);
   });
 });

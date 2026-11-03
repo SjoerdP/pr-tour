@@ -24,7 +24,7 @@ import {
 } from './analysis/review.js';
 import type { FunctionsInput, FunctionsOutput } from './analysis/contract.js';
 import type { CheckerResult, runCheck, runFunctions } from './analysis/runner.js';
-import { checkTour, contains } from './check.js';
+import { checkTour, contains, fixSides } from './check.js';
 import { lineChanges, parseDiff, type FileDiff, type LineChange } from './diff.js';
 import { firstLine, type Runner } from './exec.js';
 import type { GitHub, PrSummary } from './github.js';
@@ -120,17 +120,19 @@ export function contentHash(lines: string[]): string {
 }
 
 /**
- * Turn a validated body into a stored tour: assign ids, run the check pass,
- * append the unexplained group (if any) to `other`, and hash every home.
+ * Turn a validated body into a stored tour: assign ids, move homes on the wrong side of the
+ * diff, run the check pass, append the unexplained group (if any) to `other`, and hash every
+ * home.
  */
 export function finishTour(body: TourBodyInput, meta: TourMeta, files: FileDiff[]): Tour {
-  const withIds = assignIds(body);
+  const { body: withIds, fixes } = fixSides(assignIds(body), files);
   const { problems, unexplained } = checkTour(withIds, files);
   const full: TourBody = {
     ...withIds,
     other: unexplained ? [...withIds.other, unexplained] : withIds.other,
   };
-  return { ...full, ...meta, check: { problems }, hashes: hashHomes(full, files) };
+  const check = fixes.length > 0 ? { problems, fixes } : { problems };
+  return { ...full, ...meta, check, hashes: hashHomes(full, files) };
 }
 
 /**
@@ -646,7 +648,12 @@ export class TourBuilder {
       tour = await this.passC(tour, worktree, diff, onLog);
     }
     this.deps.store.saveTour(tour);
-    onLog(`Saved the tour (${homeIds(tour).length} homes, ${tour.check.problems.length} problems)`);
+    const moved = tour.check.fixes?.length ?? 0;
+    const fixed =
+      moved === 0 ? '' : `, ${moved} ${moved === 1 ? 'line range' : 'line ranges'} fixed`;
+    onLog(
+      `Saved the tour (${homeIds(tour).length} homes, ${tour.check.problems.length} problems${fixed})`,
+    );
     return tour;
   }
 }

@@ -200,6 +200,7 @@ export function TopBar({
               </ul>
             </div>
           )}
+          <SideFixes fixes={tour.check.fixes ?? []} />
           {tour.analysis && <CodeCheck analysis={tour.analysis} />}
           <button type="button" className="link-button" onClick={() => onAboutChange(false)}>
             Close
@@ -244,6 +245,26 @@ function TourMap({ tour, onOpenHome }: { tour: Tour; onOpenHome: (homeId: string
         })}
       </ol>
     </section>
+  );
+}
+
+/** The line ranges pr-tour moved to the other side of the diff or removed: one line, the list folded. */
+function SideFixes({ fixes }: { fixes: string[] }) {
+  if (fixes.length === 0) return null;
+  const ranges = fixes.length === 1 ? '1 line range' : `${fixes.length} line ranges`;
+  const what = `pr-tour fixed ${ranges} that pointed at the wrong lines: the wrong side of the diff (old instead of new, or the other way around), or lines that did not change.`;
+  return (
+    <div className="side-fixes">
+      <p>{what}</p>
+      <details>
+        <summary>Show which</summary>
+        <ul>
+          {fixes.map((fix, i) => (
+            <li key={i}>{fix}</li>
+          ))}
+        </ul>
+      </details>
+    </div>
   );
 }
 
