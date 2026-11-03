@@ -96,11 +96,10 @@ From the final review and the per-task reviews. Not blocking the merge.
 
 From the benchmark runs for #8. Three runs per version, same PR head commit.
 
-1. Catch homes on the wrong side. In one run, Claude put many homes on the `old` side for lines
-   that the PR adds. The check found 107 problems, against 2 to 8 in the other runs. pr-tour
-   saved the tour anyway. Find these homes before saving (a home that covers no changed lines on
-   its side, but would on the other side), and ask Claude to fix them, like pass C does for code
-   check findings. This improves quality and lowers the spread between runs.
+1. Done in #11: catch homes on the wrong side. In one run, Claude put many homes on the `old`
+   side for lines that the PR adds, and the check found 107 problems. pr-tour now fixes these
+   itself, without asking Claude again (`fixSides` in `src/server/check.ts`). On the stored
+   benchmark tours, check problems went from 1-107 per tour to 0-2.
 2. Change the benchmark method. With the same Claude input, check problems ranged from 2 to 107
    between runs. With three runs, the rule "at least as good as the worst baseline run" cannot
    tell this noise from a real change. Options: more runs per version, medians, or quality
