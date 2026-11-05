@@ -285,13 +285,15 @@ export function homeIds(tour: TourBody): string[] {
 }
 
 /**
- * Ids of the homes a reviewer has to review: those with at least one changed-line range.
- * Unchanged flow steps (no homes) are context, not review work, so progress leaves them out.
+ * Ids of the homes that progress counts: every flow step, and the foundations and other
+ * items with at least one changed-line range. A flow step without changes is still a step
+ * the reader walks through, so it counts; a foundation or other item without changes has
+ * nothing to read.
  */
-export function reviewableHomeIds(tour: TourBody): string[] {
+export function progressHomeIds(tour: TourBody): string[] {
   return [
     ...tour.foundations.filter((f) => f.homes.length > 0).map((f) => f.id),
-    ...tour.flows.flatMap((flow) => flow.steps.filter((s) => s.homes.length > 0).map((s) => s.id)),
+    ...tour.flows.flatMap((flow) => flow.steps.map((s) => s.id)),
     ...tour.other.flatMap((g) => g.items.filter((item) => item.homes.length > 0).map((i) => i.id)),
   ];
 }

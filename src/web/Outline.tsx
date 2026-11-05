@@ -41,13 +41,26 @@ function sectionOf(tour: Tour, currentId: string): string {
   return tour.flows.find((flow) => flow.steps.some((s) => s.id === currentId))?.id ?? 'other';
 }
 
-/** "seen / total" over the reviewable homes (those with changed lines) among `homes`. */
+/**
+ * "seen / total" over the homes with changed lines among `homes`. Foundations and other
+ * items without changes have nothing to read, so they do not count.
+ */
 function progress(
   homes: Array<{ id: string; homes: unknown[] }>,
   isSeen: (homeId: string) => boolean,
 ): { seen: number; total: number } {
-  const reviewable = homes.filter((h) => h.homes.length > 0);
-  return { seen: reviewable.filter((h) => isSeen(h.id)).length, total: reviewable.length };
+  return stepProgress(
+    homes.filter((h) => h.homes.length > 0),
+    isSeen,
+  );
+}
+
+/** "seen / total" over every flow step: one without changes is still a step on the way. */
+function stepProgress(
+  steps: Array<{ id: string }>,
+  isSeen: (homeId: string) => boolean,
+): { seen: number; total: number } {
+  return { seen: steps.filter((s) => isSeen(s.id)).length, total: steps.length };
 }
 
 /** The tour's table of contents: foundations, then flows, then other changes. */
@@ -63,7 +76,7 @@ export function Outline({ tour, currentId, isSeen, onSelect, previousFlow, nextF
   const currentFlow = tour.flows.some((f) => f.id === section) ? section : null;
   const openFlow = flowChoice?.at === section ? flowChoice.value : currentFlow;
 
-  const flowProgress = progress(
+  const flowProgress = stepProgress(
     tour.flows.flatMap((f) => f.steps),
     isSeen,
   );
@@ -240,7 +253,7 @@ function FlowCard({
   const bodyId = useId();
   // Steps after the last change are context: dimmed, below a divider.
   const lastChanged = lastChangedStepIndex(flow);
-  const { seen, total } = progress(flow.steps, itemProps.isSeen);
+  const { seen, total } = stepProgress(flow.steps, itemProps.isSeen);
 
   return (
     <div className={`card${current ? ' card-current' : ''}`}>
@@ -249,7 +262,7 @@ function FlowCard({
         <span className="card-title" title={flow.title}>
           {flow.title}
         </span>{' '}
-        <span className="card-meta">{total === 0 ? 'no changes' : `${seen} / ${total}`}</span>
+        <span className="card-meta">{`${seen} / ${total}`}</span>
       </CardHead>
       {open && (
         <div id={bodyId} className="card-body">
@@ -265,6 +278,7 @@ function FlowCard({
                 <Item
                   id={step.id}
                   title={step.title}
+                  number={i + 1}
                   dot={step.homes.length > 0 ? 'changed' : 'unchanged'}
                   risk={step.risk}
                   sideEffects={step.sideEffects}
@@ -342,6 +356,7 @@ function effectWords(effects: SideEffect[]): Array<{ word: string; labels: strin
 function Item({
   id,
   title,
+  number,
   dot,
   risk,
   sideEffects = [],
@@ -352,6 +367,8 @@ function Item({
 }: {
   id: string;
   title: string;
+  /** Flow steps only: the step's number in its flow, as the step pane says it. */
+  number?: number;
   /** Flow steps only: filled when the step has changes, hollow for unchanged context. */
   dot?: 'changed' | 'unchanged';
   risk?: Risk;
@@ -371,9 +388,15 @@ function Item({
         title={title}
         onClick={() => onSelect(id)}
       >
+        {number !== undefined && <span className="step-num">{number}</span>}
         {dot === 'changed' && <span className="dot" aria-hidden="true" />}
         {dot === 'unchanged' && (
-          <span className="dot dot-hollow" role="img" aria-label="unchanged" />
+          <span
+            className="dot dot-hollow"
+            role="img"
+            aria-label="unchanged"
+            title="No changes: here to show the flow"
+          />
         )}
         <span className="outline-item-title">{title}</span>
         {seen && <span className="sr-only" role="img" aria-label="seen" />}

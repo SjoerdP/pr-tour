@@ -1,6 +1,6 @@
 import { useEffect, useId, useRef, useState, type KeyboardEvent } from 'react';
 import type { PrSummary } from '../shared/api.js';
-import { reviewableHomeIds, type Analysis, type Tour } from '../shared/tour.js';
+import { progressHomeIds, type Analysis, type Tour } from '../shared/tour.js';
 import type { RevealPlace } from './code-lines.js';
 import { inKeepOpenArea, keepsReviewOpen } from './keep-review-open.js';
 import { isReviewColumn } from './review-column.js';
@@ -274,7 +274,7 @@ function problemsText(n: number): string {
 
 function status(tour: Tour, isSeen: (homeId: string) => boolean): string {
   const flows = tour.flows.length;
-  const ids = reviewableHomeIds(tour);
+  const ids = progressHomeIds(tour);
   const seen = ids.filter(isSeen).length;
   const source = tour.source === 'author' ? 'notes by the author' : 'notes inferred by Claude';
   return `${flows} ${flows === 1 ? 'flow' : 'flows'} · ${seen} / ${ids.length} seen · ${source}`;

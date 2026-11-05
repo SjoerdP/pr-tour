@@ -1,7 +1,7 @@
 import Database from 'better-sqlite3';
 import type { TourStatus } from '../shared/api.js';
 import type { DiffSide, Draft, StoredNewDraft } from '../shared/review.js';
-import { reviewableHomeIds, TourSchema, type Tour } from '../shared/tour.js';
+import { progressHomeIds, TourSchema, type Tour } from '../shared/tour.js';
 
 export type { TourStatus } from '../shared/api.js';
 
@@ -100,7 +100,7 @@ function statusOf(tour: Tour | null): TourStatus {
     exists: true,
     source: tour.source,
     headSha: tour.headSha,
-    homes: reviewableHomeIds(tour).length,
+    homes: progressHomeIds(tour).length,
     flows: tour.flows.length,
   };
 }
@@ -195,9 +195,9 @@ export class Store {
   }
 
   /**
-   * How many of the stored tour's reviewable homes are seen at their current content hash
-   * (0 without a tour), matching what the outline shows. Marks on unchanged steps, on homes no
-   * longer in the tour, or with an old hash do not count.
+   * How many of the stored tour's counted homes (see `progressHomeIds`) are seen at their
+   * current content hash (0 without a tour), matching what the outline shows. Marks on homes
+   * no longer in the tour, or with an old hash, do not count.
    */
   seenCount(repo: string, pr: number): number {
     return this.countSeen(repo, pr, this.getTour(repo, pr));
@@ -206,7 +206,7 @@ export class Store {
   private countSeen(repo: string, pr: number, tour: Tour | null): number {
     if (!tour) return 0;
     const seen = this.seen(repo, pr);
-    return reviewableHomeIds(tour).filter(
+    return progressHomeIds(tour).filter(
       (id) => tour.hashes[id] !== undefined && seen[id] === tour.hashes[id],
     ).length;
   }

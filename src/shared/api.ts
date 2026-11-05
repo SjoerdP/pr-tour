@@ -33,7 +33,7 @@ export type TourStatus = {
   exists: boolean;
   source?: 'author' | 'inferred';
   headSha?: string;
-  /** Number of reviewable homes: those with changed lines (unchanged flow steps do not count). */
+  /** Number of homes progress counts: every flow step, plus foundations and other items with changed lines. */
   homes?: number;
   flows?: number;
 };

@@ -760,6 +760,16 @@ pre {
   background: var(--accent);
 }
 
+.step-num {
+  flex: none;
+  min-width: 1.5ch;
+  color: var(--fg-muted);
+  font-size: var(--font-size-small);
+  font-variant-numeric: tabular-nums;
+  line-height: var(--outline-line);
+  text-align: right;
+}
+
 .dot-hollow {
   border: 1.5px solid var(--fg-faint);
   background: transparent;

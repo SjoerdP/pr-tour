@@ -147,7 +147,7 @@ describe('Store', () => {
   });
 });
 
-describe('Store progress counts only reviewable homes', () => {
+describe('Store progress counts every flow step', () => {
   /** The default tour with an unchanged step F1.S3 at the end of flow F1. */
   function tourWithUnchangedStep(): Tour {
     const t = tour();
@@ -157,18 +157,18 @@ describe('Store progress counts only reviewable homes', () => {
     return t;
   }
 
-  it('tourStatus leaves unchanged steps out of homes', () => {
+  it('tourStatus counts unchanged steps in homes', () => {
     const store = new Store(':memory:');
     store.saveTour(tourWithUnchangedStep());
-    expect(store.tourStatus('acme/loans', 7).homes).toBe(5);
+    expect(store.tourStatus('acme/loans', 7).homes).toBe(6);
   });
 
-  it('seenCount ignores a seen mark on an unchanged step', () => {
+  it('seenCount counts a seen mark on an unchanged step', () => {
     const store = new Store(':memory:');
     store.saveTour(tourWithUnchangedStep());
     store.markSeen('acme/loans', 7, 'F1.S1', 'h-s1');
     store.markSeen('acme/loans', 7, 'F1.S3', 'h-s1-3');
-    expect(store.seenCount('acme/loans', 7)).toBe(1);
+    expect(store.seenCount('acme/loans', 7)).toBe(2);
   });
 
   it('seenCount ignores marks of homes that are not in the tour', () => {
@@ -196,8 +196,8 @@ describe('Store progress counts only reviewable homes', () => {
     const progress = store.progress('acme/loans', 7);
 
     expect(progress).toEqual({
-      tour: { exists: true, source: 'inferred', headSha: 'b'.repeat(40), homes: 5, flows: 2 },
-      seenCount: 1,
+      tour: { exists: true, source: 'inferred', headSha: 'b'.repeat(40), homes: 6, flows: 2 },
+      seenCount: 2,
     });
     expect(getTour).toHaveBeenCalledTimes(1);
   });

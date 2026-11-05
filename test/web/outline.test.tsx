@@ -55,7 +55,7 @@ afterEach(() => {
 });
 
 describe('outline sections', () => {
-  it('each section heading shows how many of its reviewable homes are seen', async () => {
+  it('each section heading shows how many of its homes are seen; flows count every step', async () => {
     getPr.mockResolvedValue(response({ seen: { 'F1.S1': 'h-11' } }));
     render(<TourView repo="acme/loans" pr={42} />);
     await screen.findByRole('navigation', { name: 'Tour outline' });
@@ -65,7 +65,7 @@ describe('outline sections', () => {
       .map((h) => `${h.textContent} ${h.nextElementSibling?.textContent}`);
     expect(progress).toEqual([
       'Foundations 0 / 1 seen',
-      'Flows 1 / 2 seen',
+      'Flows 1 / 7 seen',
       'Other changes 0 / 1 seen',
     ]);
   });
@@ -152,7 +152,28 @@ describe('flow cards', () => {
     fireEvent.keyDown(window, { key: ']' });
 
     expect(toggle('Notify the lender').textContent).toMatch(/^2\s*Notify the lender/);
-    expect(toggle('Repay a loan').textContent).toContain('0 / 2');
+    expect(toggle('Repay a loan').textContent).toContain('0 / 5');
+    expect(toggle('Notify the lender').textContent).toContain('0 / 2');
+  });
+
+  it('numbers its steps, unchanged ones too, as the step pane does', async () => {
+    await open();
+    fireEvent.keyDown(window, { key: ']' });
+
+    const numbers = within(toggle('Repay a loan').closest<HTMLElement>('.card')!)
+      .getAllByRole('button')
+      .filter((b) => b.classList.contains('outline-item'))
+      .map((b) => b.querySelector('.step-num')?.textContent);
+    expect(numbers).toEqual(['1', '2', '3', '4', '5']);
+  });
+
+  it('an unchanged step counts once seen', async () => {
+    getPr.mockResolvedValue(response({ seen: { 'F1.S2': 'h-12' } }));
+    render(<TourView repo="acme/loans" pr={42} />);
+    await screen.findByRole('navigation', { name: 'Tour outline' });
+    fireEvent.keyDown(window, { key: ']' });
+
+    expect(toggle('Repay a loan').textContent).toContain('1 / 5');
   });
 
   it('moving into another flow opens it and closes the previous one', async () => {
