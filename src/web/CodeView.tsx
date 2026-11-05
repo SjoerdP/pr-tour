@@ -43,6 +43,10 @@ import { useKeys } from './useKeys.js';
 import type { ReviewState } from './useReview.js';
 
 export type JumpFn = (file: string, line: number, toStep?: string | null) => void;
+/** Whether following this call would go anywhere. */
+export type CanJumpFn = (file: string, line: number, toStep?: string | null) => boolean;
+
+const ALWAYS: CanJumpFn = () => true;
 
 export type CodeViewProps = {
   repo: string;
@@ -60,7 +64,12 @@ export type CodeViewProps = {
    * code check: a step id to go to, or null for a callee that is no step (look only).
    */
   onJump: JumpFn;
-  /** Open another home of the tour (from a "belongs to" label). */
+  /**
+   * Whether a traced call goes anywhere when followed (default: all do). A call that does not
+   * is shown as plain text, not as a button that does nothing.
+   */
+  canJump?: CanJumpFn;
+  /** Open another home of the tour (from a "belongs to" label; plain text when read-only). */
   onOpenHome: (homeId: string) => void;
   /**
    * Go to the next step. Given only for a step's own code: then each call into another step
@@ -86,6 +95,7 @@ export function CodeView({
   reveal = null,
   plain = false,
   onJump,
+  canJump = ALWAYS,
   onOpenHome,
   onNextStep,
   review,
@@ -129,6 +139,7 @@ export function CodeView({
         homeId={homeId}
         reveal={reveal}
         onJump={onJump}
+        canJump={canJump}
         onOpenHome={onOpenHome}
         onNextStep={onNextStep}
         review={review}
@@ -153,6 +164,7 @@ type FileCodeProps = {
   homeId: string;
   reveal: Reveal | null;
   onJump: JumpFn;
+  canJump: CanJumpFn;
   onOpenHome: (homeId: string) => void;
   onNextStep: (() => void) | undefined;
   review: ReviewState;
@@ -176,6 +188,7 @@ function FileCode({
   homeId,
   reveal,
   onJump,
+  canJump,
   onOpenHome,
   onNextStep,
   review,
@@ -537,7 +550,9 @@ function FileCode({
                     onPick={diff && !readOnly ? pick : null}
                     drag={lineDrag}
                     onJump={onJump}
+                    canJump={canJump}
                     onOpenHome={onOpenHome}
+                    readOnly={readOnly}
                   />
                   {(rowThreads || rowDrafts || composerRow === i) && (
                     <ReviewRow
@@ -724,7 +739,10 @@ type CodeRowProps = {
   onPick: ((side: DiffSide, line: number, extend: boolean) => void) | null;
   drag: LineDrag;
   onJump: JumpFn;
+  canJump: CanJumpFn;
   onOpenHome: (homeId: string) => void;
+  /** A read-only view opens no other home: its "belongs to" label is plain text. */
+  readOnly: boolean;
 };
 
 /** A drag over line numbers: pressed on a line, then moved over others. */
@@ -790,7 +808,9 @@ function CodeRow({
   onPick,
   drag,
   onJump,
+  canJump,
   onOpenHome,
+  readOnly,
 }: CodeRowProps) {
   // Tokens that do not spell the row's text (a stale highlight) are not trusted.
   const parts =
@@ -821,6 +841,7 @@ function CodeRow({
           matches,
           targets ? placeBadges(row.text, matches, targets) : [],
           onJump,
+          canJump,
           siteTitle,
           onNextStep,
         )}
@@ -838,11 +859,14 @@ function CodeRow({
           {MARK_TEXT[mark.kind]}
         </span>
       ))}
-      {label && (
-        <button type="button" className="owner-label" onClick={() => onOpenHome(label.id)}>
-          belongs to {label.title}
-        </button>
-      )}
+      {label &&
+        (readOnly ? (
+          <span className="owner-label owner-label-plain">belongs to {label.title}</span>
+        ) : (
+          <button type="button" className="owner-label" onClick={() => onOpenHome(label.id)}>
+            belongs to {label.title}
+          </button>
+        ))}
     </div>
   );
 }
@@ -879,6 +903,7 @@ function lineContent(
   matches: CallMatch[],
   badges: PlacedBadge[],
   onJump: JumpFn,
+  canJump: CanJumpFn,
   siteTitle: (site: CallSite) => string,
   onNextStep: (() => void) | undefined,
 ): ReactNode[] {
@@ -900,6 +925,13 @@ function lineContent(
   };
   matches.forEach((m, k) => {
     text(m.from, `t${k}`);
+    const toStep = m.site ? (m.site.toStep ?? null) : undefined;
+    // A call that would go nowhere stays plain code.
+    if (!canJump(m.call.file, m.call.line, toStep)) {
+      out.push(...spans(slice(tokens, m.from, m.to), `c${k}-`));
+      pos = m.to;
+      return;
+    }
     out.push(
       <button
         key={`call${k}`}
@@ -907,9 +939,9 @@ function lineContent(
         className="call-link"
         title={m.site ? siteTitle(m.site) : `${m.call.file}:${m.call.line}`}
         onClick={() =>
-          m.site
-            ? onJump(m.call.file, m.call.line, m.site.toStep ?? null)
-            : onJump(m.call.file, m.call.line)
+          toStep === undefined
+            ? onJump(m.call.file, m.call.line)
+            : onJump(m.call.file, m.call.line, toStep)
         }
       >
         {spans(slice(tokens, m.from, m.to), 'c')}

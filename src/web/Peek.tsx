@@ -144,9 +144,11 @@ export function Peek({
           homeId={step.id}
           reveal={reveal}
           // Only a call into another step of this flow goes anywhere: the peek moves there.
+          // Other calls show as plain code, and so does the "belongs to" label (read-only).
           onJump={(_file, _line, toStep) => {
             if (toStep && inFlow(toStep)) onMove(toStep, null);
           }}
+          canJump={(_file, _line, toStep) => !!toStep && inFlow(toStep)}
           onOpenHome={() => {}}
           {...(nextId !== undefined && { onNextStep: () => onMove(nextId, null) })}
           review={review}

@@ -1306,6 +1306,13 @@ p.why {
   line-height: 16px;
 }
 
+/* In a read-only view (a peek) the label opens nothing: text, framed like the button. */
+.owner-label-plain {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  white-space: nowrap;
+}
+
 .call-link {
   display: inline;
   padding: 0;

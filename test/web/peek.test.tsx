@@ -217,14 +217,37 @@ describe('Peek', () => {
     expect(onMove).toHaveBeenCalledWith('F1.S2', null);
   });
 
-  it('a call into a step of the flow moves the peek; other calls do nothing', async () => {
+  it('a call into a step of the flow moves the peek; other calls are plain text', async () => {
     const { onMove } = renderPeek({ stepId: 'F1.S1' });
     await screen.findByText('new five');
 
-    fireEvent.click(screen.getByRole('button', { name: 'notify' }));
-    expect(onMove).not.toHaveBeenCalled();
+    // A call that goes nowhere from a peek is not a button.
+    expect(screen.queryByRole('button', { name: 'notify' })).toBeNull();
+    expect(screen.getByText('notify')).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'chargeFee' }));
     expect(onMove).toHaveBeenCalledWith('F1.S2', null);
+  });
+
+  it('a "belongs to" label is plain text: a peek opens no other home', async () => {
+    const flow = makeFlow();
+    const tour = makeTour(flow);
+    // A foundation claims line 5 of the peeked step's file.
+    tour.foundations = [
+      {
+        id: 'f1',
+        kind: 'migration',
+        title: 'Create repayments table',
+        file: 'src/repay.ts',
+        why: 'Stores each repayment.',
+        risk: 'skim',
+        homes: [{ file: 'src/repay.ts', side: 'new', start: 5, end: 5 }],
+      },
+    ];
+    renderPeek({ stepId: 'F1.S1', flow, tour });
+    await screen.findByText('new five');
+
+    expect(screen.getByText('belongs to Create repayments table')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: /belongs to/ })).toBeNull();
   });
 
   it("a caller the code check did not find reads as the tour's claim, without a line", async () => {
