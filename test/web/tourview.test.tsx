@@ -1074,6 +1074,48 @@ describe('overview', () => {
     expect(map()).toBeNull();
   });
 
+  it('the opening place is taken once: Continue goes back to the home the tour is on', async () => {
+    await load();
+    fireEvent.click(startButton('Start the tour'));
+    fireEvent.keyDown(window, { key: 'j' });
+    fireEvent.keyDown(window, { key: 'j' });
+    fireEvent.keyDown(window, { key: 'k' });
+    // Every home is seen now: a fresh opening place would be the first home.
+    expect(codeView()).toBe('F1.S1 src/loans/repay.ts');
+
+    fireEvent.keyDown(window, { key: 'o' });
+    fireEvent.click(startButton('Continue the tour'));
+    expect(codeView()).toBe('F1.S1 src/loans/repay.ts');
+  });
+
+  it('a poll that returns the same tour moves neither the home nor the overview', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const seen = { f1: 'h-f1', 'F1.S1': 'h-s1', 'o1.1': 'h-o1' };
+    getPr
+      .mockResolvedValueOnce(response({ outdated: true }))
+      .mockResolvedValue(response({ seen, job: job('done', ['Saved']) }));
+    buildTour.mockResolvedValue({ job: job('running', ['Cloning']) });
+    render(<TourView repo="acme/loans" pr={42} />);
+    await screen.findByRole('navigation', { name: 'Tour outline' });
+    fireEvent.click(startButton('Start the tour'));
+    fireEvent.keyDown(window, { key: 'j' });
+    fireEvent.keyDown(window, { key: 'j' });
+    fireEvent.keyDown(window, { key: 'k' });
+    expect(codeView()).toBe('F1.S1 src/loans/repay.ts');
+    fireEvent.keyDown(window, { key: 'o' });
+    expect(overview()).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Rebuild tour' }));
+    await screen.findByText('Cloning');
+    await act(() => vi.advanceTimersByTimeAsync(2000));
+
+    expect(getPr).toHaveBeenCalledTimes(2);
+    expect(screen.queryByText('Cloning')).toBeNull();
+    expect(overview()).toBeTruthy();
+    fireEvent.click(startButton('Continue the tour'));
+    expect(codeView()).toBe('F1.S1 src/loans/repay.ts');
+  });
+
   it('o in a text field types and does not open the overview', async () => {
     await load();
     fireEvent.click(startButton('Start the tour'));
