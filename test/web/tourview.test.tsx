@@ -1115,11 +1115,13 @@ describe('flow map', () => {
         }),
       );
       expect(screen.getByRole('button', { name: 'Back to this step' })).toBeTruthy();
+      // Esc goes back from the call first: the Back button does not offer it.
+      expect(back('map')!.title).toBe('Back to the map');
 
       fireEvent.keyDown(window, { key: 'Escape' });
       expect(screen.queryByRole('button', { name: 'Back to this step' })).toBeNull();
       expect(trail()).toContain('step 2 of 3');
-      expect(back('map')).toBeTruthy();
+      expect(back('map')!.title).toBe('Back to the map (Esc)');
       fireEvent.keyDown(window, { key: 'Escape' });
       expect(map()).toBeTruthy();
       expect(trail()).toContain('step 1 of 3');

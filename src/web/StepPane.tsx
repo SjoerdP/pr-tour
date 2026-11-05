@@ -188,7 +188,12 @@ type Props = {
   /** The PR's review, shown and added to in the code view. */
   review: ReviewState;
   /** During a visit from the map or the overview: the way back there. */
-  back?: { label: string; go: () => void };
+  back?: {
+    label: string;
+    go: () => void;
+    /** Whether Esc does this now: nothing else takes Esc first. */
+    byEsc: boolean;
+  };
   /** Whether the code view answers n / p / f: not while the map covers the step. */
   codeKeys?: boolean;
 };
@@ -239,7 +244,7 @@ export function StepPane({
               type="button"
               className="link-button"
               onClick={back.go}
-              title={withKey(back.label, 'Esc')}
+              title={back.byEsc ? withKey(back.label, 'Esc') : back.label}
             >
               <span aria-hidden="true">← </span>
               {back.label}

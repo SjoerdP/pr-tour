@@ -559,6 +559,8 @@ export function TourView({ repo, pr }: { repo: string; pr: number }) {
                     back: {
                       label: visit.back === 'map' ? 'Back to the map' : 'Back to the overview',
                       go: goBack,
+                      // The same order as the Esc key above: a followed call goes first.
+                      byEsc: !peekShown && !mapShown && !jump,
                     },
                   })}
                 />
