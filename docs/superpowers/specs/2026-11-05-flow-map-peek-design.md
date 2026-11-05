@@ -105,6 +105,7 @@ scrolls so it is in view, centred where possible, whenever the peek moves.
   - Overview, no peek: `j` / `k` keep today's meaning (close the overview, no move).
   - `n` / `p` / `f` act on the peek's code when a peek is open, and on nothing else while
     the map or overview covers the step pane.
+  - `[` and `]` stay real moves, since they are the keys for the previous or next flow.
 - **What ends a visit.** Any real move to another home ends it: `j`, `k`, `[`, `]`, an outline
   click, following a call or a "→ step N" badge, a jump from the review panel, a "belongs to"
   label. The "Also in this PR" links on the overview open as visits, like the step strip.
