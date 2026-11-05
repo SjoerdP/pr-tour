@@ -1,4 +1,4 @@
-import { useId, useState, type CSSProperties, type ReactNode } from 'react';
+import { useId, useState, type ReactNode } from 'react';
 import type { Flow, Step } from '../shared/tour.js';
 import { buildFlowMap, type MapEdge, type MapNode, type MapProof } from './flow-map.js';
 import { effectWords } from './Outline.js';
@@ -28,9 +28,6 @@ type Ctx = Omit<Props, 'flow'> & {
 
 /** Flows with more steps than this fold branches without changes at the start. */
 const FOLD_ABOVE = 12;
-
-/** At most this many calls from one step sit side by side; more wrap to a new row. */
-const MAX_COLUMNS = 4;
 
 /** The words for how a step reaches the next; a plain call needs none. */
 const HOW_WORDS: Record<MapEdge['how'], string | null> = {
@@ -121,13 +118,14 @@ export function FlowMap({ flow, headingLevel = 3, ...props }: Props): ReactNode 
       {map.source === 'none' && (
         <p className="flow-map-notice">The code check did not run. The steps are shown in order.</p>
       )}
-      <p className="flow-map-entry" title={flow.entry.label}>
-        {flow.entry.label}
-      </p>
-      {map.root && (
+      {map.root ? (
         <ul aria-label="Calls in this flow" className="flow-map-tree">
-          <Branch node={map.root} ctx={ctx} />
+          <Branch node={map.root} ctx={ctx} entry={flow.entry.label} />
         </ul>
+      ) : (
+        <p className="flow-map-entry" title={flow.entry.label}>
+          {flow.entry.label}
+        </p>
       )}
       {map.unlinked.length > 0 && (
         <section className="flow-map-unlinked" aria-labelledby={unlinkedHead}>
@@ -164,11 +162,10 @@ function Key({ loops }: { loops: boolean }) {
   );
 }
 
-/** Steps side by side, at most four to a row. */
+/** Steps side by side, in calling-line order. */
 function Row({ nodes, ctx, label }: { nodes: MapNode[]; ctx: Ctx; label?: string }) {
-  const style = { '--flow-map-columns': Math.min(nodes.length, MAX_COLUMNS) } as CSSProperties;
   return (
-    <ul aria-label={label} className="flow-map-row" style={style}>
+    <ul aria-label={label} className="flow-map-row">
       {nodes.map((node) => (
         <Branch key={node.step.id} node={node} ctx={ctx} />
       ))}
@@ -176,13 +173,25 @@ function Row({ nodes, ctx, label }: { nodes: MapNode[]; ctx: Ctx; label?: string
   );
 }
 
-/** One step: the arrow into it, its box, and the steps it calls. */
-function Branch({ node, ctx }: { node: MapNode; ctx: Ctx }) {
+/**
+ * One step: the arrow into it, its box, and the steps it calls. The first step's arrow comes
+ * from the flow's entry.
+ */
+function Branch({ node, ctx, entry }: { node: MapNode; ctx: Ctx; entry?: string }) {
   const hasChildren = node.children.length > 0;
   const open = !hasChildren || ctx.isOpen(node);
   return (
-    <li className="flow-map-branch">
-      <Arrow edge={node.edge} ctx={ctx} />
+    <li className={`flow-map-branch${unproven(node.edge) ? ' unproven' : ''}`}>
+      {entry !== undefined ? (
+        <span className="flow-map-link">
+          <span className="flow-map-entry" title={entry}>
+            {entry}
+          </span>
+          <span className="flow-map-stem" aria-hidden="true" />
+        </span>
+      ) : (
+        <Arrow edge={node.edge} ctx={ctx} />
+      )}
       <Card node={node} ctx={ctx} />
       {hasChildren && open && <Row nodes={node.children} ctx={ctx} />}
     </li>
@@ -199,15 +208,19 @@ function Arrow({ edge, ctx }: { edge: MapEdge; ctx: Ctx }) {
     edge.via.length > 0 ? `via ${edge.via.join(', ')}` : null,
     PROOF_WORDS[edge.proof],
   ].filter((w) => w !== null);
+  const dashed = unproven(edge) ? ' unproven' : '';
   return (
-    <button
-      type="button"
-      className={`flow-map-edge${unproven(edge) ? ' unproven' : ''}`}
-      title={`Open the calling line in step ${ctx.noOf(from)}`}
-      onClick={() => ctx.onOpenLine(from, ctx.stepOf(from).file, line)}
-    >
-      {words.join(' · ')}
-    </button>
+    <span className="flow-map-link">
+      <button
+        type="button"
+        className={`flow-map-edge${dashed}`}
+        title={`Open the calling line in step ${ctx.noOf(from)}`}
+        onClick={() => ctx.onOpenLine(from, ctx.stepOf(from).file, line)}
+      >
+        {words.join(' · ')}
+      </button>
+      <span className={`flow-map-stem${dashed}`} aria-hidden="true" />
+    </span>
   );
 }
 
