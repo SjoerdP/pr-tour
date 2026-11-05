@@ -271,14 +271,61 @@ describe('Peek', () => {
     expect(screen.queryByRole('button', { name: /^Comment on/ })).toBeNull();
   });
 
-  it('flashes the same line again when the nonce changes', async () => {
+  /**
+   * jsdom does no layout: the code box at top 100, 300 high, and every row at top 1000, 20
+   * high. Centred, a row needs scrollTop 760. `scrollIntoView` is a spy: the peek must not use
+   * it, as it would scroll the overview and the page around the peek too.
+   */
+  function placeRows() {
+    const rect = (top: number, height: number) =>
+      ({ top, height, bottom: top + height, left: 0, right: 0, width: 0, x: 0, y: top }) as DOMRect;
+    const isCode = (el: Element) => el.classList.contains('code');
+    const spies = [
+      vi.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(function (
+        this: Element,
+      ) {
+        if (isCode(this)) return rect(100, 300);
+        return this.hasAttribute('data-row') ? rect(1000, 20) : rect(0, 0);
+      }),
+      vi.spyOn(Element.prototype, 'clientHeight', 'get').mockImplementation(function (
+        this: Element,
+      ) {
+        return isCode(this) ? 300 : 0;
+      }),
+    ];
     const scrollIntoView = vi.fn();
     Element.prototype.scrollIntoView = scrollIntoView;
+    return {
+      scrollIntoView,
+      restore() {
+        for (const spy of spies) spy.mockRestore();
+        delete (Element.prototype as Partial<Element>).scrollIntoView;
+      },
+    };
+  }
+  const codeBox = () => document.querySelector('.peek-code .code')!;
+
+  it("scrolls only its own code to the step's start, not the boxes around it", async () => {
+    const place = placeRows();
+    try {
+      renderPeek();
+      await screen.findByText('new five');
+      await vi.waitFor(() => expect(codeBox().scrollTop).toBe(760));
+      expect(place.scrollIntoView).not.toHaveBeenCalled();
+    } finally {
+      place.restore();
+    }
+  });
+
+  it('flashes the same line again when the nonce changes, scrolling only its own code', async () => {
+    const place = placeRows();
     try {
       const props = { stepId: 'F1.S1', line: 6, nonce: 1 };
       const { view } = renderPeek(props);
       await screen.findByText('new five');
-      await vi.waitFor(() => expect(scrollIntoView).toHaveBeenCalled());
+      const row = () => screen.getByText('chargeFee').closest('.code-row')!;
+      await vi.waitFor(() => expect(row().classList.contains('reveal-flash')).toBe(true));
+      expect(codeBox().scrollTop).toBe(760);
       const flow = makeFlow();
       const again = () =>
         view.rerender(
@@ -298,11 +345,14 @@ describe('Peek', () => {
             nonce={2}
           />,
         );
-      scrollIntoView.mockClear();
+      row().classList.remove('reveal-flash');
+      codeBox().scrollTop = 0;
       again();
-      await vi.waitFor(() => expect(scrollIntoView).toHaveBeenCalled());
+      await vi.waitFor(() => expect(row().classList.contains('reveal-flash')).toBe(true));
+      expect(codeBox().scrollTop).toBe(760);
+      expect(place.scrollIntoView).not.toHaveBeenCalled();
     } finally {
-      delete (Element.prototype as Partial<Element>).scrollIntoView;
+      place.restore();
     }
   });
 });

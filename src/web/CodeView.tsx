@@ -367,6 +367,18 @@ function FileCode({
   // The last jump shown, so each one scrolls and flashes once.
   const revealed = useRef<number | null>(null);
   const flashed = useRef<{ el: Element; timer: number } | null>(null);
+
+  /**
+   * Centres `el` in the code. A read-only view (a peek) scrolls only its own code: scrollIntoView
+   * would also scroll every box around it, the overview and the page included.
+   */
+  function bringIntoView(el: Element) {
+    const code = container.current;
+    if (readOnly && code) centreIn(scrollerOf(code), el);
+    // jsdom has no scrollIntoView.
+    else el.scrollIntoView?.({ block: 'center' });
+  }
+
   useEffect(() => {
     if (reveal && revealRow !== null && reveal.seq !== revealed.current) {
       revealed.current = reveal.seq;
@@ -375,15 +387,14 @@ function FileCode({
         revealRow < 0 ? '.file-comments' : `[data-row="${revealRow}"]`,
       );
       if (el) {
-        el.scrollIntoView?.({ block: 'center' });
+        bringIntoView(el);
         flashed.current = flash(el, flashed.current);
       }
       return;
     }
     if (scrollTo.current === null) return;
     const el = container.current?.querySelector(`[data-row="${scrollTo.current}"]`);
-    // jsdom has no scrollIntoView.
-    el?.scrollIntoView?.({ block: 'center' });
+    if (el) bringIntoView(el);
     scrollTo.current = null;
   });
 
@@ -583,6 +594,29 @@ const FLASH_MS = 1600;
  * mark off the one flashed before. Set on the element directly: React does not own this
  * class, and a re-render that changes the row's classes simply ends the flash early.
  */
+/**
+ * The box that scrolls the code: the code itself, or else a box between it and the box right
+ * around the code view (in a peek, the peek's code area). Never one further out, such as the
+ * overview. The code itself when none of them scrolls (also in jsdom).
+ */
+function scrollerOf(code: HTMLElement): HTMLElement {
+  const last = code.closest('.code-view')?.parentElement ?? code;
+  for (let el: HTMLElement | null = code; el; el = el.parentElement) {
+    const { overflowY } = getComputedStyle(el);
+    const scrolls = overflowY === 'auto' || overflowY === 'scroll';
+    if (scrolls && el.scrollHeight > el.clientHeight) return el;
+    if (el === last) break;
+  }
+  return code;
+}
+
+/** Scrolls `box` alone so `el` sits in its middle, as far as it can scroll. */
+function centreIn(box: HTMLElement, el: Element): void {
+  const outer = box.getBoundingClientRect();
+  const inner = el.getBoundingClientRect();
+  box.scrollTop += inner.top - outer.top - box.clientTop - (box.clientHeight - inner.height) / 2;
+}
+
 function flash(
   el: Element,
   before: { el: Element; timer: number } | null,
