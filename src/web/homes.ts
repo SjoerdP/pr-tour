@@ -281,3 +281,18 @@ export function unseenForReview(tour: Tour, isSeen: (homeId: string) => boolean)
   const unseen = homesInOrder(tour).filter((h) => homeRanges(h).length > 0 && !isSeen(h.id));
   return [...unseen.filter(isReadClosely), ...unseen.filter((h) => !isReadClosely(h))];
 }
+
+/**
+ * Where a PR opens: the overview for a reader who has seen nothing of this tour yet,
+ * else the first home not seen (the first home when all are seen).
+ */
+export function openingPlace(
+  homes: Home[],
+  isSeen: (homeId: string) => boolean,
+): { overview: true; homeId: string | null } | { overview: false; homeId: string } {
+  const first = homes[0];
+  if (first === undefined || !homes.some((h) => isSeen(h.id))) {
+    return { overview: true, homeId: first?.id ?? null };
+  }
+  return { overview: false, homeId: (homes.find((h) => !isSeen(h.id)) ?? first).id };
+}

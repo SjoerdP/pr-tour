@@ -5,6 +5,7 @@ import type { Draft, ReviewResponse, ReviewThread } from '../../src/shared/revie
 import type { Tour } from '../../src/shared/tour.js';
 import * as api from '../../src/web/api.js';
 import { TourView } from '../../src/web/TourView.js';
+import { startTour } from './overview-helpers.js';
 import { response, tour as baseTour } from './tour-fixture.js';
 
 // A jump from the review panel brings its line into view in the code and flashes it, so the
@@ -141,9 +142,10 @@ afterEach(() => {
   delete (Element.prototype as Partial<Element>).scrollIntoView;
 });
 
-/** Opens the tour on its first home (the migration in m.sql), then the Review panel. */
+/** Starts the tour on its first home (the migration in m.sql), then opens the Review panel. */
 async function openPanel() {
   render(<TourView repo="acme/loans" pr={42} />);
+  await startTour();
   await screen.findByText('m.sql new 2');
   fireEvent.click(screen.getByRole('button', { name: /^Review/ }));
   return screen.getByRole('region', { name: 'Review' });
@@ -224,6 +226,21 @@ describe('review panel: a jump shows its line', () => {
     expect(rowOf(1).classList.contains('reveal-flash')).toBe(true);
   });
 
+  it('a jump closes the overview, so the code it shows is not hidden', async () => {
+    serveReview({ threads: [thread()] });
+    const panel = await openPanel();
+    // On the home the thread is on: the jump does not move to another home.
+    fireEvent.keyDown(window, { key: 'j' });
+    await screen.findByText('src/a.ts new 2');
+    fireEvent.keyDown(window, { key: 'o' });
+    expect(screen.queryByText('src/a.ts new 2')).toBeNull();
+
+    fireEvent.click(await within(panel).findByRole('button', { name: 'src/a.ts:81' }));
+    await screen.findByText('src/a.ts new 2');
+    expect(screen.queryByRole('button', { name: /the tour$/ })).toBeNull();
+    await vi.waitFor(() => expect(lastScrolled()).toBe(rowOf(81)), SETTLE);
+  });
+
   it('a jump closes the flow map, so the code it shows is not hidden', async () => {
     serveReview({ threads: [thread()] });
     const panel = await openPanel();
@@ -240,6 +257,7 @@ describe('review panel: a jump shows its line', () => {
   it('moving on with j does not flash anything', async () => {
     serveReview();
     render(<TourView repo="acme/loans" pr={42} />);
+    await startTour();
     await screen.findByText('m.sql new 2');
     fireEvent.keyDown(window, { key: 'j' });
     await screen.findByText('src/a.ts new 2');

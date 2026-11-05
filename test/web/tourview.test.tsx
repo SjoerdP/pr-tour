@@ -5,6 +5,7 @@ import type { OtherGroup, Tour } from '../../src/shared/tour.js';
 import * as api from '../../src/web/api.js';
 import { TourView } from '../../src/web/TourView.js';
 import { outline, outlineItem } from './outline-helpers.js';
+import { startTour } from './overview-helpers.js';
 
 vi.mock('../../src/web/api.js', async (importActual) => ({
   ApiError: (await importActual<typeof import('../../src/web/api.js')>()).ApiError,
@@ -238,6 +239,7 @@ describe('TourView', () => {
   it('passes the PR review down to the code view', async () => {
     getPr.mockResolvedValue(response());
     render(<TourView repo="acme/loans" pr={42} />);
+    await startTour();
 
     // The review never arrives in these tests: the code view gets it while it loads.
     expect((await screen.findByTestId('code-review')).textContent).toBe('loading');
@@ -270,6 +272,7 @@ describe('TourView', () => {
     render(<TourView repo="acme/loans" pr={42} />);
 
     await screen.findByRole('navigation', { name: 'Tour outline' });
+    await startTour();
     const first = outlineItem('Create repayments table');
     expect(first.getAttribute('aria-current')).toBe('step');
     expect(within(first).queryByLabelText('seen')).toBeNull();
@@ -315,6 +318,7 @@ describe('TourView', () => {
     render(<TourView repo="acme/loans" pr={42} />);
 
     await screen.findByRole('navigation', { name: 'Tour outline' });
+    await startTour();
     fireEvent.click(outlineItem('Repay tests'));
 
     expect((await screen.findByRole('status')).textContent).toContain('Server is down');
@@ -332,6 +336,7 @@ describe('TourView', () => {
     );
 
     await screen.findByRole('navigation', { name: 'Tour outline' });
+    await startTour();
     fireEvent.keyDown(screen.getByLabelText('note'), { key: 'j' });
 
     expect(outlineItem('Create repayments table').getAttribute('aria-current')).toBe('step');
@@ -407,6 +412,7 @@ describe('TourView', () => {
   it('inferred tour labels notes as inferred', async () => {
     getPr.mockResolvedValue(response({ tour: makeTour({ source: 'inferred' }) }));
     render(<TourView repo="acme/loans" pr={42} />);
+    await startTour();
 
     expect(await screen.findByText(/notes inferred by Claude$/)).toBeTruthy();
     expect(screen.getByText(/Why · inferred by Claude/)).toBeTruthy();
@@ -565,6 +571,7 @@ describe('TourView', () => {
     render(<TourView repo="acme/loans" pr={42} />);
 
     await screen.findByRole('navigation', { name: 'Tour outline' });
+    await startTour();
     fireEvent.click(screen.getByRole('button', { name: 'Schema after' }));
     fireEvent.click(screen.getByRole('button', { name: 'Deploy compatibility' }));
     expect(screen.getByText('repayments(id uuid pk, amount_cents bigint)')).toBeTruthy();
@@ -703,6 +710,7 @@ describe('TourView', () => {
     getPr.mockResolvedValue(response());
     render(<TourView repo="acme/loans" pr={42} />);
     await screen.findByRole('navigation', { name: 'Tour outline' });
+    await startTour();
 
     fireEvent.click(screen.getByRole('button', { name: 'open o1.1' }));
     expect(outlineItem('Repay tests').getAttribute('aria-current')).toBe('step');
@@ -862,6 +870,8 @@ describe('flow map', () => {
     buildTour.mockResolvedValue({ job: job('running', ['Cloning']) });
     render(<TourView repo="acme/loans" pr={42} />);
     await screen.findByRole('navigation', { name: 'Tour outline' });
+    // A started tour: after the rebuild it opens on the first home not seen, the step.
+    await startTour();
     fireEvent.click(outlineItem('Validate and record'));
     fireEvent.keyDown(window, { key: 'm' });
     expect(map()).toBeTruthy();
@@ -882,5 +892,326 @@ describe('flow map', () => {
 
     fireEvent.keyDown(screen.getByLabelText('note'), { key: 'm' });
     expect(map()).toBeNull();
+  });
+});
+
+describe('overview', () => {
+  const overview = () => screen.queryByRole('heading', { level: 2, name: 'Early repayment' });
+  const trail = () => screen.queryByTestId('step-trail');
+  const codeView = () => screen.getByTestId('code-view').textContent;
+  // The overview has the start button at its top and its end: the first of them.
+  const startButton = (name: string) => screen.getAllByRole('button', { name })[0]!;
+
+  async function load(overrides: Partial<PrResponse> = {}) {
+    getPr.mockResolvedValue(response(overrides));
+    render(
+      <>
+        <input aria-label="note" />
+        <TourView repo="acme/loans" pr={42} />
+      </>,
+    );
+    await screen.findByRole('navigation', { name: 'Tour outline' });
+  }
+
+  it('a PR the reader has not started opens on the overview', async () => {
+    await load();
+    expect(overview()).toBeTruthy();
+    expect(startButton('Start the tour')).toBeTruthy();
+    expect(trail()).toBeNull();
+    expect(screen.queryByTestId('code-view')).toBeNull();
+  });
+
+  it('seen marks that are all outdated still open on the overview', async () => {
+    await load({ seen: { f1: 'old-hash', 'F1.S1': 'old-hash' } });
+    expect(overview()).toBeTruthy();
+    expect(startButton('Start the tour')).toBeTruthy();
+    expect(trail()).toBeNull();
+  });
+
+  it('Start the tour shows the first home', async () => {
+    await load();
+    fireEvent.click(startButton('Start the tour'));
+    expect(overview()).toBeNull();
+    expect(trail()).toBeTruthy();
+    expect(codeView()).toBe('f1 migrations/0042_repayments.sql');
+    expect(markSeen).not.toHaveBeenCalled();
+  });
+
+  it('a started PR opens on the first home not seen', async () => {
+    await load({ seen: { f1: 'h-f1', 'F1.S1': 'h-s1' } });
+    expect(overview()).toBeNull();
+    expect(trail()).toBeTruthy();
+    expect(codeView()).toBe('o1.1 test/loans/repay.test.ts');
+  });
+
+  it('everything seen opens on the first home', async () => {
+    await load({ seen: { f1: 'h-f1', 'F1.S1': 'h-s1', 'o1.1': 'h-o1' } });
+    expect(overview()).toBeNull();
+    expect(codeView()).toBe('f1 migrations/0042_repayments.sql');
+  });
+
+  it('the Overview button and o open the overview; Start goes back to where the reader was', async () => {
+    await load();
+    fireEvent.click(startButton('Start the tour'));
+    fireEvent.keyDown(window, { key: 'j' });
+    fireEvent.keyDown(window, { key: 'j' });
+    expect(codeView()).toBe('o1.1 test/loans/repay.test.ts');
+
+    const button = screen.getByRole('button', { name: 'Overview' });
+    expect(button.title).toBe('Overview (o)');
+    expect(button.getAttribute('aria-pressed')).toBe('false');
+    fireEvent.keyDown(window, { key: 'o' });
+    expect(overview()).toBeTruthy();
+    expect(button.getAttribute('aria-pressed')).toBe('true');
+    fireEvent.click(startButton('Continue the tour'));
+    expect(overview()).toBeNull();
+    expect(codeView()).toBe('o1.1 test/loans/repay.test.ts');
+
+    fireEvent.click(button);
+    expect(overview()).toBeTruthy();
+    fireEvent.click(button);
+    expect(overview()).toBeNull();
+    expect(codeView()).toBe('o1.1 test/loans/repay.test.ts');
+  });
+
+  it('o toggles the overview and Escape closes it', async () => {
+    await load();
+    fireEvent.keyDown(window, { key: 'o' });
+    expect(overview()).toBeNull();
+    fireEvent.keyDown(window, { key: 'o' });
+    expect(overview()).toBeTruthy();
+    fireEvent.keyDown(window, { key: 'Escape' });
+    expect(overview()).toBeNull();
+    expect(codeView()).toBe('f1 migrations/0042_repayments.sql');
+  });
+
+  it('j on the overview shows the current home without moving', async () => {
+    await load();
+    fireEvent.click(startButton('Start the tour'));
+    fireEvent.keyDown(window, { key: 'j' });
+    expect(codeView()).toBe('F1.S1 src/loans/repay.ts');
+    fireEvent.keyDown(window, { key: 'o' });
+
+    fireEvent.keyDown(window, { key: 'j' });
+    expect(overview()).toBeNull();
+    expect(codeView()).toBe('F1.S1 src/loans/repay.ts');
+    expect(markSeen).toHaveBeenCalledTimes(1);
+
+    fireEvent.keyDown(window, { key: 'o' });
+    fireEvent.keyDown(window, { key: 'k' });
+    expect(overview()).toBeNull();
+    expect(codeView()).toBe('F1.S1 src/loans/repay.ts');
+  });
+
+  it('] on the overview opens the next flow without marking a home seen', async () => {
+    await load();
+    fireEvent.keyDown(window, { key: ']' });
+    expect(overview()).toBeNull();
+    expect(codeView()).toBe('F1.S1 src/loans/repay.ts');
+    expect(markSeen).not.toHaveBeenCalled();
+  });
+
+  it('[ and ] at the ends of the tour still close the overview, without moving', async () => {
+    // No other changes: the flow is the end of the tour.
+    await load({ tour: makeTour({ other: [] }) });
+    fireEvent.click(startButton('Start the tour'));
+    fireEvent.keyDown(window, { key: 'j' });
+    expect(codeView()).toBe('F1.S1 src/loans/repay.ts');
+    expect(markSeen).toHaveBeenCalledTimes(1);
+
+    // The tour is in the last flow: there is no next flow.
+    fireEvent.keyDown(window, { key: 'o' });
+    fireEvent.keyDown(window, { key: ']' });
+    expect(overview()).toBeNull();
+    expect(codeView()).toBe('F1.S1 src/loans/repay.ts');
+
+    // On the first home there is no previous flow.
+    fireEvent.keyDown(window, { key: 'k' });
+    expect(codeView()).toBe('f1 migrations/0042_repayments.sql');
+    fireEvent.keyDown(window, { key: 'o' });
+    fireEvent.keyDown(window, { key: '[' });
+    expect(overview()).toBeNull();
+    expect(codeView()).toBe('f1 migrations/0042_repayments.sql');
+    // Only j and k marked a home: the ones they left.
+    expect(markSeen).toHaveBeenCalledTimes(2);
+  });
+
+  it('leaving the overview mid-tour does not mark the home the tour is on', async () => {
+    await load();
+    fireEvent.click(startButton('Start the tour'));
+    fireEvent.keyDown(window, { key: 'j' });
+    expect(markSeen).toHaveBeenCalledTimes(1);
+    fireEvent.keyDown(window, { key: 'o' });
+
+    fireEvent.click(outlineItem('Repay tests'));
+    expect(codeView()).toBe('o1.1 test/loans/repay.test.ts');
+    expect(markSeen).toHaveBeenCalledTimes(1);
+    expect(markSeen).not.toHaveBeenCalledWith('acme/loans', 42, 'F1.S1', 'h-s1');
+  });
+
+  it('an outline click closes the overview and opens that home', async () => {
+    await load();
+    fireEvent.click(outlineItem('Repay tests'));
+    expect(overview()).toBeNull();
+    expect(codeView()).toBe('o1.1 test/loans/repay.test.ts');
+    // The reader never read the first home: leaving the overview does not mark it seen.
+    expect(markSeen).not.toHaveBeenCalled();
+
+    // Also the home the tour is already on.
+    fireEvent.keyDown(window, { key: 'o' });
+    fireEvent.click(outlineItem('Repay tests'));
+    expect(overview()).toBeNull();
+    expect(codeView()).toBe('o1.1 test/loans/repay.test.ts');
+  });
+
+  it('a step in the overview opens that step, also the one the tour is on', async () => {
+    await load();
+    let strip = screen.getByRole('list', { name: 'Steps' });
+    fireEvent.click(within(strip).getByRole('button', { name: /Validate and record/ }));
+    expect(overview()).toBeNull();
+    expect(codeView()).toBe('F1.S1 src/loans/repay.ts');
+    expect(markSeen).not.toHaveBeenCalled();
+
+    fireEvent.keyDown(window, { key: 'o' });
+    strip = screen.getByRole('list', { name: 'Steps' });
+    fireEvent.click(within(strip).getByRole('button', { name: /Validate and record/ }));
+    expect(overview()).toBeNull();
+    expect(codeView()).toBe('F1.S1 src/loans/repay.ts');
+    expect(outlineItem('Validate and record').getAttribute('aria-current')).toBe('step');
+  });
+
+  it('opening the overview closes the flow map', async () => {
+    await load();
+    fireEvent.click(startButton('Start the tour'));
+    fireEvent.keyDown(window, { key: 'j' });
+    expect(codeView()).toBe('F1.S1 src/loans/repay.ts');
+    fireEvent.keyDown(window, { key: 'm' });
+    const map = () => screen.queryByRole('dialog', { name: 'Flow map: Repay a loan' });
+    expect(map()).toBeTruthy();
+
+    fireEvent.keyDown(window, { key: 'o' });
+    expect(overview()).toBeTruthy();
+    expect(map()).toBeNull();
+    // m does not open the step's map over the overview.
+    fireEvent.keyDown(window, { key: 'm' });
+    expect(map()).toBeNull();
+    fireEvent.click(startButton('Continue the tour'));
+    expect(map()).toBeNull();
+  });
+
+  it('the opening place is taken once: Continue goes back to the home the tour is on', async () => {
+    await load();
+    fireEvent.click(startButton('Start the tour'));
+    fireEvent.keyDown(window, { key: 'j' });
+    fireEvent.keyDown(window, { key: 'j' });
+    fireEvent.keyDown(window, { key: 'k' });
+    // Every home is seen now: a fresh opening place would be the first home.
+    expect(codeView()).toBe('F1.S1 src/loans/repay.ts');
+
+    fireEvent.keyDown(window, { key: 'o' });
+    fireEvent.click(startButton('Continue the tour'));
+    expect(codeView()).toBe('F1.S1 src/loans/repay.ts');
+  });
+
+  it('a poll that returns the same tour moves neither the home nor the overview', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const seen = { f1: 'h-f1', 'F1.S1': 'h-s1', 'o1.1': 'h-o1' };
+    getPr
+      .mockResolvedValueOnce(response({ outdated: true }))
+      .mockResolvedValue(response({ seen, job: job('done', ['Saved']) }));
+    buildTour.mockResolvedValue({ job: job('running', ['Cloning']) });
+    render(<TourView repo="acme/loans" pr={42} />);
+    await screen.findByRole('navigation', { name: 'Tour outline' });
+    fireEvent.click(startButton('Start the tour'));
+    fireEvent.keyDown(window, { key: 'j' });
+    fireEvent.keyDown(window, { key: 'j' });
+    fireEvent.keyDown(window, { key: 'k' });
+    expect(codeView()).toBe('F1.S1 src/loans/repay.ts');
+    fireEvent.keyDown(window, { key: 'o' });
+    expect(overview()).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Rebuild tour' }));
+    await screen.findByText('Cloning');
+    await act(() => vi.advanceTimersByTimeAsync(2000));
+
+    expect(getPr).toHaveBeenCalledTimes(2);
+    expect(screen.queryByText('Cloning')).toBeNull();
+    expect(overview()).toBeTruthy();
+    fireEvent.click(startButton('Continue the tour'));
+    expect(codeView()).toBe('F1.S1 src/loans/repay.ts');
+  });
+
+  it('opening the overview moves focus into it; leaving it moves focus to the step', async () => {
+    await load();
+    const region = () => screen.getByRole('region', { name: 'Overview' });
+    const step = () => screen.getByRole('article');
+    // Opening on the overview at load does not take focus.
+    expect(document.activeElement).toBe(document.body);
+
+    fireEvent.click(startButton('Start the tour'));
+    expect(document.activeElement).toBe(step());
+    fireEvent.keyDown(window, { key: 'o' });
+    expect(document.activeElement).toBe(region());
+    fireEvent.keyDown(window, { key: 'j' });
+    expect(document.activeElement).toBe(step());
+    fireEvent.keyDown(window, { key: 'o' });
+    fireEvent.keyDown(window, { key: 'o' });
+    expect(document.activeElement).toBe(step());
+
+    const button = screen.getByRole('button', { name: 'Overview' });
+    fireEvent.click(button);
+    expect(document.activeElement).toBe(region());
+    fireEvent.keyDown(window, { key: 'k' });
+    expect(document.activeElement).toBe(step());
+    fireEvent.keyDown(window, { key: 'o' });
+    fireEvent.keyDown(window, { key: 'Escape' });
+    expect(document.activeElement).toBe(step());
+
+    // Opening a home from the overview focuses that home's step.
+    fireEvent.keyDown(window, { key: 'o' });
+    fireEvent.click(outlineItem('Repay tests'));
+    expect(step().getAttribute('aria-labelledby')).toBe('step-title-o1.1');
+    expect(document.activeElement).toBe(step());
+    fireEvent.keyDown(window, { key: 'o' });
+    const strip = screen.getByRole('list', { name: 'Steps' });
+    fireEvent.click(within(strip).getByRole('button', { name: /Validate and record/ }));
+    expect(document.activeElement).toBe(step());
+    fireEvent.keyDown(window, { key: 'o' });
+    fireEvent.keyDown(window, { key: '[' });
+    expect(step().getAttribute('aria-labelledby')).toBe('step-title-f1');
+    expect(document.activeElement).toBe(step());
+  });
+
+  it('a rebuild that leaves the overview does not take focus', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const rebuilt = { ...makeTour(), headSha: 'c'.repeat(40), createdAt: '2026-10-28T12:00:00Z' };
+    getPr
+      .mockResolvedValueOnce(response({ outdated: true }))
+      .mockResolvedValue(response({ tour: rebuilt, seen: { f1: 'h-f1' }, job: job('done', []) }));
+    buildTour.mockResolvedValue({ job: job('running', ['Cloning']) });
+    render(
+      <>
+        <input aria-label="note" />
+        <TourView repo="acme/loans" pr={42} />
+      </>,
+    );
+    await screen.findByRole('navigation', { name: 'Tour outline' });
+    expect(overview()).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Rebuild tour' }));
+    await screen.findByText('Cloning');
+    const note = screen.getByLabelText('note');
+    note.focus();
+
+    await act(() => vi.advanceTimersByTimeAsync(2000));
+    // Started on the new tour: it opens on a home, not the overview.
+    expect(overview()).toBeNull();
+    expect(document.activeElement).toBe(note);
+  });
+
+  it('o in a text field types and does not open the overview', async () => {
+    await load();
+    fireEvent.click(startButton('Start the tour'));
+    fireEvent.keyDown(screen.getByLabelText('note'), { key: 'o' });
+    expect(overview()).toBeNull();
   });
 });

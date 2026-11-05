@@ -375,6 +375,7 @@ pre {
   white-space: nowrap;
 }
 
+.overview-button[aria-pressed='true'],
 .about-button[aria-expanded='true'] {
   border-color: var(--accent);
   background: var(--accent-soft);
@@ -1891,8 +1892,11 @@ p.why {
   background: var(--bg);
 }
 
-/* Focus goes to the panel itself when it opens: no ring around the whole panel. */
-.flow-map-panel:focus {
+/* Focus goes to the panel itself when it opens: no ring around the whole panel. The same
+   for the overview and the step pane, which take focus when the overview opens or closes. */
+.flow-map-panel:focus,
+.overview:focus,
+.step-pane:focus {
   outline: none;
 }
 
@@ -1974,15 +1978,6 @@ p.why {
   background: var(--pending-bg);
 }
 
-.flow-map-entry {
-  display: inline-block;
-  margin: 0 0 var(--space-1);
-  padding: var(--space-1) var(--space-2);
-  border-radius: var(--radius-small);
-  background: var(--bg-subtle);
-  font-family: var(--font-mono);
-}
-
 .flow-map-tree,
 .flow-map-row {
   margin: 0;
@@ -1990,54 +1985,149 @@ p.why {
   list-style: none;
 }
 
-/* Calls from one step side by side, in calling-line order; more than 4 wrap. Each column is
-   as wide as the branch below it, so the map grows sideways and the panel scrolls. */
+/* The flow as an org chart: each step centred over the steps it calls, which sit side by side
+   in calling-line order. A wide tree keeps its shape; the map scrolls sideways inside. */
+.flow-map-tree {
+  display: flex;
+  width: max-content;
+  min-width: 100%;
+}
+
 .flow-map-row {
-  display: grid;
-  grid-template-columns: repeat(var(--flow-map-columns), max-content);
-  gap: var(--space-3) var(--space-4);
-  align-items: start;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
 }
 
 .flow-map-branch {
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
+  align-items: center;
 }
 
+/* The lines from a step to its calls: a trunk down from the step's box to a bar, the bar from
+   the first call's centre to the last one's, and a drop from the bar to each call. Each call
+   draws its own half of the bar, so the bar is one unbroken line. */
 .flow-map-branch > .flow-map-row {
-  margin-left: var(--space-4);
-  padding-left: var(--space-3);
-  border-left: 1px solid var(--border-faint);
+  position: relative;
+  padding-top: var(--space-4);
 }
 
-/* The arrow into a box: a line down from the caller, with its label. A long label wraps at
-   the card width instead of widening its column. */
-.flow-map-edge {
-  max-width: 240px;
-  margin: 0 0 0 var(--space-4);
-  padding: var(--space-2) var(--space-2) var(--space-1);
-  border: none;
+.flow-map-branch > .flow-map-row::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 50%;
+  height: var(--space-4);
+  margin-left: -1px;
   border-left: 2px solid var(--fg-muted);
-  border-radius: 0;
-  background: none;
-  color: var(--fg-muted);
-  font-size: var(--font-size-tiny);
-  text-align: left;
-  white-space: normal;
-  cursor: pointer;
 }
 
-.flow-map-edge::before {
-  content: '↓ ';
+.flow-map-branch > .flow-map-row > .flow-map-branch {
+  position: relative;
+  padding: var(--space-4) var(--space-3) 0;
 }
 
-.flow-map-edge.unproven {
+.flow-map-branch > .flow-map-row > .flow-map-branch::before,
+.flow-map-branch > .flow-map-row > .flow-map-branch::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  width: 50%;
+  height: var(--space-4);
+  border-top: 2px solid var(--fg-muted);
+}
+
+.flow-map-branch > .flow-map-row > .flow-map-branch::before {
+  right: 50%;
+}
+
+.flow-map-branch > .flow-map-row > .flow-map-branch::after {
+  left: calc(50% - 1px);
+  width: calc(50% + 1px);
+  border-left: 2px solid var(--fg-muted);
+}
+
+.flow-map-branch > .flow-map-row > .flow-map-branch:first-child::before,
+.flow-map-branch > .flow-map-row > .flow-map-branch:last-child::after {
+  border-top: none;
+}
+
+.flow-map-branch > .flow-map-row > .flow-map-branch.unproven::after {
   border-left-style: dashed;
 }
 
+/* Into a box: the label of the call (or the flow's entry), then a short stem with an
+   arrowhead that ends on the box. */
+.flow-map-link {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.flow-map-edge,
+.flow-map-entry {
+  max-width: 240px;
+  margin: 0;
+  padding: 1px var(--space-2);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--bg);
+  color: var(--fg-muted);
+  font-size: var(--font-size-tiny);
+  line-height: 1.4;
+  text-align: center;
+  white-space: normal;
+}
+
+.flow-map-edge {
+  cursor: pointer;
+}
+
+.flow-map-edge.unproven {
+  border-style: dashed;
+}
+
 .flow-map-edge:hover {
+  border-color: var(--accent);
   color: var(--accent);
+}
+
+.flow-map-entry {
+  overflow: hidden;
+  border-color: var(--fg-muted);
+  color: var(--fg);
+  font-family: var(--font-mono);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.flow-map-stem {
+  position: relative;
+  height: var(--space-3);
+  margin-bottom: 6px;
+  border-left: 2px solid var(--fg-muted);
+}
+
+.flow-map-stem.unproven {
+  border-left-style: dashed;
+}
+
+.flow-map-stem::after {
+  content: '';
+  position: absolute;
+  bottom: -6px;
+  left: -6px;
+  border-top: 6px solid var(--fg-muted);
+  border-right: 5px solid transparent;
+  border-left: 5px solid transparent;
+}
+
+/* Steps no call reaches: side by side, each with its own tree, no lines between them. */
+.flow-map-unlinked > .flow-map-row {
+  flex-wrap: wrap;
+  justify-content: flex-start;
+  gap: var(--space-5);
 }
 
 .flow-map-card {
@@ -2190,8 +2280,162 @@ p.why {
   border-top: 1px dashed var(--border);
 }
 
-.flow-map-unlinked h3 {
+.flow-map-unlinked-title {
   margin: 0 0 var(--space-2);
   color: var(--fg-muted);
   font-size: var(--font-size-small);
+}
+
+/* PR overview: what the PR does, its flows with their maps, and the rest. Scrolls inside
+   the main column; wide maps scroll inside themselves, so the page never scrolls sideways. */
+.overview {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  padding: var(--space-5) var(--space-6) var(--space-6);
+}
+
+.overview-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-4);
+}
+
+.overview-title {
+  min-width: 0;
+  margin: 0;
+  font-size: var(--font-size-title);
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.overview-start {
+  flex: none;
+}
+
+.overview-summary {
+  max-width: var(--prose-width);
+  margin: var(--space-2) 0 var(--space-5);
+  overflow-wrap: anywhere;
+}
+
+.overview-flows > h3 {
+  margin: 0 0 var(--space-3);
+  font-size: var(--font-size);
+}
+
+.overview-flow {
+  min-width: 0;
+  margin-bottom: var(--space-4);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.overview-flow-title {
+  margin: 0;
+  font-size: var(--font-size);
+  overflow-wrap: anywhere;
+}
+
+.overview-flow-entry,
+.overview-flow-why,
+.overview-flow-counts {
+  margin: var(--space-1) 0 0;
+  overflow-wrap: anywhere;
+}
+
+.overview-flow-entry code {
+  padding: 0 var(--space-1);
+  border-radius: var(--radius-small);
+  background: var(--bg-subtle);
+  font-family: var(--font-mono);
+  font-size: var(--font-size-small);
+}
+
+.overview-flow-why {
+  max-width: var(--prose-width);
+}
+
+.overview-flow-counts {
+  color: var(--fg-muted);
+  font-size: var(--font-size-small);
+}
+
+/* The step strip: the same box looks as the flow map (blue edge for changed, dashed for no
+   changes, orange outline for read closely). Wraps to more rows instead of widening. */
+.overview-strip {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: var(--space-2);
+  margin: var(--space-3) 0 var(--space-2);
+  padding: 2px;
+  list-style: none;
+}
+
+.overview-strip > li {
+  display: flex;
+  min-width: 0;
+}
+
+.overview-step {
+  width: 100%;
+  max-width: 100%;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  text-overflow: ellipsis;
+}
+
+.overview-step.changed {
+  border-left: 3px solid var(--accent);
+}
+
+.overview-step.unchanged {
+  border-style: dashed;
+  border-color: var(--fg-faint);
+}
+
+.overview-step.read-closely {
+  outline: 2px solid var(--warn);
+  outline-offset: 1px;
+}
+
+.overview-step-no {
+  color: var(--fg-muted);
+}
+
+.overview-step-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.overview-map-toggle {
+  font-size: var(--font-size-small);
+}
+
+.overview-map {
+  margin-top: var(--space-3);
+}
+
+.overview-rest {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-2);
+  margin: var(--space-4) 0;
+  color: var(--fg-muted);
+  font-size: var(--font-size-small);
+}
+
+.overview-rest-label::after {
+  content: ':';
+}
+
+.overview-foot {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: var(--space-5);
 }

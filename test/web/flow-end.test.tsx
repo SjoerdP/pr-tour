@@ -2,6 +2,7 @@ import { fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as api from '../../src/web/api.js';
 import { TourView } from '../../src/web/TourView.js';
+import { startTour } from './overview-helpers.js';
 import { currentTitle, outlineFlow, outlineItem } from './outline-helpers.js';
 import { response } from './tour-fixture.js';
 
@@ -31,6 +32,7 @@ async function open(title?: string) {
   getPr.mockResolvedValue(response());
   render(<TourView repo="acme/loans" pr={42} />);
   await screen.findByRole('navigation', { name: 'Tour outline' });
+  await startTour();
   if (title !== undefined) fireEvent.click(outlineItem(title));
   markSeen.mockClear();
 }

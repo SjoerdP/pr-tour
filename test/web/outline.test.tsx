@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { OtherGroup, Tour } from '../../src/shared/tour.js';
 import * as api from '../../src/web/api.js';
 import { TourView } from '../../src/web/TourView.js';
+import { startTour } from './overview-helpers.js';
 import { response, tour as baseTour } from './tour-fixture.js';
 
 // The outline: sections with progress, the foundations card, one card per flow (only the
@@ -44,6 +45,7 @@ async function open(tour: Tour = baseTour) {
   getPr.mockResolvedValue(response({ tour }));
   render(<TourView repo="acme/loans" pr={42} />);
   await screen.findByRole('navigation', { name: 'Tour outline' });
+  await startTour();
 }
 
 beforeEach(() => {

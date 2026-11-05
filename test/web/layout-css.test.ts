@@ -129,11 +129,56 @@ describe('tour layout CSS', () => {
     expect(rule('.flow-map')['min-height']).toBe('0');
   });
 
+  it('the calls of a step hang off one line: a trunk, a bar across them, a drop each', () => {
+    // Each step is centred over its calls.
+    expect(rule('.flow-map-branch')['align-items']).toBe('center');
+    // (`rule('.flow-map-row')` would find the list reset shared with `.flow-map-tree` first.)
+    expect(css).toMatch(/\n\.flow-map-row \{[^}]*justify-content: center;/);
+    // The trunk runs down from the middle of the step's box.
+    const trunk = rule('.flow-map-branch > .flow-map-row::before');
+    expect(trunk.left).toBe('50%');
+    expect(trunk['border-left']).toBe('2px solid var(--fg-muted)');
+    // Each call draws its half of the bar; the right half also drops to the call's middle and
+    // reaches the call's right edge, so the bar has no gaps.
+    const halves =
+      '.flow-map-branch > .flow-map-row > .flow-map-branch::before,\n' +
+      '.flow-map-branch > .flow-map-row > .flow-map-branch::after';
+    expect(rule(halves)['border-top']).toBe('2px solid var(--fg-muted)');
+    // (`rule()` would find the shared list above first, so match the rule's own body.)
+    expect(css).toMatch(
+      /\n\.flow-map-branch > \.flow-map-row > \.flow-map-branch::after \{\n {2}left: calc\(50% - 1px\);\n {2}width: calc\(50% \+ 1px\);\n {2}border-left: 2px solid var\(--fg-muted\);/,
+    );
+    // Into each box: a stem that ends in an arrowhead.
+    expect(rule('.flow-map-stem')['border-left']).toBe('2px solid var(--fg-muted)');
+    expect(rule('.flow-map-stem::after')['border-top']).toBe('6px solid var(--fg-muted)');
+  });
+
   it('a long arrow label wraps at the card width', () => {
-    const edge = rule('.flow-map-edge');
-    expect(edge['max-width']).toBe('240px');
-    expect(edge['white-space']).toBe('normal');
+    const label = rule('.flow-map-edge,\n.flow-map-entry');
+    expect(label['max-width']).toBe('240px');
+    expect(label['white-space']).toBe('normal');
     expect(rule('.flow-map-card').width).toBe('240px');
+  });
+
+  it('the overview step strip is a grid of equal chips', () => {
+    expect(rule('.overview-strip').display).toBe('grid');
+    expect(rule('.overview-strip')['grid-template-columns']).toBe(
+      'repeat(auto-fill, minmax(200px, 1fr))',
+    );
+  });
+
+  it('an overview strip chip fills its grid cell, so all chips are the same width', () => {
+    expect(rule('.overview-strip > li').display).toBe('flex');
+    expect(rule('.overview-step').width).toBe('100%');
+  });
+
+  it('the unlinked steps heading is styled by class, so its level can change', () => {
+    expect(rule('.flow-map-unlinked-title')['font-size']).toBe('var(--font-size-small)');
+    expect(css).not.toContain('.flow-map-unlinked h3');
+  });
+
+  it('the rest of the PR has no dots made by CSS: they would be read aloud', () => {
+    expect(css).not.toMatch(/\.overview-rest-part[^{]*::before/);
   });
 
   it('colors and outline font sizes come from tokens', () => {

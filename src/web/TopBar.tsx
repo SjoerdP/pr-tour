@@ -6,6 +6,7 @@ import { inKeepOpenArea, keepsReviewOpen } from './keep-review-open.js';
 import { isReviewColumn } from './review-column.js';
 import { ReviewPanel, type ReviewDraftText } from './ReviewPanel.js';
 import { safeHref } from './safe-href.js';
+import { withKey } from './shortcuts.js';
 import type { ReviewState } from './useReview.js';
 
 const EMPTY_REVIEW_TEXT: ReviewDraftText = { event: 'COMMENT', body: '' };
@@ -14,6 +15,10 @@ type Props = {
   pr: PrSummary;
   tour: Tour | null;
   isSeen: (homeId: string) => boolean;
+  /** The PR overview is shown in place of the step. */
+  overviewOpen: boolean;
+  /** Opens or closes the overview. */
+  onOverview: () => void;
   /** "About this PR" is shown. */
   aboutOpen: boolean;
   onAboutChange: (open: boolean) => void;
@@ -32,14 +37,16 @@ type Props = {
 
 /**
  * One line above the tour: back to the inbox, the PR, a short status, a GitHub link (new
- * tab), "About this PR", which shows the tour summary and check problems, and "Review",
- * which opens the review panel. A click outside a panel closes it (not the review panel
- * when it has a column).
+ * tab), "Overview", which opens and closes the PR overview, "About this PR", which shows
+ * the tour summary and check problems, and "Review", which opens the review panel. A click
+ * outside a panel closes it (not the review panel when it has a column).
  */
 export function TopBar({
   pr,
   tour,
   isSeen,
+  overviewOpen,
+  onOverview,
   aboutOpen,
   onAboutChange,
   reviewOpen: reviewChoice,
@@ -136,6 +143,17 @@ export function TopBar({
         >
           GitHub ↗
         </a>
+      )}
+      {tour && (
+        <button
+          type="button"
+          className="overview-button"
+          aria-pressed={overviewOpen}
+          title={withKey('Overview', 'o')}
+          onClick={onOverview}
+        >
+          Overview
+        </button>
       )}
       {tour && (
         <button

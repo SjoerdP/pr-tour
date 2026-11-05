@@ -3,8 +3,15 @@ import { BuildStatus } from './BuildStatus.js';
 import type { Reveal, RevealPlace } from './code-lines.js';
 import { ComposerMemory, ComposerMemoryContext } from './composer-memory.js';
 import { FlowMap } from './FlowMap.js';
-import { flowStepAt, homesInOrder, nextFlowStart, previousFlowStart } from './homes.js';
+import {
+  flowStepAt,
+  homesInOrder,
+  nextFlowStart,
+  openingPlace,
+  previousFlowStart,
+} from './homes.js';
 import { Outline } from './Outline.js';
+import { Overview } from './Overview.js';
 import { StepPane } from './StepPane.js';
 import { TopBar } from './TopBar.js';
 import { useAboutPanel } from './useAboutPanel.js';
@@ -32,12 +39,30 @@ export function TourView({ repo, pr }: { repo: string; pr: number }) {
   const [mapOpen, setMapOpen] = useState(false);
   const mapPanel = useRef<HTMLElement>(null);
   const mapButton = useRef<HTMLButtonElement>(null);
-  // A rebuilt tour (new head or new build) closes the map: its flows may have changed.
+  // The overview of the PR, shown in place of the step pane.
+  const [overviewOpen, setOverviewOpen] = useState(false);
+  const overviewPanel = useRef<HTMLElement>(null);
+  const stepPane = useRef<HTMLElement>(null);
+  // Set when the reader opens or leaves the overview: focus follows (see the effect below).
+  // A new tour that opens or closes it moves no focus.
+  const overviewFocus = useRef(false);
+  // The outline's order is the reading order: j/k walk the same list.
+  const homes = useMemo(() => (tour ? homesInOrder(tour) : []), [tour]);
+  const ids = useMemo(() => homes.map((h) => h.id), [homes]);
+  // A new tour (first load, or a rebuild: new head or new build) closes the map, as its
+  // flows may have changed, and opens where the reader left off: the overview when they have
+  // not started, else the first home not seen. Taken once per tour: marks made while reading
+  // do not move the reader.
   const tourKey = tour ? `${tour.headSha} ${tour.createdAt}` : null;
-  const [mapTourKey, setMapTourKey] = useState(tourKey);
-  if (mapTourKey !== tourKey) {
-    setMapTourKey(tourKey);
+  const [shownTourKey, setShownTourKey] = useState<string | null>(null);
+  if (shownTourKey !== tourKey) {
+    setShownTourKey(tourKey);
     setMapOpen(false);
+    if (tour) {
+      const place = openingPlace(homes, isSeen);
+      setOverviewOpen(place.overview);
+      setCurrentId(place.homeId);
+    }
   }
   // Where the code view scrolls to after a jump from the review panel (null: its own start).
   const [reveal, setReveal] = useState<Reveal | null>(null);
@@ -60,16 +85,18 @@ export function TourView({ repo, pr }: { repo: string; pr: number }) {
     if (before !== null && head !== null && before !== head) void reload();
   }, [head, reload]);
 
-  // The outline's order is the reading order: j/k walk the same list.
-  const homes = useMemo(() => (tour ? homesInOrder(tour) : []), [tour]);
-  const ids = useMemo(() => homes.map((h) => h.id), [homes]);
   // After a rebuild the old id may be gone; fall back to the first home.
   const current = currentId !== null && ids.includes(currentId) ? currentId : (ids[0] ?? null);
 
-  /** Moving past a home marks it seen; opening one does not. */
+  /**
+   * Moving past a home marks it seen; opening one does not. Either way the overview closes.
+   * Leaving the overview marks nothing: the reader was not reading the home the tour is on.
+   */
   function goTo(homeId: string | undefined) {
-    if (homeId === undefined || current === null || homeId === current) return;
-    markLeft(current);
+    if (homeId === undefined) return;
+    setOverviewOpen(false);
+    if (current === null || homeId === current) return;
+    if (!overviewOpen) markLeft(current);
     setCurrentId(homeId);
     setJump(null);
     setReveal(null);
@@ -79,8 +106,9 @@ export function TourView({ repo, pr }: { repo: string; pr: number }) {
 
   /** Brings a place into view in the code (null: nothing in particular). */
   function show(at: RevealPlace | 'focus' | null) {
-    // The map would hide the code being shown.
+    // The map and the overview would hide the code being shown.
     setMapOpen(false);
+    setOverviewOpen(false);
     revealSeq.current += 1;
     setReveal(at === null ? null : { at, seq: revealSeq.current });
   }
@@ -120,7 +148,8 @@ export function TourView({ repo, pr }: { repo: string; pr: number }) {
 
   const currentHome = homes.find((h) => h.id === current);
   const mapFlow = currentHome?.kind === 'step' ? currentHome.flow : null;
-  const mapShown = mapOpen && mapFlow !== null;
+  // The overview takes the place of the step pane, so the map is never open over it.
+  const mapShown = mapOpen && mapFlow !== null && !overviewOpen;
   // The map is a dialog: focus goes into it when it opens.
   useEffect(() => {
     if (mapShown) mapPanel.current?.focus();
@@ -131,6 +160,30 @@ export function TourView({ repo, pr }: { repo: string; pr: number }) {
     setMapOpen(false);
     mapButton.current?.focus();
   }
+
+  /** Opens or closes the overview; opening it closes the map. */
+  function toggleOverview() {
+    if (!overviewOpen) setMapOpen(false);
+    overviewFocus.current = true;
+    setOverviewOpen(!overviewOpen);
+  }
+
+  /** The reader leaves the overview (if it is open): focus goes to the step. */
+  function closeOverview() {
+    if (overviewOpen) overviewFocus.current = true;
+    setOverviewOpen(false);
+  }
+
+  // Focus goes into the overview when the reader opens it, and to the step when they leave
+  // it, so Tab goes on from there. Only on a change the reader made, never on a re-render.
+  useEffect(() => {
+    if (!overviewFocus.current) return;
+    overviewFocus.current = false;
+    (overviewOpen ? overviewPanel : stepPane).current?.focus();
+  }, [overviewOpen]);
+
+  // Started: the reader has seen a home of this tour (the same rule as the opening place).
+  const started = homes.some((h) => isSeen(h.id));
 
   const index = current === null ? -1 : ids.indexOf(current);
   const previousId = index > 0 ? ids[index - 1] : undefined;
@@ -154,13 +207,32 @@ export function TourView({ repo, pr }: { repo: string; pr: number }) {
   };
 
   useKeys({
-    j: nextStep,
-    k: () => nav.previousStep?.(),
-    '[': () => nav.previousFlow?.(),
-    ']': () => nav.nextFlow?.(),
-    ...(mapFlow !== null ? { m: () => (mapShown ? closeMap() : setMapOpen(true)) } : {}),
-    // Esc closes the map first; then it goes back from a followed call to the step's own code.
-    ...(mapShown ? { Escape: closeMap } : jump ? { Escape: () => follow(null) } : {}),
+    // On the overview, j and k first show the home the tour is on, without moving.
+    j: () => (overviewOpen ? closeOverview() : nextStep()),
+    k: () => (overviewOpen ? closeOverview() : nav.previousStep?.()),
+    // At the ends of the tour there is no flow to open; on the overview the key still closes it.
+    '[': () => {
+      closeOverview();
+      nav.previousFlow?.();
+    },
+    ']': () => {
+      closeOverview();
+      nav.nextFlow?.();
+    },
+    ...(tour !== null ? { o: toggleOverview } : {}),
+    ...(mapFlow !== null && !overviewOpen
+      ? { m: () => (mapShown ? closeMap() : setMapOpen(true)) }
+      : {}),
+    // Esc closes the map first; then it goes back from a followed call to the step's own
+    // code; then it closes the overview. A call followed before the overview opened is hidden
+    // under it, so it waits until the overview is closed.
+    ...(mapShown
+      ? { Escape: closeMap }
+      : jump && !overviewOpen
+        ? { Escape: () => follow(null) }
+        : overviewOpen
+          ? { Escape: closeOverview }
+          : {}),
   });
 
   if (load.status === 'loading') {
@@ -194,6 +266,8 @@ export function TourView({ repo, pr }: { repo: string; pr: number }) {
           pr={summary}
           tour={tour}
           isSeen={isSeen}
+          overviewOpen={tour !== null && overviewOpen}
+          onOverview={toggleOverview}
           aboutOpen={about.open}
           onAboutChange={about.setOpen}
           reviewOpen={reviewOpen}
@@ -265,30 +339,53 @@ export function TourView({ repo, pr }: { repo: string; pr: number }) {
               tour={tour}
               currentId={current}
               isSeen={isSeen}
-              onSelect={goTo}
+              onSelect={(homeId) => {
+                closeOverview();
+                goTo(homeId);
+              }}
               previousFlow={nav.previousFlow}
               nextFlow={nav.nextFlow}
             />
             <main className="tour-main">
-              <StepPane
-                repo={repo}
-                pr={pr}
-                tour={tour}
-                home={currentHome}
-                jump={jump}
-                reveal={reveal}
-                onJump={followCall}
-                onShowLine={(file, line) => follow({ file, line })}
-                onRevealLine={(file, line) =>
-                  openHome(currentHome.id, { path: file, side: 'new', line })
-                }
-                onBack={() => follow(null)}
-                onOpenHome={goTo}
-                onOpenMap={() => setMapOpen(true)}
-                mapButtonRef={mapButton}
-                nav={nav}
-                review={review}
-              />
+              {overviewOpen ? (
+                <Overview
+                  regionRef={overviewPanel}
+                  tour={tour}
+                  title={summary.title}
+                  started={started}
+                  currentId={started ? current : null}
+                  onStart={closeOverview}
+                  onOpenHome={(homeId) => {
+                    closeOverview();
+                    openHome(homeId);
+                  }}
+                  onOpenLine={(homeId, file, line) => {
+                    closeOverview();
+                    openHome(homeId, { path: file, side: 'new', line });
+                  }}
+                />
+              ) : (
+                <StepPane
+                  repo={repo}
+                  pr={pr}
+                  tour={tour}
+                  home={currentHome}
+                  jump={jump}
+                  reveal={reveal}
+                  onJump={followCall}
+                  onShowLine={(file, line) => follow({ file, line })}
+                  onRevealLine={(file, line) =>
+                    openHome(currentHome.id, { path: file, side: 'new', line })
+                  }
+                  onBack={() => follow(null)}
+                  onOpenHome={goTo}
+                  onOpenMap={() => setMapOpen(true)}
+                  mapButtonRef={mapButton}
+                  paneRef={stepPane}
+                  nav={nav}
+                  review={review}
+                />
+              )}
               {mapShown && mapFlow && (
                 <section
                   className="flow-map-panel"
