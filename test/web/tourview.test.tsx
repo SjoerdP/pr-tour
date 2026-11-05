@@ -1011,6 +1011,31 @@ describe('overview', () => {
     expect(markSeen).not.toHaveBeenCalled();
   });
 
+  it('[ and ] at the ends of the tour still close the overview, without moving', async () => {
+    // No other changes: the flow is the end of the tour.
+    await load({ tour: makeTour({ other: [] }) });
+    fireEvent.click(startButton('Start the tour'));
+    fireEvent.keyDown(window, { key: 'j' });
+    expect(codeView()).toBe('F1.S1 src/loans/repay.ts');
+    expect(markSeen).toHaveBeenCalledTimes(1);
+
+    // The tour is in the last flow: there is no next flow.
+    fireEvent.keyDown(window, { key: 'o' });
+    fireEvent.keyDown(window, { key: ']' });
+    expect(overview()).toBeNull();
+    expect(codeView()).toBe('F1.S1 src/loans/repay.ts');
+
+    // On the first home there is no previous flow.
+    fireEvent.keyDown(window, { key: 'k' });
+    expect(codeView()).toBe('f1 migrations/0042_repayments.sql');
+    fireEvent.keyDown(window, { key: 'o' });
+    fireEvent.keyDown(window, { key: '[' });
+    expect(overview()).toBeNull();
+    expect(codeView()).toBe('f1 migrations/0042_repayments.sql');
+    // Only j and k marked a home: the ones they left.
+    expect(markSeen).toHaveBeenCalledTimes(2);
+  });
+
   it('leaving the overview mid-tour does not mark the home the tour is on', async () => {
     await load();
     fireEvent.click(startButton('Start the tour'));

@@ -190,8 +190,9 @@ export function TourView({ repo, pr }: { repo: string; pr: number }) {
     // On the overview, j and k first show the home the tour is on, without moving.
     j: () => (overviewOpen ? setOverviewOpen(false) : nextStep()),
     k: () => (overviewOpen ? setOverviewOpen(false) : nav.previousStep?.()),
-    '[': () => nav.previousFlow?.(),
-    ']': () => nav.nextFlow?.(),
+    // At the ends of the tour there is no flow to open; on the overview the key still closes it.
+    '[': () => (nav.previousFlow ? nav.previousFlow() : setOverviewOpen(false)),
+    ']': () => (nav.nextFlow ? nav.nextFlow() : setOverviewOpen(false)),
     ...(tour !== null ? { o: toggleOverview } : {}),
     ...(mapFlow !== null && !overviewOpen
       ? { m: () => (mapShown ? closeMap() : setMapOpen(true)) }
