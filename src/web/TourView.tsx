@@ -41,6 +41,11 @@ export function TourView({ repo, pr }: { repo: string; pr: number }) {
   const mapButton = useRef<HTMLButtonElement>(null);
   // The overview of the PR, shown in place of the step pane.
   const [overviewOpen, setOverviewOpen] = useState(false);
+  const overviewPanel = useRef<HTMLElement>(null);
+  const stepPane = useRef<HTMLElement>(null);
+  // Set when the reader opens or leaves the overview: focus follows (see the effect below).
+  // A new tour that opens or closes it moves no focus.
+  const overviewFocus = useRef(false);
   // The outline's order is the reading order: j/k walk the same list.
   const homes = useMemo(() => (tour ? homesInOrder(tour) : []), [tour]);
   const ids = useMemo(() => homes.map((h) => h.id), [homes]);
@@ -159,8 +164,23 @@ export function TourView({ repo, pr }: { repo: string; pr: number }) {
   /** Opens or closes the overview; opening it closes the map. */
   function toggleOverview() {
     if (!overviewOpen) setMapOpen(false);
+    overviewFocus.current = true;
     setOverviewOpen(!overviewOpen);
   }
+
+  /** The reader leaves the overview (if it is open): focus goes to the step. */
+  function closeOverview() {
+    if (overviewOpen) overviewFocus.current = true;
+    setOverviewOpen(false);
+  }
+
+  // Focus goes into the overview when the reader opens it, and to the step when they leave
+  // it, so Tab goes on from there. Only on a change the reader made, never on a re-render.
+  useEffect(() => {
+    if (!overviewFocus.current) return;
+    overviewFocus.current = false;
+    (overviewOpen ? overviewPanel : stepPane).current?.focus();
+  }, [overviewOpen]);
 
   // Started: the reader has seen a home of this tour (the same rule as the opening place).
   const started = homes.some((h) => isSeen(h.id));
@@ -188,11 +208,17 @@ export function TourView({ repo, pr }: { repo: string; pr: number }) {
 
   useKeys({
     // On the overview, j and k first show the home the tour is on, without moving.
-    j: () => (overviewOpen ? setOverviewOpen(false) : nextStep()),
-    k: () => (overviewOpen ? setOverviewOpen(false) : nav.previousStep?.()),
+    j: () => (overviewOpen ? closeOverview() : nextStep()),
+    k: () => (overviewOpen ? closeOverview() : nav.previousStep?.()),
     // At the ends of the tour there is no flow to open; on the overview the key still closes it.
-    '[': () => (nav.previousFlow ? nav.previousFlow() : setOverviewOpen(false)),
-    ']': () => (nav.nextFlow ? nav.nextFlow() : setOverviewOpen(false)),
+    '[': () => {
+      closeOverview();
+      nav.previousFlow?.();
+    },
+    ']': () => {
+      closeOverview();
+      nav.nextFlow?.();
+    },
     ...(tour !== null ? { o: toggleOverview } : {}),
     ...(mapFlow !== null && !overviewOpen
       ? { m: () => (mapShown ? closeMap() : setMapOpen(true)) }
@@ -205,7 +231,7 @@ export function TourView({ repo, pr }: { repo: string; pr: number }) {
       : jump && !overviewOpen
         ? { Escape: () => follow(null) }
         : overviewOpen
-          ? { Escape: () => setOverviewOpen(false) }
+          ? { Escape: closeOverview }
           : {}),
   });
 
@@ -313,22 +339,30 @@ export function TourView({ repo, pr }: { repo: string; pr: number }) {
               tour={tour}
               currentId={current}
               isSeen={isSeen}
-              onSelect={goTo}
+              onSelect={(homeId) => {
+                closeOverview();
+                goTo(homeId);
+              }}
               previousFlow={nav.previousFlow}
               nextFlow={nav.nextFlow}
             />
             <main className="tour-main">
               {overviewOpen ? (
                 <Overview
+                  regionRef={overviewPanel}
                   tour={tour}
                   title={summary.title}
                   started={started}
                   currentId={started ? current : null}
-                  onStart={() => setOverviewOpen(false)}
-                  onOpenHome={(homeId) => openHome(homeId)}
-                  onOpenLine={(homeId, file, line) =>
-                    openHome(homeId, { path: file, side: 'new', line })
-                  }
+                  onStart={closeOverview}
+                  onOpenHome={(homeId) => {
+                    closeOverview();
+                    openHome(homeId);
+                  }}
+                  onOpenLine={(homeId, file, line) => {
+                    closeOverview();
+                    openHome(homeId, { path: file, side: 'new', line });
+                  }}
                 />
               ) : (
                 <StepPane
@@ -347,6 +381,7 @@ export function TourView({ repo, pr }: { repo: string; pr: number }) {
                   onOpenHome={goTo}
                   onOpenMap={() => setMapOpen(true)}
                   mapButtonRef={mapButton}
+                  paneRef={stepPane}
                   nav={nav}
                   review={review}
                 />

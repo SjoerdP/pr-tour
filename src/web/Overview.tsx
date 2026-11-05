@@ -1,4 +1,4 @@
-import { useId, useState, type ReactNode } from 'react';
+import { useId, useState, type ReactNode, type Ref } from 'react';
 import type { Flow, Tour } from '../shared/tour.js';
 import { FlowMap } from './FlowMap.js';
 import { otherGroupsInOrder } from './homes.js';
@@ -14,6 +14,8 @@ type Props = {
   onStart: () => void;
   onOpenHome: (homeId: string) => void;
   onOpenLine: (homeId: string, file: string, line: number) => void;
+  /** The overview region: focus goes to it when the reader opens the overview. */
+  regionRef?: Ref<HTMLElement>;
 };
 
 function plural(n: number, word: string): string {
@@ -29,6 +31,7 @@ export function Overview({
   onStart,
   onOpenHome,
   onOpenLine,
+  regionRef,
 }: Props): ReactNode {
   const flowsHead = useId();
   const start = (
@@ -38,7 +41,7 @@ export function Overview({
   );
 
   return (
-    <div className="overview">
+    <section className="overview" aria-label="Overview" tabIndex={-1} ref={regionRef}>
       <div className="overview-head">
         <h2 className="overview-title">{title}</h2>
         {start}
@@ -62,7 +65,7 @@ export function Overview({
       )}
       <Rest tour={tour} onOpenHome={onOpenHome} />
       <div className="overview-foot">{start}</div>
-    </div>
+    </section>
   );
 }
 

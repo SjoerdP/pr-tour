@@ -182,6 +182,8 @@ type Props = {
   onOpenMap: () => void;
   /** The Flow map button: focus goes back to it when the map closes. */
   mapButtonRef?: Ref<HTMLButtonElement>;
+  /** The pane itself: focus goes to it when the reader leaves the overview. */
+  paneRef?: Ref<HTMLElement>;
   nav: PaneNav;
   /** The PR's review, shown and added to in the code view. */
   review: ReviewState;
@@ -202,6 +204,7 @@ export function StepPane({
   onOpenHome,
   onOpenMap,
   mapButtonRef,
+  paneRef,
   nav,
   review,
 }: Props) {
@@ -217,7 +220,12 @@ export function StepPane({
   const homeFacts = [...facts(home), ...reviewFacts(home, review)];
 
   return (
-    <article className="step-pane" aria-labelledby={`step-title-${home.id}`}>
+    <article
+      className="step-pane"
+      aria-labelledby={`step-title-${home.id}`}
+      tabIndex={-1}
+      ref={paneRef}
+    >
       <div className="step-notes">
         <div className="step-head">
           <div className="step-trail-row">

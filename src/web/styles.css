@@ -1892,8 +1892,11 @@ p.why {
   background: var(--bg);
 }
 
-/* Focus goes to the panel itself when it opens: no ring around the whole panel. */
-.flow-map-panel:focus {
+/* Focus goes to the panel itself when it opens: no ring around the whole panel. The same
+   for the overview and the step pane, which take focus when the overview opens or closes. */
+.flow-map-panel:focus,
+.overview:focus,
+.step-pane:focus {
   outline: none;
 }
 

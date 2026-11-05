@@ -1141,6 +1141,73 @@ describe('overview', () => {
     expect(codeView()).toBe('F1.S1 src/loans/repay.ts');
   });
 
+  it('opening the overview moves focus into it; leaving it moves focus to the step', async () => {
+    await load();
+    const region = () => screen.getByRole('region', { name: 'Overview' });
+    const step = () => screen.getByRole('article');
+    // Opening on the overview at load does not take focus.
+    expect(document.activeElement).toBe(document.body);
+
+    fireEvent.click(startButton('Start the tour'));
+    expect(document.activeElement).toBe(step());
+    fireEvent.keyDown(window, { key: 'o' });
+    expect(document.activeElement).toBe(region());
+    fireEvent.keyDown(window, { key: 'j' });
+    expect(document.activeElement).toBe(step());
+    fireEvent.keyDown(window, { key: 'o' });
+    fireEvent.keyDown(window, { key: 'o' });
+    expect(document.activeElement).toBe(step());
+
+    const button = screen.getByRole('button', { name: 'Overview' });
+    fireEvent.click(button);
+    expect(document.activeElement).toBe(region());
+    fireEvent.keyDown(window, { key: 'k' });
+    expect(document.activeElement).toBe(step());
+    fireEvent.keyDown(window, { key: 'o' });
+    fireEvent.keyDown(window, { key: 'Escape' });
+    expect(document.activeElement).toBe(step());
+
+    // Opening a home from the overview focuses that home's step.
+    fireEvent.keyDown(window, { key: 'o' });
+    fireEvent.click(outlineItem('Repay tests'));
+    expect(step().getAttribute('aria-labelledby')).toBe('step-title-o1.1');
+    expect(document.activeElement).toBe(step());
+    fireEvent.keyDown(window, { key: 'o' });
+    const strip = screen.getByRole('list', { name: 'Steps' });
+    fireEvent.click(within(strip).getByRole('button', { name: /Validate and record/ }));
+    expect(document.activeElement).toBe(step());
+    fireEvent.keyDown(window, { key: 'o' });
+    fireEvent.keyDown(window, { key: '[' });
+    expect(step().getAttribute('aria-labelledby')).toBe('step-title-f1');
+    expect(document.activeElement).toBe(step());
+  });
+
+  it('a rebuild that leaves the overview does not take focus', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const rebuilt = { ...makeTour(), headSha: 'c'.repeat(40), createdAt: '2026-10-28T12:00:00Z' };
+    getPr
+      .mockResolvedValueOnce(response({ outdated: true }))
+      .mockResolvedValue(response({ tour: rebuilt, seen: { f1: 'h-f1' }, job: job('done', []) }));
+    buildTour.mockResolvedValue({ job: job('running', ['Cloning']) });
+    render(
+      <>
+        <input aria-label="note" />
+        <TourView repo="acme/loans" pr={42} />
+      </>,
+    );
+    await screen.findByRole('navigation', { name: 'Tour outline' });
+    expect(overview()).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Rebuild tour' }));
+    await screen.findByText('Cloning');
+    const note = screen.getByLabelText('note');
+    note.focus();
+
+    await act(() => vi.advanceTimersByTimeAsync(2000));
+    // Started on the new tour: it opens on a home, not the overview.
+    expect(overview()).toBeNull();
+    expect(document.activeElement).toBe(note);
+  });
+
   it('o in a text field types and does not open the overview', async () => {
     await load();
     fireEvent.click(startButton('Start the tour'));
