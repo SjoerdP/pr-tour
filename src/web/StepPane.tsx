@@ -347,6 +347,9 @@ export function StepPane({
   );
 }
 
+/** What a caller link the code check did not find gets instead of its facts. */
+export const NOT_SHOWN = 'the code does not show it';
+
 export const CAME_FROM_LABEL: Record<CameFrom['how'], string> = {
   call: 'Called from',
   service: 'Request from',
@@ -389,8 +392,7 @@ function CameFromLine({
   const caught =
     check === 'not-found' ? (
       <p className="came-from-warn">
-        The tour says <strong>{caller.title}</strong> (step {callerNo}) calls this, but the code
-        does not show it.
+        The tour says <strong>{caller.title}</strong> (step {callerNo}) calls this, but {NOT_SHOWN}.
       </p>
     ) : (
       <p>

@@ -52,7 +52,7 @@ function serve() {
     Promise.resolve({
       text:
         sha === HEAD
-          ? lines(10, { 5: 'new five', 6: '  chargeFee(loan);' })
+          ? lines(10, { 5: 'new five', 6: '  chargeFee(loan);', 7: '  notify(loan);' })
           : lines(10, { 5: 'old five' }),
     }),
   );
@@ -85,6 +85,7 @@ function makeFlow(): Flow {
       step('F1.S1', 'Handle the repay request', 'src/repay.ts', {
         callSites: [
           { line: 6, col: 3, endCol: 12, to: { file: 'src/fees.ts', line: 5 }, toStep: 'F1.S2' },
+          { line: 7, col: 3, endCol: 9, to: { file: 'src/notify.ts', line: 1 } },
         ],
       }),
       step('F1.S2', 'Charge the fee', 'src/fees.ts', {
@@ -220,8 +221,25 @@ describe('Peek', () => {
     const { onMove } = renderPeek({ stepId: 'F1.S1' });
     await screen.findByText('new five');
 
+    fireEvent.click(screen.getByRole('button', { name: 'notify' }));
+    expect(onMove).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole('button', { name: 'chargeFee' }));
     expect(onMove).toHaveBeenCalledWith('F1.S2', null);
+  });
+
+  it("a caller the code check did not find reads as the tour's claim, without a line", async () => {
+    const flow = makeFlow();
+    flow.links = [
+      { from: 'F1.S1', to: 'F1.S2', line: 6, how: 'call', source: 'claude', check: 'not-found' },
+    ];
+    renderPeek({ flow, tour: makeTour(flow) });
+    await screen.findByText('new five');
+
+    const trail = screen.getByTestId('peek-trail');
+    expect(trail.textContent).toBe(
+      'Flow 1 · step 2 of 3 · the tour says step 1 calls this; the code does not show it',
+    );
+    expect(trail.querySelector('.came-from-warn')).toBeTruthy();
   });
 
   it('shows the code read-only: no comment buttons', async () => {

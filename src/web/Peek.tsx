@@ -5,7 +5,7 @@ import { CodeView } from './CodeView.js';
 import { cameFrom } from './homes.js';
 import { effectWords } from './Outline.js';
 import { withKey } from './shortcuts.js';
-import { CAME_FROM_LABEL, codeTarget, proofTag } from './StepPane.js';
+import { CAME_FROM_LABEL, codeTarget, NOT_SHOWN, proofTag } from './StepPane.js';
 import type { ReviewState } from './useReview.js';
 
 /** Tells one reveal from the next, so a second peek at the same line flashes again. */
@@ -74,11 +74,23 @@ export function Peek({
         <p className="peek-trail" data-testid="peek-trail">
           Flow {flowNo} · step {index + 1} of {flow.steps.length}
           {from && (
-            <span className="peek-from" title={from.check !== 'proven' ? from.reason : undefined}>
+            <span
+              className={`peek-from${from.check === 'not-found' ? ' came-from-warn' : ''}`}
+              title={from.check !== 'proven' ? from.reason : undefined}
+            >
               {' · '}
-              {CAME_FROM_LABEL[from.how].toLowerCase()} step {from.callerNo}
-              {from.line !== null && <>, line {from.line}</>}
-              {proofTag(from.check, from.source)}
+              {/* A link the code check did not find is the tour's claim, not a fact. */}
+              {from.check === 'not-found' ? (
+                <>
+                  the tour says step {from.callerNo} calls this; {NOT_SHOWN}
+                </>
+              ) : (
+                <>
+                  {CAME_FROM_LABEL[from.how].toLowerCase()} step {from.callerNo}
+                  {from.line !== null && <>, line {from.line}</>}
+                  {proofTag(from.check, from.source)}
+                </>
+              )}
             </span>
           )}
         </p>
