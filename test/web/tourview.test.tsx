@@ -784,6 +784,23 @@ describe('flow map', () => {
     expect(map()).toBeNull();
   });
 
+  it('opening the map moves focus into it; closing puts focus back on the button', async () => {
+    await showStep('Validate and record');
+    const button = screen.getByRole('button', { name: 'Flow map' });
+
+    fireEvent.click(button);
+    expect(map()!.getAttribute('aria-modal')).toBe('true');
+    expect(document.activeElement).toBe(map());
+    fireEvent.keyDown(document.activeElement!, { key: 'Escape' });
+    expect(map()).toBeNull();
+    expect(document.activeElement).toBe(button);
+
+    fireEvent.keyDown(window, { key: 'm' });
+    expect(document.activeElement).toBe(map());
+    fireEvent.click(within(map()!).getByRole('button', { name: 'Close' }));
+    expect(document.activeElement).toBe(button);
+  });
+
   it('clicking a box goes to that step and closes the map', async () => {
     await showStep('Validate and record');
     fireEvent.keyDown(window, { key: 'm' });

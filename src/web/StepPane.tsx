@@ -1,4 +1,12 @@
-import { useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
+import {
+  useEffect,
+  useId,
+  useRef,
+  useState,
+  type KeyboardEvent,
+  type ReactNode,
+  type Ref,
+} from 'react';
 import type { Flow, Mark, Range, SideEffect, Step, Tour } from '../shared/tour.js';
 import type { Focus as CodeFocus, Reveal } from './code-lines.js';
 import { CodeView } from './CodeView.js';
@@ -172,6 +180,8 @@ type Props = {
   onOpenHome: (homeId: string) => void;
   /** Opens the map of the step's flow (shown only for steps). */
   onOpenMap: () => void;
+  /** The Flow map button: focus goes back to it when the map closes. */
+  mapButtonRef?: Ref<HTMLButtonElement>;
   nav: PaneNav;
   /** The PR's review, shown and added to in the code view. */
   review: ReviewState;
@@ -191,6 +201,7 @@ export function StepPane({
   onBack,
   onOpenHome,
   onOpenMap,
+  mapButtonRef,
   nav,
   review,
 }: Props) {
@@ -219,6 +230,7 @@ export function StepPane({
               <button
                 type="button"
                 className="link-button flow-map-button"
+                ref={mapButtonRef}
                 onClick={onOpenMap}
                 title={withKey('Flow map', 'm')}
               >

@@ -30,6 +30,8 @@ export function TourView({ repo, pr }: { repo: string; pr: number }) {
   const [jump, setJump] = useState<{ file: string; line: number } | null>(null);
   // The flow map over the step pane: shown only while the current home is a step.
   const [mapOpen, setMapOpen] = useState(false);
+  const mapPanel = useRef<HTMLElement>(null);
+  const mapButton = useRef<HTMLButtonElement>(null);
   // A rebuilt tour (new head or new build) closes the map: its flows may have changed.
   const tourKey = tour ? `${tour.headSha} ${tour.createdAt}` : null;
   const [mapTourKey, setMapTourKey] = useState(tourKey);
@@ -119,6 +121,16 @@ export function TourView({ repo, pr }: { repo: string; pr: number }) {
   const currentHome = homes.find((h) => h.id === current);
   const mapFlow = currentHome?.kind === 'step' ? currentHome.flow : null;
   const mapShown = mapOpen && mapFlow !== null;
+  // The map is a dialog: focus goes into it when it opens.
+  useEffect(() => {
+    if (mapShown) mapPanel.current?.focus();
+  }, [mapShown]);
+
+  /** Closes the map by Esc or Close, and puts focus back on the Flow map button. */
+  function closeMap() {
+    setMapOpen(false);
+    mapButton.current?.focus();
+  }
 
   const index = current === null ? -1 : ids.indexOf(current);
   const previousId = index > 0 ? ids[index - 1] : undefined;
@@ -148,11 +160,7 @@ export function TourView({ repo, pr }: { repo: string; pr: number }) {
     ']': () => nav.nextFlow?.(),
     ...(mapFlow !== null ? { m: () => setMapOpen(!mapShown) } : {}),
     // Esc closes the map first; then it goes back from a followed call to the step's own code.
-    ...(mapShown
-      ? { Escape: () => setMapOpen(false) }
-      : jump
-        ? { Escape: () => follow(null) }
-        : {}),
+    ...(mapShown ? { Escape: closeMap } : jump ? { Escape: () => follow(null) } : {}),
   });
 
   if (load.status === 'loading') {
@@ -277,6 +285,7 @@ export function TourView({ repo, pr }: { repo: string; pr: number }) {
                 onBack={() => follow(null)}
                 onOpenHome={goTo}
                 onOpenMap={() => setMapOpen(true)}
+                mapButtonRef={mapButton}
                 nav={nav}
                 review={review}
               />
@@ -284,15 +293,14 @@ export function TourView({ repo, pr }: { repo: string; pr: number }) {
                 <section
                   className="flow-map-panel"
                   role="dialog"
+                  aria-modal="true"
+                  tabIndex={-1}
+                  ref={mapPanel}
                   aria-label={`Flow map: ${mapFlow.title}`}
                 >
                   <div className="flow-map-panel-head">
                     <h2 className="flow-map-panel-title">Flow map: {mapFlow.title}</h2>
-                    <button
-                      type="button"
-                      onClick={() => setMapOpen(false)}
-                      title={withKey('Close', 'Esc')}
-                    >
+                    <button type="button" onClick={closeMap} title={withKey('Close', 'Esc')}>
                       Close
                     </button>
                   </div>
