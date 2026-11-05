@@ -1944,8 +1944,8 @@ p.why {
   font-family: var(--font-mono);
 }
 
-.flow-map ul[role='tree'],
-.flow-map ul[role='group'] {
+.flow-map-tree,
+.flow-map-row {
   margin: 0;
   padding: 0;
   list-style: none;

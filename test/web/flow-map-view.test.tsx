@@ -100,7 +100,11 @@ describe('FlowMap', () => {
     expect(within(box(3)).getByText('no changes')).toBeTruthy();
     expect(box(3).className).toContain('unchanged');
     expect(screen.getByText('POST /loans/{id}/repay')).toBeTruthy();
-    expect(screen.getAllByRole('tree').length).toBeGreaterThan(0);
+    // Plain nested lists: no tree roles, whose keyboard pattern the map does not have.
+    const calls = screen.getByRole('list', { name: 'Calls in this flow' });
+    expect(within(calls).getByText('Step 3')).toBeTruthy();
+    expect(screen.queryAllByRole('tree')).toHaveLength(0);
+    expect(screen.queryAllByRole('treeitem')).toHaveLength(0);
   });
 
   it('marks the current step', () => {

@@ -118,14 +118,14 @@ export function FlowMap({ flow, ...props }: Props): ReactNode {
         {flow.entry.label}
       </p>
       {map.root && (
-        <ul role="tree" aria-label="Calls in this flow" className="flow-map-tree">
+        <ul aria-label="Calls in this flow" className="flow-map-tree">
           <Branch node={map.root} ctx={ctx} />
         </ul>
       )}
       {map.unlinked.length > 0 && (
         <section className="flow-map-unlinked" aria-labelledby={unlinkedHead}>
           <h3 id={unlinkedHead}>Not linked to the steps above</h3>
-          <Row nodes={map.unlinked} ctx={ctx} role="tree" label="Steps not linked" />
+          <Row nodes={map.unlinked} ctx={ctx} label="Steps not linked" />
         </section>
       )}
     </div>
@@ -156,20 +156,10 @@ function Key({ loops }: { loops: boolean }) {
 }
 
 /** Steps side by side, at most four to a row. */
-function Row({
-  nodes,
-  ctx,
-  role,
-  label,
-}: {
-  nodes: MapNode[];
-  ctx: Ctx;
-  role: 'tree' | 'group';
-  label?: string;
-}) {
+function Row({ nodes, ctx, label }: { nodes: MapNode[]; ctx: Ctx; label?: string }) {
   const style = { '--flow-map-columns': Math.min(nodes.length, MAX_COLUMNS) } as CSSProperties;
   return (
-    <ul role={role} aria-label={label} className="flow-map-row" style={style}>
+    <ul aria-label={label} className="flow-map-row" style={style}>
       {nodes.map((node) => (
         <Branch key={node.step.id} node={node} ctx={ctx} />
       ))}
@@ -182,10 +172,10 @@ function Branch({ node, ctx }: { node: MapNode; ctx: Ctx }) {
   const hasChildren = node.children.length > 0;
   const open = !hasChildren || ctx.isOpen(node);
   return (
-    <li role="treeitem" aria-expanded={hasChildren ? open : undefined} className="flow-map-branch">
+    <li className="flow-map-branch">
       <Arrow edge={node.edge} ctx={ctx} />
       <Card node={node} ctx={ctx} />
-      {hasChildren && open && <Row nodes={node.children} ctx={ctx} role="group" />}
+      {hasChildren && open && <Row nodes={node.children} ctx={ctx} />}
     </li>
   );
 }
