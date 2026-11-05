@@ -1,4 +1,4 @@
-import { useId, useState, type ComponentProps, type ReactNode, type Ref } from 'react';
+import { useEffect, useId, useState, type ComponentProps, type ReactNode, type Ref } from 'react';
 import type { Flow, Tour } from '../shared/tour.js';
 import { otherGroupsInOrder } from './homes.js';
 import { MapWithPeek, type PeekState } from './MapWithPeek.js';
@@ -117,6 +117,13 @@ function FlowCard({
   shown: boolean;
 }) {
   const [open, setOpen] = useState(startsOpen);
+  // A peek in a hidden map would still take j, k and Esc: it closes with the map. Also when
+  // Back brings back a peek of a card closed meanwhile. Only while the overview shows: the
+  // hidden overview must not close the map panel's peek.
+  const strayPeek = shown && !open && peek?.flowId === flow.id;
+  useEffect(() => {
+    if (strayPeek) onPeek(null);
+  }, [strayPeek, onPeek]);
   const head = useId();
   const changed = flow.steps.filter((s) => s.homes.length > 0).length;
   const closely = flow.steps.filter((s) => s.risk === 'read-closely').length;
@@ -167,11 +174,7 @@ function FlowCard({
         aria-expanded={open}
         // Each card has this button: the name says which flow's map it is.
         aria-label={`${open ? 'Hide' : 'Show'} the map of flow ${no}`}
-        onClick={() => {
-          // A peek in a hidden map would still take j, k and Esc: it closes with the map.
-          if (open && peek?.flowId === flow.id) onPeek(null);
-          setOpen(!open);
-        }}
+        onClick={() => setOpen(!open)}
       >
         {open ? 'Hide the map' : 'Show the map'}
       </button>

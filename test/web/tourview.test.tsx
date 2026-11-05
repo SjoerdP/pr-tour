@@ -1358,6 +1358,26 @@ describe('flow map', () => {
         expect(markSeen).not.toHaveBeenCalled();
       });
 
+      it('Back to a card whose map was hidden meanwhile brings no unseen peek', async () => {
+        await load();
+        cardBox('Flow 1 · Repay a loan', 2);
+        fireEvent.click(
+          within(peekOf('Charge the fee')!).getByRole('button', { name: 'Open in tour' }),
+        );
+        fireEvent.keyDown(window, { key: 'o' });
+        fireEvent.click(screen.getByRole('button', { name: 'Hide the map of flow 1' }));
+        fireEvent.keyDown(window, { key: 'o' });
+        fireEvent.click(back('overview')!);
+        expect(overview()).toBeTruthy();
+        expect(screen.queryByRole('region', { name: 'Flow 1 map' })).toBeNull();
+
+        // No hidden peek takes the keys: Esc closes the overview at once.
+        fireEvent.keyDown(window, { key: 'Escape' });
+        expect(overview()).toBeNull();
+        expect(paneCode().textContent).toBe('f1 migrations/0042_repayments.sql');
+        expect(markSeen).not.toHaveBeenCalled();
+      });
+
       it('hiding another card keeps the peek', async () => {
         await load();
         fireEvent.click(screen.getByRole('button', { name: 'Show the map of flow 2' }));
