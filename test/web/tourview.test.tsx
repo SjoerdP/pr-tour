@@ -318,6 +318,7 @@ describe('TourView', () => {
     render(<TourView repo="acme/loans" pr={42} />);
 
     await screen.findByRole('navigation', { name: 'Tour outline' });
+    await startTour();
     fireEvent.click(outlineItem('Repay tests'));
 
     expect((await screen.findByRole('status')).textContent).toContain('Server is down');
@@ -869,6 +870,8 @@ describe('flow map', () => {
     buildTour.mockResolvedValue({ job: job('running', ['Cloning']) });
     render(<TourView repo="acme/loans" pr={42} />);
     await screen.findByRole('navigation', { name: 'Tour outline' });
+    // A started tour: after the rebuild it opens on the first home not seen, the step.
+    await startTour();
     fireEvent.click(outlineItem('Validate and record'));
     fireEvent.keyDown(window, { key: 'm' });
     expect(map()).toBeTruthy();
@@ -1000,11 +1003,34 @@ describe('overview', () => {
     expect(codeView()).toBe('F1.S1 src/loans/repay.ts');
   });
 
+  it('] on the overview opens the next flow without marking a home seen', async () => {
+    await load();
+    fireEvent.keyDown(window, { key: ']' });
+    expect(overview()).toBeNull();
+    expect(codeView()).toBe('F1.S1 src/loans/repay.ts');
+    expect(markSeen).not.toHaveBeenCalled();
+  });
+
+  it('leaving the overview mid-tour does not mark the home the tour is on', async () => {
+    await load();
+    fireEvent.click(startButton('Start the tour'));
+    fireEvent.keyDown(window, { key: 'j' });
+    expect(markSeen).toHaveBeenCalledTimes(1);
+    fireEvent.keyDown(window, { key: 'o' });
+
+    fireEvent.click(outlineItem('Repay tests'));
+    expect(codeView()).toBe('o1.1 test/loans/repay.test.ts');
+    expect(markSeen).toHaveBeenCalledTimes(1);
+    expect(markSeen).not.toHaveBeenCalledWith('acme/loans', 42, 'F1.S1', 'h-s1');
+  });
+
   it('an outline click closes the overview and opens that home', async () => {
     await load();
     fireEvent.click(outlineItem('Repay tests'));
     expect(overview()).toBeNull();
     expect(codeView()).toBe('o1.1 test/loans/repay.test.ts');
+    // The reader never read the first home: leaving the overview does not mark it seen.
+    expect(markSeen).not.toHaveBeenCalled();
 
     // Also the home the tour is already on.
     fireEvent.keyDown(window, { key: 'o' });
@@ -1019,6 +1045,7 @@ describe('overview', () => {
     fireEvent.click(within(strip).getByRole('button', { name: /Validate and record/ }));
     expect(overview()).toBeNull();
     expect(codeView()).toBe('F1.S1 src/loans/repay.ts');
+    expect(markSeen).not.toHaveBeenCalled();
 
     fireEvent.keyDown(window, { key: 'o' });
     strip = screen.getByRole('list', { name: 'Steps' });
@@ -1030,7 +1057,9 @@ describe('overview', () => {
 
   it('opening the overview closes the flow map', async () => {
     await load();
-    fireEvent.click(outlineItem('Validate and record'));
+    fireEvent.click(startButton('Start the tour'));
+    fireEvent.keyDown(window, { key: 'j' });
+    expect(codeView()).toBe('F1.S1 src/loans/repay.ts');
     fireEvent.keyDown(window, { key: 'm' });
     const map = () => screen.queryByRole('dialog', { name: 'Flow map: Repay a loan' });
     expect(map()).toBeTruthy();

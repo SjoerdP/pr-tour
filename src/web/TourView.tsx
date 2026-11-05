@@ -83,12 +83,15 @@ export function TourView({ repo, pr }: { repo: string; pr: number }) {
   // After a rebuild the old id may be gone; fall back to the first home.
   const current = currentId !== null && ids.includes(currentId) ? currentId : (ids[0] ?? null);
 
-  /** Moving past a home marks it seen; opening one does not. Either way the overview closes. */
+  /**
+   * Moving past a home marks it seen; opening one does not. Either way the overview closes.
+   * Leaving the overview marks nothing: the reader was not reading the home the tour is on.
+   */
   function goTo(homeId: string | undefined) {
     if (homeId === undefined) return;
     setOverviewOpen(false);
     if (current === null || homeId === current) return;
-    markLeft(current);
+    if (!overviewOpen) markLeft(current);
     setCurrentId(homeId);
     setJump(null);
     setReveal(null);
