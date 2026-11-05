@@ -2195,3 +2195,160 @@ p.why {
   color: var(--fg-muted);
   font-size: var(--font-size-small);
 }
+
+/* PR overview: what the PR does, its flows with their maps, and the rest. Scrolls inside
+   the main column; wide maps scroll inside themselves, so the page never scrolls sideways. */
+.overview {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  padding: var(--space-5) var(--space-6) var(--space-6);
+}
+
+.overview-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-4);
+}
+
+.overview-title {
+  min-width: 0;
+  margin: 0;
+  font-size: var(--font-size-title);
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.overview-start {
+  flex: none;
+}
+
+.overview-summary {
+  max-width: var(--prose-width);
+  margin: var(--space-2) 0 var(--space-5);
+  overflow-wrap: anywhere;
+}
+
+.overview-flows > h3 {
+  margin: 0 0 var(--space-3);
+  font-size: var(--font-size);
+}
+
+.overview-flow {
+  min-width: 0;
+  margin-bottom: var(--space-4);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.overview-flow-title {
+  margin: 0;
+  font-size: var(--font-size);
+  overflow-wrap: anywhere;
+}
+
+.overview-flow-entry,
+.overview-flow-why,
+.overview-flow-counts {
+  margin: var(--space-1) 0 0;
+  overflow-wrap: anywhere;
+}
+
+.overview-flow-entry code {
+  padding: 0 var(--space-1);
+  border-radius: var(--radius-small);
+  background: var(--bg-subtle);
+  font-family: var(--font-mono);
+  font-size: var(--font-size-small);
+}
+
+.overview-flow-why {
+  max-width: var(--prose-width);
+}
+
+.overview-flow-counts {
+  color: var(--fg-muted);
+  font-size: var(--font-size-small);
+}
+
+/* The step strip: the same box looks as the flow map (blue edge for changed, dashed for no
+   changes, orange outline for read closely). Wraps to more rows instead of widening. */
+.overview-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin: var(--space-3) 0 var(--space-2);
+  padding: 2px;
+  list-style: none;
+}
+
+.overview-strip > li {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.overview-step {
+  max-width: min(240px, 100%);
+  overflow: hidden;
+  border: 1px solid var(--border);
+  text-overflow: ellipsis;
+}
+
+.overview-step.changed {
+  border-left: 3px solid var(--accent);
+}
+
+.overview-step.unchanged {
+  border-style: dashed;
+  border-color: var(--fg-faint);
+}
+
+.overview-step.read-closely {
+  outline: 2px solid var(--warn);
+  outline-offset: 1px;
+}
+
+.overview-step-no {
+  color: var(--fg-muted);
+}
+
+.overview-step-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.overview-map-toggle {
+  font-size: var(--font-size-small);
+}
+
+.overview-map {
+  margin-top: var(--space-3);
+}
+
+.overview-rest {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-2);
+  margin: var(--space-4) 0;
+  color: var(--fg-muted);
+  font-size: var(--font-size-small);
+}
+
+.overview-rest-label::after {
+  content: ':';
+}
+
+.overview-rest-part + .overview-rest-part::before {
+  content: '· ';
+}
+
+.overview-foot {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: var(--space-5);
+}

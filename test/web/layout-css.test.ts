@@ -136,6 +136,10 @@ describe('tour layout CSS', () => {
     expect(rule('.flow-map-card').width).toBe('240px');
   });
 
+  it('the overview step strip wraps', () => {
+    expect(rule('.overview-strip')['flex-wrap']).toBe('wrap');
+  });
+
   it('colors and outline font sizes come from tokens', () => {
     const body = css.slice(css.indexOf('*,'));
     expect(body).not.toMatch(/font-size:\s*\d+px/);
