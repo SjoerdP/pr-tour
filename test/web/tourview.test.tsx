@@ -799,6 +799,11 @@ describe('flow map', () => {
     expect(document.activeElement).toBe(map());
     fireEvent.click(within(map()!).getByRole('button', { name: 'Close' }));
     expect(document.activeElement).toBe(button);
+
+    fireEvent.keyDown(window, { key: 'm' });
+    fireEvent.keyDown(document.activeElement!, { key: 'm' });
+    expect(map()).toBeNull();
+    expect(document.activeElement).toBe(button);
   });
 
   it('clicking a box goes to that step and closes the map', async () => {

@@ -158,7 +158,7 @@ export function TourView({ repo, pr }: { repo: string; pr: number }) {
     k: () => nav.previousStep?.(),
     '[': () => nav.previousFlow?.(),
     ']': () => nav.nextFlow?.(),
-    ...(mapFlow !== null ? { m: () => setMapOpen(!mapShown) } : {}),
+    ...(mapFlow !== null ? { m: () => (mapShown ? closeMap() : setMapOpen(true)) } : {}),
     // Esc closes the map first; then it goes back from a followed call to the step's own code.
     ...(mapShown ? { Escape: closeMap } : jump ? { Escape: () => follow(null) } : {}),
   });
