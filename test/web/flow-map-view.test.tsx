@@ -184,6 +184,33 @@ describe('FlowMap', () => {
     expect(box(6)).toBeTruthy();
   });
 
+  it('the first step never starts folded, even with no changes below', () => {
+    const ids = Array.from({ length: 14 }, (_, i) => `S${i + 1}`);
+    // S1 calls every other step; only S1 itself has changes.
+    const steps = ids.map((id) => step(id, id === 'S1' ? { homes: [home] } : {}));
+    show(
+      flow(
+        steps,
+        ids.slice(1).map((id, i) => link('S1', id, 10 + i)),
+      ),
+    );
+    for (const no of [2, 7, 14]) expect(box(no)).toBeTruthy();
+    expect(within(card(1)).getByRole('button', { name: 'Hide steps below' })).toBeTruthy();
+  });
+
+  it('an unlinked step never starts folded', () => {
+    const ids = Array.from({ length: 14 }, (_, i) => `S${i + 1}`);
+    // S2 is not linked; it calls S3..S14, none of them changed.
+    show(
+      flow(
+        ids.map((id) => step(id)),
+        ids.slice(2).map((id, i) => link('S2', id, 10 + i)),
+      ),
+    );
+    const row = screen.getByRole('region', { name: 'Not linked to the steps above' });
+    expect(within(row).getByText('Step 14')).toBeTruthy();
+  });
+
   it('a folded branch opens when it holds the current step', () => {
     const ids = Array.from({ length: 14 }, (_, i) => `S${i + 1}`);
     const links = [link('S1', 'S2', 10), link('S2', 'S3', 20), link('S2', 'S4', 21)];

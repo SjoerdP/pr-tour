@@ -88,9 +88,13 @@ export function FlowMap({ flow, ...props }: Props): ReactNode {
   const steps = new Map(flow.steps.map((s) => [s.id, s]));
   const nos = new Map(flow.steps.map((s, i) => [s.id, i + 1]));
   const big = flow.steps.length > FOLD_ABOVE;
-  // Open when something below has changes, and never hiding the step being read.
+  // Open when something below has changes, and never hiding the step being read. A step
+  // under the entry (the first one, and each unlinked one) is always open.
   const startsOpen = (node: MapNode) =>
-    !big || node.changesBelow > 0 || node.children.some((c) => holds(c, props.currentId));
+    !big ||
+    node.edge.from === null ||
+    node.changesBelow > 0 ||
+    node.children.some((c) => holds(c, props.currentId));
   const isOpen = (node: MapNode) => opened[node.step.id] ?? startsOpen(node);
   const ctx: Ctx = {
     ...props,
