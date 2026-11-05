@@ -140,6 +140,11 @@ describe('tour layout CSS', () => {
     expect(rule('.overview-strip')['flex-wrap']).toBe('wrap');
   });
 
+  it('an overview strip item is capped, not just its button, so no gap is left beside it', () => {
+    expect(rule('.overview-strip > li')['max-width']).toBe('min(240px, 100%)');
+    expect(rule('.overview-step')['max-width']).toBe('100%');
+  });
+
   it('colors and outline font sizes come from tokens', () => {
     const body = css.slice(css.indexOf('*,'));
     expect(body).not.toMatch(/font-size:\s*\d+px/);

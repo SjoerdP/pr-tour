@@ -2289,11 +2289,11 @@ p.why {
 
 .overview-strip > li {
   min-width: 0;
-  max-width: 100%;
+  max-width: min(240px, 100%);
 }
 
 .overview-step {
-  max-width: min(240px, 100%);
+  max-width: 100%;
   overflow: hidden;
   border: 1px solid var(--border);
   text-overflow: ellipsis;
