@@ -323,7 +323,9 @@ export function StepPane({
         >
           <span aria-hidden="true">← </span>Previous step
         </button>
-        <p className="key-hints">j / k steps · [ ] flows · m map · n / p changes · f whole file</p>
+        <p className="key-hints">
+          j / k steps · [ ] flows · m map · o overview · n / p changes · f whole file
+        </p>
         <button
           type="button"
           className="primary"

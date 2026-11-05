@@ -375,6 +375,7 @@ pre {
   white-space: nowrap;
 }
 
+.overview-button[aria-pressed='true'],
 .about-button[aria-expanded='true'] {
   border-color: var(--accent);
   background: var(--accent-soft);

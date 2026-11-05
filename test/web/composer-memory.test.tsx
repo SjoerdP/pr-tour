@@ -4,6 +4,7 @@ import type { FileDiff } from '../../src/shared/diff.js';
 import type { Draft, ReviewResponse, ReviewThread } from '../../src/shared/review.js';
 import * as api from '../../src/web/api.js';
 import { TourView } from '../../src/web/TourView.js';
+import { startTour } from './overview-helpers.js';
 import { outlineItem } from './outline-helpers.js';
 import { response, tour } from './tour-fixture.js';
 
@@ -117,9 +118,10 @@ afterEach(() => {
   vi.resetAllMocks();
 });
 
-/** Opens the tour on its first home, the foundation in m.sql. */
+/** Starts the tour on its first home, the foundation in m.sql. */
 async function openOnMigration() {
   render(<TourView repo="acme/loans" pr={42} />);
+  await startTour();
   await screen.findByText('m.sql new 2');
 }
 

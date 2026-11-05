@@ -5,6 +5,7 @@ import type { Tour } from '../../src/shared/tour.js';
 import * as api from '../../src/web/api.js';
 import { REVIEW_COLUMN_QUERY } from '../../src/web/review-column.js';
 import { TourView } from '../../src/web/TourView.js';
+import { startTour } from './overview-helpers.js';
 import { outlineItem } from './outline-helpers.js';
 import { response, tour as baseTour } from './tour-fixture.js';
 
@@ -39,6 +40,7 @@ async function open(tour: Tour = baseTour) {
   getPr.mockResolvedValue(response({ tour }));
   const view = render(<TourView repo="acme/loans" pr={42} />);
   await screen.findByRole('navigation', { name: 'Tour outline' });
+  await startTour();
   return view;
 }
 
@@ -395,7 +397,9 @@ describe('bottom bar', () => {
     expect(screen.getByRole('button', { name: 'Previous step' })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Next step' }).className).toContain('primary');
     expect(
-      screen.getByText('j / k steps · [ ] flows · m map · n / p changes · f whole file'),
+      screen.getByText(
+        'j / k steps · [ ] flows · m map · o overview · n / p changes · f whole file',
+      ),
     ).toBeTruthy();
   });
 });
