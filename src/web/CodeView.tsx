@@ -69,6 +69,10 @@ export type CodeViewProps = {
   onNextStep?: () => void;
   /** The PR's review: threads and drafts are shown in place, new comments go here. */
   review: ReviewState;
+  /** No new comments: no line-number buttons and no composer. Threads and drafts still show. */
+  readOnly?: boolean;
+  /** Bind n, p and f. False for a second code view, so it leaves them to the main one. */
+  keys?: boolean;
 };
 
 /** The whole file of a home: changes and the focus open, unchanged code folded. */
@@ -85,6 +89,8 @@ export function CodeView({
   onOpenHome,
   onNextStep,
   review,
+  readOnly = false,
+  keys = true,
 }: CodeViewProps) {
   const { load, tokens } = useCodeFile(repo, pr, tour, file, plain);
 
@@ -125,6 +131,8 @@ export function CodeView({
         onOpenHome={onOpenHome}
         onNextStep={onNextStep}
         review={review}
+        readOnly={readOnly}
+        keys={keys}
       />
     );
   }
@@ -147,6 +155,8 @@ type FileCodeProps = {
   onOpenHome: (homeId: string) => void;
   onNextStep: (() => void) | undefined;
   review: ReviewState;
+  readOnly: boolean;
+  keys: boolean;
 };
 
 function threadsOn(threads: ReviewThread[], path: string): ReviewThread[] {
@@ -168,6 +178,8 @@ function FileCode({
   onOpenHome,
   onNextStep,
   review,
+  readOnly,
+  keys,
 }: FileCodeProps) {
   const rows = useMemo(() => buildRows(file.newText, file.oldText, file.diff?.hunks ?? []), [file]);
   const blocks = useMemo(() => changeBlocks(rows), [rows]);
@@ -211,7 +223,9 @@ function FileCode({
   // GitHub takes comments only on files the PR changes.
   const diff = file.diff;
   // What was being written on this file comes back when it shows again (see ComposerMemory).
-  const memory = useComposerMemory();
+  // A read-only view picks no lines: it neither restores nor overwrites what is being written.
+  const sharedMemory = useComposerMemory();
+  const memory = readOnly ? null : sharedMemory;
   const memoryKey = `${tour.headSha}:${file.path}`;
   const [selection, setSelection] = useState<Selection | null>(
     () => memory?.file(memoryKey)?.selection ?? null,
@@ -376,11 +390,15 @@ function FileCode({
     scrollTo.current = block.from;
   }
 
-  useKeys({
-    n: () => goToChange(current + 1),
-    p: () => goToChange(current - 1),
-    f: () => setWhole((w) => !w),
-  });
+  useKeys(
+    keys
+      ? {
+          n: () => goToChange(current + 1),
+          p: () => goToChange(current - 1),
+          f: () => setWhole((w) => !w),
+        }
+      : {},
+  );
 
   let composerRow = -1;
   let composer: ReactNode = null;
@@ -514,7 +532,7 @@ function FileCode({
                     }
                     onNextStep={onNextStep}
                     label={label}
-                    onPick={diff ? pick : null}
+                    onPick={diff && !readOnly ? pick : null}
                     drag={lineDrag}
                     onJump={onJump}
                     onOpenHome={onOpenHome}
