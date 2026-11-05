@@ -145,6 +145,11 @@ describe('tour layout CSS', () => {
     expect(rule('.overview-step')['max-width']).toBe('100%');
   });
 
+  it('the unlinked steps heading is styled by class, so its level can change', () => {
+    expect(rule('.flow-map-unlinked-title')['font-size']).toBe('var(--font-size-small)');
+    expect(css).not.toContain('.flow-map-unlinked h3');
+  });
+
   it('colors and outline font sizes come from tokens', () => {
     const body = css.slice(css.indexOf('*,'));
     expect(body).not.toMatch(/font-size:\s*\d+px/);
