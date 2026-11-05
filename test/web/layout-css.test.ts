@@ -150,6 +150,10 @@ describe('tour layout CSS', () => {
     expect(css).not.toContain('.flow-map-unlinked h3');
   });
 
+  it('the rest of the PR has no dots made by CSS: they would be read aloud', () => {
+    expect(css).not.toMatch(/\.overview-rest-part[^{]*::before/);
+  });
+
   it('colors and outline font sizes come from tokens', () => {
     const body = css.slice(css.indexOf('*,'));
     expect(body).not.toMatch(/font-size:\s*\d+px/);

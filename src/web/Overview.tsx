@@ -171,8 +171,16 @@ function Rest({ tour, onOpenHome }: { tour: Tour; onOpenHome: (homeId: string) =
   return (
     <p className="overview-rest">
       <span className="overview-rest-label">Also in this PR</span>
-      {parts.map((part) => (
+      {parts.map((part, i) => (
         <span key={part.homeId} className="overview-rest-part">
+          {/* A dot between the parts, for the eye only. */}
+          {i > 0 && (
+            <>
+              <span className="overview-rest-sep" aria-hidden="true">
+                ·
+              </span>{' '}
+            </>
+          )}
           <button type="button" className="link-button" onClick={() => onOpenHome(part.homeId)}>
             {part.label}
           </button>

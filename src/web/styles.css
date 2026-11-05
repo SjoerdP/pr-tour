@@ -2344,10 +2344,6 @@ p.why {
   content: ':';
 }
 
-.overview-rest-part + .overview-rest-part::before {
-  content: '· ';
-}
-
 .overview-foot {
   display: flex;
   justify-content: flex-end;

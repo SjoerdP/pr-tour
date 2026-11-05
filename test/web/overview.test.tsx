@@ -161,6 +161,16 @@ describe('Overview', () => {
     expect(onOpenHome).toHaveBeenCalledWith('o1.1');
   });
 
+  it('the dots between the rest of the PR are not read aloud', () => {
+    show();
+    const rest = screen.getByText('Also in this PR').parentElement!;
+    const dots = Array.from(rest.querySelectorAll('.overview-rest-sep'));
+    // Two parts (the foundation and the tests): one dot between them.
+    expect(dots).toHaveLength(1);
+    expect(dots[0]!.textContent).toBe('·');
+    expect(dots[0]!.getAttribute('aria-hidden')).toBe('true');
+  });
+
   it('a tour without flows has no flows section and can still start', () => {
     const { onStart } = show({ tour: { ...tour, flows: [] } });
     expect(screen.queryByRole('heading', { name: /Flows in this PR/ })).toBeNull();
