@@ -116,6 +116,10 @@ describe('tour layout CSS', () => {
     expect(claude['border-style']).toBe('dashed');
   });
 
+  it('the flow map scrolls inside itself', () => {
+    expect(rule('.flow-map')['overflow']).toBe('auto');
+  });
+
   it('colors and outline font sizes come from tokens', () => {
     const body = css.slice(css.indexOf('*,'));
     expect(body).not.toMatch(/font-size:\s*\d+px/);
