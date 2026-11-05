@@ -144,6 +144,8 @@ function FlowCard({
             currentId={currentId ?? ''}
             onOpenStep={onOpenHome}
             onOpenLine={onOpenLine}
+            // Under the card's h4.
+            headingLevel={5}
           />
         </section>
       )}

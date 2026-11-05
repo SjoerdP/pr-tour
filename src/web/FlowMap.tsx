@@ -11,6 +11,8 @@ type Props = {
   onOpenStep: (stepId: string) => void;
   /** An arrow was clicked: the calling step, its file and the calling line. */
   onOpenLine: (stepId: string, file: string, line: number) => void;
+  /** The level of the map's own headings: 3 under the flow map panel's h2 (the default). */
+  headingLevel?: 3 | 4 | 5 | 6;
 };
 
 /** What a box needs besides its node: shared by every box of the map. */
@@ -80,7 +82,7 @@ function hasLoop(node: MapNode): boolean {
 }
 
 /** A flow drawn as a tree of calls: each step under the step that calls it. */
-export function FlowMap({ flow, ...props }: Props): ReactNode {
+export function FlowMap({ flow, headingLevel = 3, ...props }: Props): ReactNode {
   const map = buildFlowMap(flow);
   // The reader's fold choices, per step id; a step not in here has its starting state.
   const [opened, setOpened] = useState<Record<string, boolean>>({});
@@ -105,6 +107,7 @@ export function FlowMap({ flow, ...props }: Props): ReactNode {
     toggle: (node) => setOpened((o) => ({ ...o, [node.step.id]: !isOpen(node) })),
   };
   const unlinkedHead = useId();
+  const Heading = `h${headingLevel}` as const;
   const loops = [map.root, ...map.unlinked].some((n) => n !== null && hasLoop(n));
 
   return (
@@ -128,7 +131,7 @@ export function FlowMap({ flow, ...props }: Props): ReactNode {
       )}
       {map.unlinked.length > 0 && (
         <section className="flow-map-unlinked" aria-labelledby={unlinkedHead}>
-          <h3 id={unlinkedHead}>Not linked to the steps above</h3>
+          <Heading id={unlinkedHead}>Not linked to the steps above</Heading>
           <Row nodes={map.unlinked} ctx={ctx} label="Steps not linked" />
         </section>
       )}

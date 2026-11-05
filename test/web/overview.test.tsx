@@ -134,6 +134,24 @@ describe('Overview', () => {
     expect(onOpenHome).toHaveBeenCalledWith('F1.S2');
   });
 
+  it('the heading of unlinked steps sits under the card heading', () => {
+    // Step 1 calls step 2; steps 3 to 5 are not linked.
+    const link = {
+      from: 'F1.S1',
+      to: 'F1.S2',
+      line: 10,
+      how: 'call',
+      source: 'both',
+      check: 'proven',
+    } as const;
+    const linked: Tour = { ...tour, flows: [{ ...repay, links: [link] }] };
+    show({ tour: linked });
+    const map = screen.getByRole('region', { name: 'Flow 1 map' });
+    expect(
+      within(map).getByRole('heading', { level: 5, name: 'Not linked to the steps above' }),
+    ).toBeTruthy();
+  });
+
   it('lists the rest of the PR', () => {
     const { onOpenHome } = show();
     expect(screen.getByText('Also in this PR')).toBeTruthy();

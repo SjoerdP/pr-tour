@@ -228,6 +228,10 @@ describe('FlowMap', () => {
   it('unlinked steps are listed under their own heading', () => {
     show(repay([link('S1', 'S2', 10)]));
     const row = screen.getByRole('region', { name: 'Not linked to the steps above' });
+    // In the flow map panel the heading sits under the panel's h2.
+    expect(
+      screen.getByRole('heading', { level: 3, name: 'Not linked to the steps above' }),
+    ).toBeTruthy();
     expect(within(row).getByText('Step 3')).toBeTruthy();
     expect(within(row).queryByText('Step 2')).toBeNull();
   });
