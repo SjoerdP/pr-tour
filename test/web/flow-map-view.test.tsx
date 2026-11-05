@@ -2,6 +2,7 @@ import { fireEvent, render, screen, within } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import type { Flow, FlowLink, Step } from '../../src/shared/tour.js';
 import { FlowMap } from '../../src/web/FlowMap.js';
+import { placeMapBoxes, scrolled } from './map-scroll.js';
 
 // The flow map drawn: boxes for steps, arrow labels for calls, loops, folding and the key.
 
@@ -355,15 +356,16 @@ describe('FlowMap', () => {
     ).toBe('true');
   });
 
-  it('scrolls the peeked box into view when it changes', () => {
-    const scroll = vi.fn();
-    // jsdom has no scrollIntoView: put a spy in its place, and put back what was there.
-    const before = Object.getOwnPropertyDescriptor(Element.prototype, 'scrollIntoView');
-    Element.prototype.scrollIntoView = scroll;
+  /** The map's own scroll box. */
+  const mapBox = () => document.querySelector('.flow-map')!;
+
+  it('scrolls the map itself, not the page, to centre the peeked box when it changes', () => {
+    const place = placeMapBoxes();
     try {
       const f = repay();
       const { view, onOpenStep, onOpenLine } = show(f, 'S1', 'S2');
-      scroll.mockClear();
+      mapBox().scrollLeft = 0;
+      mapBox().scrollTop = 0;
       view.rerender(
         <FlowMap
           flow={f}
@@ -373,11 +375,38 @@ describe('FlowMap', () => {
           onOpenLine={onOpenLine}
         />,
       );
-      expect(scroll).toHaveBeenCalledWith({ block: 'nearest', inline: 'center' });
-      expect(scroll.mock.contexts.at(-1)).toBe(box(3));
+      expect(box(3).classList.contains('peeked')).toBe(true);
+      expect(scrolled(mapBox())).toEqual({ left: 650, top: 520 });
+      // scrollIntoView would scroll every box around the map too, the page included.
+      expect(place.scrollIntoView).not.toHaveBeenCalled();
     } finally {
-      if (before) Object.defineProperty(Element.prototype, 'scrollIntoView', before);
-      else delete (Element.prototype as Partial<Element>).scrollIntoView;
+      place.restore();
+    }
+  });
+
+  it('scrolls to the peeked box again when the map is shown again', () => {
+    const place = placeMapBoxes();
+    try {
+      const f = repay();
+      const ui = (shown: boolean) => (
+        <FlowMap
+          flow={f}
+          currentId="S1"
+          peekedId="S2"
+          shown={shown}
+          onOpenStep={vi.fn()}
+          onOpenLine={vi.fn()}
+        />
+      );
+      const view = render(ui(true));
+      expect(scrolled(mapBox())).toEqual({ left: 650, top: 520 });
+      view.rerender(ui(false));
+      mapBox().scrollLeft = 0;
+      mapBox().scrollTop = 0;
+      view.rerender(ui(true));
+      expect(scrolled(mapBox())).toEqual({ left: 650, top: 520 });
+    } finally {
+      place.restore();
     }
   });
 
@@ -422,18 +451,15 @@ describe('FlowMap', () => {
   });
 
   it('scrolls to a box that only shows once its branch unfolds', () => {
-    const scroll = vi.fn();
-    const before = Object.getOwnPropertyDescriptor(Element.prototype, 'scrollIntoView');
-    Element.prototype.scrollIntoView = scroll;
+    const place = placeMapBoxes();
     try {
       const peek = showPeeking(longFlow(), null);
       expect(screen.queryByText('Step 4')).toBeNull();
       peek('S4');
-      expect(scroll).toHaveBeenCalledWith({ block: 'nearest', inline: 'center' });
-      expect(scroll.mock.contexts.at(-1)).toBe(box(4));
+      expect(box(4).classList.contains('peeked')).toBe(true);
+      expect(scrolled(mapBox())).toEqual({ left: 650, top: 520 });
     } finally {
-      if (before) Object.defineProperty(Element.prototype, 'scrollIntoView', before);
-      else delete (Element.prototype as Partial<Element>).scrollIntoView;
+      place.restore();
     }
   });
 

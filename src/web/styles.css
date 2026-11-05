@@ -1906,10 +1906,20 @@ p.why {
   outline: none;
 }
 
-/* Kept mounted during a visit from them, but hidden: their own display must not show them. */
-.flow-map-panel[hidden],
+/* Kept mounted during a visit from them, but hidden. Not display: none, which would drop the
+   scroll positions of the map, the peek and the overview. Hidden boxes take no focus and no
+   clicks, and both lie over the main area, so the step pane keeps its place. */
+.flow-map-panel[hidden] {
+  display: flex;
+  visibility: hidden;
+  pointer-events: none;
+}
+
 .overview[hidden] {
-  display: none;
+  position: absolute;
+  inset: 0;
+  visibility: hidden;
+  pointer-events: none;
 }
 
 .flow-map-panel-head {
@@ -2552,8 +2562,8 @@ p.why {
 }
 
 /* A flow map with a peek below it. In the map panel the two split the panel's height; the
-   divider sets the map's share. In an overview card the map keeps at most 300px and the peek
-   gets its own height. */
+   divider sets the map's share. In an overview card, while a peek is open, the map keeps at
+   most 300px and the peek gets its own height. */
 .map-peek {
   display: flex;
   flex-direction: column;
@@ -2571,7 +2581,7 @@ p.why {
   min-height: 0;
 }
 
-.map-peek.card .map-peek-map {
+.map-peek.card.peeking .map-peek-map {
   flex: none;
   max-height: 300px;
 }

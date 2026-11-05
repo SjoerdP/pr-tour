@@ -34,6 +34,8 @@ type Props = {
     isSeen: (id: string) => boolean;
   };
   onPeek: (peek: PeekState | null) => void;
+  /** False while the map is kept hidden during a visit; it scrolls to the peek when shown again. */
+  shown?: boolean;
 };
 
 /** Where the split is kept in local storage. */
@@ -119,7 +121,15 @@ function subscribe(listener: () => void): () => void {
  * sizes. A click on a box or a calling line asks for a peek; the caller owns which peek is
  * open, so one peek at a time can hold across maps.
  */
-export function MapWithPeek({ place, flow, currentId, peek, peekProps, onPeek }: Props): ReactNode {
+export function MapWithPeek({
+  place,
+  flow,
+  currentId,
+  peek,
+  peekProps,
+  onPeek,
+  shown: visible = true,
+}: Props): ReactNode {
   const split = useSyncExternalStore(subscribe, readSplit);
   // While dragging, the divider follows the pointer here; it is saved when let go.
   const [dragged, setDragged] = useState<number | null>(null);
@@ -187,6 +197,7 @@ export function MapWithPeek({ place, flow, currentId, peek, peekProps, onPeek }:
           flow={flow}
           currentId={currentId}
           peekedId={shown?.stepId ?? null}
+          shown={visible}
           onOpenStep={(stepId) => onPeek({ flowId: flow.id, stepId, line: null })}
           onOpenLine={(stepId, _file, line) =>
             onPeek({ flowId: flow.id, stepId, line, nonce: ++peekSeq })

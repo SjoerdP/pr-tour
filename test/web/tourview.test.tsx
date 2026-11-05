@@ -4,6 +4,7 @@ import type { Job, PrResponse, PrSummary } from '../../src/shared/api.js';
 import type { OtherGroup, Tour } from '../../src/shared/tour.js';
 import * as api from '../../src/web/api.js';
 import { TourView } from '../../src/web/TourView.js';
+import { placeMapBoxes, scrolled } from './map-scroll.js';
 import { outline, outlineItem } from './outline-helpers.js';
 import { startTour } from './overview-helpers.js';
 
@@ -1034,6 +1035,29 @@ describe('flow map', () => {
       expect(markSeen).not.toHaveBeenCalled();
     });
 
+    it('Back scrolls the map to the peeked box again', async () => {
+      const place = placeMapBoxes();
+      try {
+        await showStep('Validate and record');
+        fireEvent.keyDown(window, { key: 'm' });
+        box(2);
+        const flowMap = map()!.querySelector('.flow-map')!;
+        expect(scrolled(flowMap)).toEqual({ left: 650, top: 520 });
+
+        openInTour();
+        // The browser may lose the scroll of a hidden map.
+        flowMap.scrollLeft = 0;
+        flowMap.scrollTop = 0;
+        fireEvent.click(back('map')!);
+        expect(map()!.querySelector('.flow-map')).toBe(flowMap);
+        expect(scrolled(flowMap)).toEqual({ left: 650, top: 520 });
+        expect(place.scrollIntoView).not.toHaveBeenCalled();
+        expect(markSeen).not.toHaveBeenCalled();
+      } finally {
+        place.restore();
+      }
+    });
+
     it('moving on from a visited step ends the visit and marks it when left', async () => {
       await showStep('Validate and record');
       fireEvent.keyDown(window, { key: 'm' });
@@ -1260,6 +1284,28 @@ describe('flow map', () => {
         fireEvent.click(screen.getAllByRole('button', { name: 'Start the tour' })[0]!);
         expect(paneCode().textContent).toBe('f1 migrations/0042_repayments.sql');
         expect(markSeen).not.toHaveBeenCalled();
+      });
+
+      it('Back to the overview scrolls the card map to the peeked box again', async () => {
+        const place = placeMapBoxes();
+        try {
+          await load();
+          cardBox('Flow 1 · Repay a loan', 2);
+          const flowMap = card('Flow 1 map').querySelector('.flow-map')!;
+          expect(scrolled(flowMap)).toEqual({ left: 650, top: 520 });
+
+          fireEvent.click(
+            within(peekOf('Charge the fee')!).getByRole('button', { name: 'Open in tour' }),
+          );
+          flowMap.scrollLeft = 0;
+          flowMap.scrollTop = 0;
+          fireEvent.click(back('overview')!);
+          expect(card('Flow 1 map').querySelector('.flow-map')).toBe(flowMap);
+          expect(scrolled(flowMap)).toEqual({ left: 650, top: 520 });
+          expect(markSeen).not.toHaveBeenCalled();
+        } finally {
+          place.restore();
+        }
       });
 
       it('Also in this PR and Open in tour are visits too', async () => {

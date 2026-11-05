@@ -9,6 +9,11 @@ type Props = {
   currentId: string;
   /** The step whose code is peeked below the map: marked, unfolded and scrolled to. */
   peekedId?: string | null;
+  /**
+   * False while the map is kept hidden (during a visit). When it shows again, the peeked box
+   * is scrolled to again, in case the browser lost the map's scroll meanwhile.
+   */
+  shown?: boolean;
   /** A box was clicked. */
   onOpenStep: (stepId: string) => void;
   /** An arrow was clicked: the calling step, its file and the calling line. */
@@ -97,20 +102,32 @@ function hasLoop(node: MapNode): boolean {
 }
 
 /** A flow drawn as a tree of calls: each step under the step that calls it. */
-export function FlowMap({ flow, headingLevel = 3, ...props }: Props): ReactNode {
+/**
+ * Scrolls the map itself so `box` sits in its middle, as far as the map can scroll. Not
+ * scrollIntoView: that scrolls every box around the map too, the overview and the page.
+ */
+function centre(map: HTMLElement, box: Element): void {
+  const outer = map.getBoundingClientRect();
+  const inner = box.getBoundingClientRect();
+  map.scrollLeft += inner.left - outer.left - map.clientLeft - (map.clientWidth - inner.width) / 2;
+  map.scrollTop += inner.top - outer.top - map.clientTop - (map.clientHeight - inner.height) / 2;
+}
+
+export function FlowMap({ flow, headingLevel = 3, shown = true, ...props }: Props): ReactNode {
   const map = buildFlowMap(flow);
   // The reader's fold choices, per step id; a step not in here has its starting state.
   const [opened, setOpened] = useState<Record<string, boolean>>({});
   const mapRef = useRef<HTMLDivElement>(null);
   const { peekedId } = props;
 
-  // Bring the peeked box on screen each time another step is peeked.
+  // Bring the peeked box on screen each time another step is peeked, and when the map shows
+  // again after a visit.
   useEffect(() => {
-    if (!peekedId) return;
-    const peeked = mapRef.current?.querySelector('.flow-map-box.peeked');
-    // jsdom has no scrollIntoView.
-    peeked?.scrollIntoView?.({ block: 'nearest', inline: 'center' });
-  }, [peekedId]);
+    const map = mapRef.current;
+    if (!peekedId || !shown || !map) return;
+    const peeked = map.querySelector('.flow-map-box.peeked');
+    if (peeked) centre(map, peeked);
+  }, [peekedId, shown]);
 
   const steps = new Map(flow.steps.map((s) => [s.id, s]));
   const nos = new Map(flow.steps.map((s, i) => [s.id, i + 1]));

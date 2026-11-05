@@ -82,6 +82,7 @@ export function Overview({
               onPeek={onPeek}
               peekProps={peekProps}
               onVisit={onVisit}
+              shown={!hidden}
             />
           ))}
         </section>
@@ -101,6 +102,7 @@ function FlowCard({
   onPeek,
   peekProps,
   onVisit,
+  shown,
 }: {
   flow: Flow;
   /** The flow's 1-based number in the tour. */
@@ -111,6 +113,8 @@ function FlowCard({
   onPeek: (peek: PeekState | null) => void;
   peekProps: OverviewPeekProps;
   onVisit: (homeId: string) => void;
+  /** False while the overview is kept hidden during a visit. */
+  shown: boolean;
 }) {
   const [open, setOpen] = useState(startsOpen);
   const head = useId();
@@ -180,6 +184,7 @@ function FlowCard({
             peek={peek}
             peekProps={{ ...peekProps, onOpenInTour: onVisit }}
             onPeek={onPeek}
+            shown={shown}
           />
         </section>
       )}

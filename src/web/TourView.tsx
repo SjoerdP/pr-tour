@@ -589,6 +589,7 @@ export function TourView({ repo, pr }: { repo: string; pr: number }) {
                       onOpenInTour: (stepId) => visitHome(stepId, 'map'),
                     }}
                     onPeek={changePeek}
+                    shown={mapShown}
                   />
                 </section>
               )}
