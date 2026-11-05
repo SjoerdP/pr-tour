@@ -1,4 +1,4 @@
-import { useId, useState, type ReactNode } from 'react';
+import { useEffect, useId, useRef, useState, type ReactNode } from 'react';
 import type { Flow, Step } from '../shared/tour.js';
 import { buildFlowMap, type MapEdge, type MapNode, type MapProof } from './flow-map.js';
 import { effectWords } from './Outline.js';
@@ -7,6 +7,8 @@ type Props = {
   flow: Flow;
   /** The step being read: marked "you are here". */
   currentId: string;
+  /** The step whose code is peeked below the map: marked, unfolded and scrolled to. */
+  peekedId?: string | null;
   /** A box was clicked. */
   onOpenStep: (stepId: string) => void;
   /** An arrow was clicked: the calling step, its file and the calling line. */
@@ -83,6 +85,16 @@ export function FlowMap({ flow, headingLevel = 3, ...props }: Props): ReactNode 
   const map = buildFlowMap(flow);
   // The reader's fold choices, per step id; a step not in here has its starting state.
   const [opened, setOpened] = useState<Record<string, boolean>>({});
+  const mapRef = useRef<HTMLDivElement>(null);
+  const { peekedId } = props;
+
+  // Bring the peeked box on screen each time another step is peeked.
+  useEffect(() => {
+    if (!peekedId) return;
+    const peeked = mapRef.current?.querySelector('.flow-map-box.peeked');
+    // jsdom has no scrollIntoView.
+    peeked?.scrollIntoView?.({ block: 'nearest', inline: 'center' });
+  }, [peekedId]);
 
   const steps = new Map(flow.steps.map((s) => [s.id, s]));
   const nos = new Map(flow.steps.map((s, i) => [s.id, i + 1]));
@@ -94,7 +106,10 @@ export function FlowMap({ flow, headingLevel = 3, ...props }: Props): ReactNode 
     node.edge.from === null ||
     node.changesBelow > 0 ||
     node.children.some((c) => holds(c, props.currentId));
-  const isOpen = (node: MapNode) => opened[node.step.id] ?? startsOpen(node);
+  // A branch that holds the peeked step is always open; elsewhere the reader's choice wins.
+  const holdsPeeked = (node: MapNode) =>
+    !!peekedId && node.children.some((c) => holds(c, peekedId));
+  const isOpen = (node: MapNode) => holdsPeeked(node) || (opened[node.step.id] ?? startsOpen(node));
   const ctx: Ctx = {
     ...props,
     stepOf: (id) => steps.get(id)!,
@@ -108,7 +123,7 @@ export function FlowMap({ flow, headingLevel = 3, ...props }: Props): ReactNode 
   const loops = [map.root, ...map.unlinked].some((n) => n !== null && hasLoop(n));
 
   return (
-    <div className="flow-map">
+    <div className="flow-map" ref={mapRef}>
       <Key loops={loops} />
       {map.source === 'from' && (
         <p className="flow-map-notice">
@@ -228,6 +243,7 @@ function Arrow({ edge, ctx }: { edge: MapEdge; ctx: Ctx }) {
 function Card({ node, ctx }: { node: MapNode; ctx: Ctx }) {
   const { step, no } = node;
   const current = step.id === ctx.currentId;
+  const peeked = step.id === ctx.peekedId;
   const inLoop = node.loopsFrom.length > 0 || node.loopsTo.length > 0;
   const name = step.anchor?.name ?? step.symbol;
   const changes = step.homes.length;
@@ -263,7 +279,7 @@ function Card({ node, ctx }: { node: MapNode; ctx: Ctx }) {
     <div className={`flow-map-card ${looks}`}>
       <button
         type="button"
-        className={`flow-map-box ${looks}`}
+        className={`flow-map-box ${looks}${peeked ? ' peeked' : ''}`}
         aria-current={current ? 'step' : undefined}
         onClick={() => ctx.onOpenStep(step.id)}
       >
@@ -283,6 +299,7 @@ function Card({ node, ctx }: { node: MapNode; ctx: Ctx }) {
         </span>
         <span className="flow-map-tags">
           {current && <span className="flow-map-tag flow-map-here">You are here</span>}
+          {peeked && <span className="flow-map-tag flow-map-peeking">Peeking</span>}
           <span className="flow-map-tag">
             {changes > 0 ? plural(changes, 'change') : 'no changes'}
           </span>

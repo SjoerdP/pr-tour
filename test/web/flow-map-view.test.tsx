@@ -57,13 +57,19 @@ const repay = (links = [link('S1', 'S2', 10), link('S2', 'S3', 20)]) =>
     links,
   );
 
-function show(f: Flow, currentId = 'S1') {
+function show(f: Flow, currentId = 'S1', peekedId: string | null = null) {
   const onOpenStep = vi.fn();
   const onOpenLine = vi.fn();
-  render(
-    <FlowMap flow={f} currentId={currentId} onOpenStep={onOpenStep} onOpenLine={onOpenLine} />,
+  const view = render(
+    <FlowMap
+      flow={f}
+      currentId={currentId}
+      peekedId={peekedId}
+      onOpenStep={onOpenStep}
+      onOpenLine={onOpenLine}
+    />,
   );
-  return { onOpenStep, onOpenLine };
+  return { onOpenStep, onOpenLine, view };
 }
 
 /** The box of step `no`. */
@@ -319,5 +325,59 @@ describe('FlowMap', () => {
     show(repay());
     expect(key().textContent).not.toContain('↻ Loop');
     expect(within(key()).getByText('Blue edge: the step has changes')).toBeTruthy();
+  });
+
+  it('marks the peeked box', () => {
+    show(repay(), 'S1', 'S2');
+    expect(box(2).classList.contains('peeked')).toBe(true);
+    expect(within(box(2)).getByText('Peeking')).toBeTruthy();
+    expect(box(1).classList.contains('peeked')).toBe(false);
+    expect(within(box(1)).queryByText('Peeking')).toBeNull();
+  });
+
+  it('opens a folded branch that holds the peeked step', () => {
+    const ids = Array.from({ length: 14 }, (_, i) => `S${i + 1}`);
+    const steps = ids.map((id) => step(id, id === 'S6' ? { homes: [home] } : {}));
+    // S1 calls S2 and S6..S14; S2 calls S3, S4 and S5, none of them changed: S2 folds.
+    const links = [
+      link('S1', 'S2', 10),
+      link('S2', 'S3', 20),
+      link('S2', 'S4', 21),
+      link('S2', 'S5', 22),
+      ...ids.slice(5).map((id, i) => link('S1', id, 30 + i)),
+    ];
+    show(flow(steps, links), 'S1', 'S5');
+    expect(box(5).classList.contains('peeked')).toBe(true);
+    expect(
+      within(card(2))
+        .getByRole('button', { name: 'Hide steps below' })
+        .getAttribute('aria-expanded'),
+    ).toBe('true');
+  });
+
+  it('scrolls the peeked box into view when it changes', () => {
+    const scroll = vi.fn();
+    // jsdom has no scrollIntoView: put a spy in its place, and put back what was there.
+    const before = Object.getOwnPropertyDescriptor(Element.prototype, 'scrollIntoView');
+    Element.prototype.scrollIntoView = scroll;
+    try {
+      const f = repay();
+      const { view, onOpenStep, onOpenLine } = show(f, 'S1', 'S2');
+      scroll.mockClear();
+      view.rerender(
+        <FlowMap
+          flow={f}
+          currentId="S1"
+          peekedId="S3"
+          onOpenStep={onOpenStep}
+          onOpenLine={onOpenLine}
+        />,
+      );
+      expect(scroll).toHaveBeenCalledWith({ block: 'nearest', inline: 'center' });
+      expect(scroll.mock.contexts.at(-1)).toBe(box(3));
+    } finally {
+      if (before) Object.defineProperty(Element.prototype, 'scrollIntoView', before);
+      else delete (Element.prototype as Partial<Element>).scrollIntoView;
+    }
   });
 });
