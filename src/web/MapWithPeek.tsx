@@ -1,6 +1,7 @@
 import {
   useRef,
   useState,
+  useSyncExternalStore,
   type CSSProperties,
   type KeyboardEvent,
   type PointerEvent,
@@ -60,26 +61,57 @@ function share(value: unknown, fallback: number): number {
   return typeof value === 'number' && value >= MIN && value <= MAX ? value : fallback;
 }
 
-function loadSplit(): Split {
+/** A stored split, read field by field: bad fields fall back to their default. */
+function parse(raw: string | null): Split {
+  if (raw === null) return DEFAULT_SPLIT;
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (raw === null) return DEFAULT_SPLIT;
     const parsed: unknown = JSON.parse(raw);
     if (typeof parsed !== 'object' || parsed === null) return DEFAULT_SPLIT;
     const { panel, card } = parsed as Record<string, unknown>;
     return { panel: share(panel, DEFAULT_SPLIT.panel), card: share(card, DEFAULT_SPLIT.card) };
   } catch {
-    // Storage blocked or a value that is not JSON: start from the defaults.
+    // Not JSON: start from the defaults.
     return DEFAULT_SPLIT;
   }
 }
 
-function saveSplit(split: Split): void {
+/*
+ * The split is shared by every map on screen (the map panel and the overview cards stay
+ * mounted together), so it lives here, read from storage each time and changed one place at a
+ * time. Each save tells every map.
+ */
+const listeners = new Set<() => void>();
+/** The last stored text and what it reads as: the same object while the text stays the same. */
+let cache: { raw: string | null; split: Split } = { raw: null, split: DEFAULT_SPLIT };
+/** The split while storage is blocked: kept for as long as the page lives. */
+let memory: Split | null = null;
+
+function readSplit(): Split {
+  let raw: string | null;
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(split));
+    raw = localStorage.getItem(STORAGE_KEY);
+  } catch {
+    return memory ?? DEFAULT_SPLIT;
+  }
+  if (raw !== cache.raw) cache = { raw, split: parse(raw) };
+  return cache.split;
+}
+
+/** Changes only `place`'s share, on top of what is stored now. */
+function saveShare(place: keyof Split, value: number): void {
+  const updated = { ...readSplit(), [place]: clamp(value) };
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
   } catch {
     // Storage blocked: the split holds until the page reloads.
+    memory = updated;
   }
+  for (const listener of listeners) listener();
+}
+
+function subscribe(listener: () => void): () => void {
+  listeners.add(listener);
+  return () => listeners.delete(listener);
 }
 
 /**
@@ -88,21 +120,15 @@ function saveSplit(split: Split): void {
  * open, so one peek at a time can hold across maps.
  */
 export function MapWithPeek({ place, flow, currentId, peek, peekProps, onPeek }: Props): ReactNode {
-  const [split, setSplit] = useState<Split>(loadSplit);
+  const split = useSyncExternalStore(subscribe, readSplit);
+  // While dragging, the divider follows the pointer here; it is saved when let go.
+  const [dragged, setDragged] = useState<number | null>(null);
   const root = useRef<HTMLDivElement>(null);
   const drag = useRef<{ y: number; card: number } | null>(null);
   const shown = peek?.flowId === flow.id ? peek : null;
-  const value = split[place];
+  const value = dragged ?? split[place];
 
   const { isSeen, ...rest } = peekProps;
-
-  function setValue(next: number, save: boolean) {
-    setSplit((old) => {
-      const updated = { ...old, [place]: clamp(next) };
-      if (save) saveSplit(updated);
-      return updated;
-    });
-  }
 
   /** Where the divider goes for a pointer at `y`. */
   function valueAt(y: number): number | null {
@@ -124,14 +150,15 @@ export function MapWithPeek({ place, flow, currentId, peek, peekProps, onPeek }:
 
   function onPointerMove(e: PointerEvent<HTMLDivElement>) {
     const next = valueAt(e.clientY);
-    if (next !== null) setValue(next, false);
+    if (next !== null) setDragged(clamp(next));
   }
 
   function onPointerUp(e: PointerEvent<HTMLDivElement>) {
     if (!drag.current) return;
     const next = valueAt(e.clientY) ?? value;
     drag.current = null;
-    setValue(next, true);
+    setDragged(null);
+    saveShare(place, next);
   }
 
   function onKeyDown(e: KeyboardEvent<HTMLDivElement>) {
@@ -140,7 +167,7 @@ export function MapWithPeek({ place, flow, currentId, peek, peekProps, onPeek }:
     // Up moves the divider up: a smaller map in the panel, a taller peek in a card.
     const up = e.key === 'ArrowUp';
     const delta = place === 'panel' ? (up ? -STEP : STEP) : up ? STEP : -STEP;
-    setValue(value + delta, true);
+    saveShare(place, value + delta);
   }
 
   // The sizes go to the stylesheet, which also drops them on narrow windows.
@@ -181,7 +208,10 @@ export function MapWithPeek({ place, flow, currentId, peek, peekProps, onPeek }:
             onPointerDown={onPointerDown}
             onPointerMove={onPointerMove}
             onPointerUp={onPointerUp}
-            onPointerCancel={() => (drag.current = null)}
+            onPointerCancel={() => {
+              drag.current = null;
+              setDragged(null);
+            }}
             onKeyDown={onKeyDown}
           />
           <div className="map-peek-peek">

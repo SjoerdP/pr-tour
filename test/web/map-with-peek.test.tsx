@@ -44,7 +44,13 @@ function makeFlow(id = 'F1'): Flow {
     title: 'Repay a loan',
     entry: { kind: 'http', label: 'POST /loans/{id}/repay' },
     steps: [
-      step(`${id}.S1`, 'Handle the repay request', 'src/repay.ts'),
+      {
+        ...step(`${id}.S1`, 'Handle the repay request', 'src/repay.ts'),
+        // "six" on line 6 calls the fee step.
+        callSites: [
+          { line: 6, col: 1, endCol: 4, to: { file: 'src/fees.ts', line: 1 }, toStep: `${id}.S2` },
+        ],
+      },
       step(`${id}.S2`, 'Charge the fee', 'src/fees.ts'),
     ],
     links: [
@@ -172,7 +178,7 @@ describe('MapWithPeek', () => {
     expect(box(2).className).not.toContain('peeked');
   });
 
-  it('Close and "← Map" end the peek; a move inside the peek peeks there', async () => {
+  it('Close and "← Map" end the peek', async () => {
     const { onPeek } = show({ peek: peekAt('F1.S2') });
     await screen.findByText('five');
     fireEvent.click(screen.getByRole('button', { name: 'Close' }));
@@ -180,6 +186,12 @@ describe('MapWithPeek', () => {
     onPeek.mockClear();
     fireEvent.click(screen.getByRole('button', { name: '← Map' }));
     expect(onPeek).toHaveBeenLastCalledWith(null);
+  });
+
+  it('a move inside the peek peeks there', async () => {
+    const { onPeek } = show({ peek: peekAt('F1.S1') });
+    fireEvent.click(await screen.findByRole('button', { name: 'six' }));
+    expect(onPeek).toHaveBeenLastCalledWith({ flowId: 'F1', stepId: 'F1.S2', line: null });
   });
 
   it('arrow keys move the divider, within its bounds, and it is remembered', () => {
@@ -258,5 +270,77 @@ describe('MapWithPeek', () => {
     expect(divider.getAttribute('aria-valuenow')).toBe('60');
     expect(root.style.getPropertyValue('--map-share')).toBe('0.6');
     expect(JSON.parse(localStorage.getItem(KEY)!)).toMatchObject({ panel: 0.6 });
+  });
+
+  describe('several maps on screen', () => {
+    /** Two maps side by side, as the map panel and the overview cards are. */
+    function showTwo(places: [Props['place'], Props['place']], peeks: (PeekState | null)[]) {
+      const flows = [makeFlow('F1'), makeFlow('F2')];
+      const tour = makeTour(flows);
+      const ui = (p: (PeekState | null)[]) => (
+        <>
+          {flows.map((flow, i) => (
+            <MapWithPeek
+              key={flow.id}
+              place={places[i]!}
+              flow={flow}
+              currentId={`${flow.id}.S1`}
+              peek={p[i] ?? null}
+              peekProps={{
+                repo: 'acme/loans',
+                pr: 42,
+                tour,
+                keys: false,
+                review: fakeReview(),
+                isSeen: () => false,
+                onMarkSeen: vi.fn(),
+                onOpenInTour: vi.fn(),
+              }}
+              onPeek={vi.fn()}
+            />
+          ))}
+        </>
+      );
+      const view = render(ui(peeks));
+      const roots = () => [...view.container.querySelectorAll<HTMLElement>('.map-peek')];
+      return { rerender: (p: (PeekState | null)[]) => view.rerender(ui(p)), roots };
+    }
+    const at = (flowId: string): PeekState => ({ flowId, stepId: `${flowId}.S2`, line: null });
+    const stored = () => JSON.parse(localStorage.getItem(KEY)!) as unknown;
+
+    it('a card resized in one card is the size a peek opened later in another card gets', () => {
+      const { rerender, roots } = showTwo(['card', 'card'], [at('F1'), null]);
+      fireEvent.keyDown(screen.getByRole('separator'), { key: 'ArrowUp' });
+      fireEvent.keyDown(screen.getByRole('separator'), { key: 'ArrowUp' });
+      expect(stored()).toEqual({ panel: 0.4, card: 0.7 });
+      rerender([null, at('F2')]);
+      expect(roots()[1]!.style.getPropertyValue('--peek-height')).toBe('70vh');
+    });
+
+    it('the panel and a card each keep their own size', () => {
+      const { rerender } = showTwo(['panel', 'card'], [null, at('F2')]);
+      fireEvent.keyDown(screen.getByRole('separator'), { key: 'ArrowUp' });
+      fireEvent.keyDown(screen.getByRole('separator'), { key: 'ArrowUp' });
+      fireEvent.keyDown(screen.getByRole('separator'), { key: 'ArrowUp' });
+      expect(stored()).toEqual({ panel: 0.4, card: 0.75 });
+
+      rerender([at('F1'), null]);
+      fireEvent.keyDown(screen.getByRole('separator'), { key: 'ArrowDown' });
+      // The panel's save leaves the card's height alone.
+      expect(stored()).toEqual({ panel: 0.45, card: 0.75 });
+
+      rerender([null, at('F2')]);
+      fireEvent.keyDown(screen.getByRole('separator'), { key: 'ArrowDown' });
+      expect(stored()).toEqual({ panel: 0.45, card: 0.7 });
+    });
+
+    it('a size stored after the maps were drawn is used when a peek opens', () => {
+      const { rerender, roots } = showTwo(['panel', 'card'], [null, null]);
+      localStorage.setItem(KEY, JSON.stringify({ panel: 0.3, card: 0.8 }));
+      rerender([at('F1'), null]);
+      expect(screen.getByRole('separator').getAttribute('aria-valuenow')).toBe('30');
+      rerender([null, at('F2')]);
+      expect(roots()[1]!.style.getPropertyValue('--peek-height')).toBe('80vh');
+    });
   });
 });
