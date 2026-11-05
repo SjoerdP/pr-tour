@@ -131,7 +131,9 @@ export function FlowMap({ flow, headingLevel = 3, ...props }: Props): ReactNode 
       )}
       {map.unlinked.length > 0 && (
         <section className="flow-map-unlinked" aria-labelledby={unlinkedHead}>
-          <Heading id={unlinkedHead}>Not linked to the steps above</Heading>
+          <Heading id={unlinkedHead} className="flow-map-unlinked-title">
+            Not linked to the steps above
+          </Heading>
           <Row nodes={map.unlinked} ctx={ctx} label="Steps not linked" />
         </section>
       )}

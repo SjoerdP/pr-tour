@@ -2191,7 +2191,7 @@ p.why {
   border-top: 1px dashed var(--border);
 }
 
-.flow-map-unlinked h3 {
+.flow-map-unlinked-title {
   margin: 0 0 var(--space-2);
   color: var(--fg-muted);
   font-size: var(--font-size-small);
