@@ -131,6 +131,8 @@ function FlowCard({
         type="button"
         className="link-button overview-map-toggle"
         aria-expanded={open}
+        // Each card has this button: the name says which flow's map it is.
+        aria-label={`${open ? 'Hide' : 'Show'} the map of flow ${no}`}
         onClick={() => setOpen(!open)}
       >
         {open ? 'Hide the map' : 'Show the map'}

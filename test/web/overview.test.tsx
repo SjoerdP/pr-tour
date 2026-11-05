@@ -106,19 +106,24 @@ describe('Overview', () => {
     const second = card('Flow 2 · Notify the lender');
     expect(within(first).getByRole('region', { name: 'Flow 1 map' })).toBeTruthy();
     expect(
-      within(first).getByRole('button', { name: 'Hide the map' }).getAttribute('aria-expanded'),
+      within(first)
+        .getByRole('button', { name: 'Hide the map of flow 1' })
+        .getAttribute('aria-expanded'),
     ).toBe('true');
     expect(within(second).queryByRole('region', { name: 'Flow 2 map' })).toBeNull();
 
-    const toggle = within(second).getByRole('button', { name: 'Show the map' });
+    const toggle = within(second).getByRole('button', { name: 'Show the map of flow 2' });
+    expect(toggle.textContent).toBe('Show the map');
     expect(toggle.getAttribute('aria-expanded')).toBe('false');
     fireEvent.click(toggle);
     expect(within(second).getByRole('region', { name: 'Flow 2 map' })).toBeTruthy();
     expect(
-      within(second).getByRole('button', { name: 'Hide the map' }).getAttribute('aria-expanded'),
+      within(second)
+        .getByRole('button', { name: 'Hide the map of flow 2' })
+        .getAttribute('aria-expanded'),
     ).toBe('true');
 
-    fireEvent.click(within(first).getByRole('button', { name: 'Hide the map' }));
+    fireEvent.click(within(first).getByRole('button', { name: 'Hide the map of flow 1' }));
     expect(within(first).queryByRole('region', { name: 'Flow 1 map' })).toBeNull();
   });
 
