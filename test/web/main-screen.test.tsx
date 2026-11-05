@@ -394,7 +394,9 @@ describe('bottom bar', () => {
     await open();
     expect(screen.getByRole('button', { name: 'Previous step' })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Next step' }).className).toContain('primary');
-    expect(screen.getByText('j / k steps · [ ] flows · n / p changes · f whole file')).toBeTruthy();
+    expect(
+      screen.getByText('j / k steps · [ ] flows · m map · n / p changes · f whole file'),
+    ).toBeTruthy();
   });
 });
 

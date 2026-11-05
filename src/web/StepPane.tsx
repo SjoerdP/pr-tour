@@ -170,6 +170,8 @@ type Props = {
   onRevealLine: (file: string, line: number) => void;
   onBack: () => void;
   onOpenHome: (homeId: string) => void;
+  /** Opens the map of the step's flow (shown only for steps). */
+  onOpenMap: () => void;
   nav: PaneNav;
   /** The PR's review, shown and added to in the code view. */
   review: ReviewState;
@@ -188,6 +190,7 @@ export function StepPane({
   onRevealLine,
   onBack,
   onOpenHome,
+  onOpenMap,
   nav,
   review,
 }: Props) {
@@ -212,6 +215,16 @@ export function StepPane({
             </p>
             {/* New home, shut again. */}
             {home.kind === 'step' && <AboutFlow key={home.id} flow={home.flow} />}
+            {home.kind === 'step' && (
+              <button
+                type="button"
+                className="link-button flow-map-button"
+                onClick={onOpenMap}
+                title={withKey('Flow map', 'm')}
+              >
+                Flow map
+              </button>
+            )}
           </div>
           <h2 className="step-title" id={`step-title-${home.id}`}>
             {homeTitle(home)}
@@ -298,7 +311,7 @@ export function StepPane({
         >
           <span aria-hidden="true">← </span>Previous step
         </button>
-        <p className="key-hints">j / k steps · [ ] flows · n / p changes · f whole file</p>
+        <p className="key-hints">j / k steps · [ ] flows · m map · n / p changes · f whole file</p>
         <button
           type="button"
           className="primary"

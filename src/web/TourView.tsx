@@ -2,11 +2,13 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { BuildStatus } from './BuildStatus.js';
 import type { Reveal, RevealPlace } from './code-lines.js';
 import { ComposerMemory, ComposerMemoryContext } from './composer-memory.js';
+import { FlowMap } from './FlowMap.js';
 import { flowStepAt, homesInOrder, nextFlowStart, previousFlowStart } from './homes.js';
 import { Outline } from './Outline.js';
 import { StepPane } from './StepPane.js';
 import { TopBar } from './TopBar.js';
 import { useAboutPanel } from './useAboutPanel.js';
+import { withKey } from './shortcuts.js';
 import { useKeys } from './useKeys.js';
 import { useReview } from './useReview.js';
 import { useSeenMarks } from './useSeenMarks.js';
@@ -26,6 +28,8 @@ export function TourView({ repo, pr }: { repo: string; pr: number }) {
   } = useSeenMarks(repo, pr, tour, data?.seen ?? NO_MARKS);
   const [currentId, setCurrentId] = useState<string | null>(null);
   const [jump, setJump] = useState<{ file: string; line: number } | null>(null);
+  // The flow map over the step pane: shown only while the current home is a step.
+  const [mapOpen, setMapOpen] = useState(false);
   // Where the code view scrolls to after a jump from the review panel (null: its own start).
   const [reveal, setReveal] = useState<Reveal | null>(null);
   const revealSeq = useRef(0);
@@ -61,6 +65,7 @@ export function TourView({ repo, pr }: { repo: string; pr: number }) {
     setJump(null);
     setReveal(null);
     about.setOpen(false);
+    setMapOpen(false);
   }
 
   /** Brings a place into view in the code (null: nothing in particular). */
@@ -102,6 +107,10 @@ export function TourView({ repo, pr }: { repo: string; pr: number }) {
     show(at ?? 'focus');
   }
 
+  const currentHome = homes.find((h) => h.id === current);
+  const mapFlow = currentHome?.kind === 'step' ? currentHome.flow : null;
+  const mapShown = mapOpen && mapFlow !== null;
+
   const index = current === null ? -1 : ids.indexOf(current);
   const previousId = index > 0 ? ids[index - 1] : undefined;
   const previousFlowId = current === null ? undefined : previousFlowStart(homes, current);
@@ -128,8 +137,13 @@ export function TourView({ repo, pr }: { repo: string; pr: number }) {
     k: () => nav.previousStep?.(),
     '[': () => nav.previousFlow?.(),
     ']': () => nav.nextFlow?.(),
-    // Back from a followed call to the step's own code.
-    ...(jump ? { Escape: () => follow(null) } : {}),
+    ...(mapFlow !== null ? { m: () => setMapOpen(!mapShown) } : {}),
+    // Esc closes the map first; then it goes back from a followed call to the step's own code.
+    ...(mapShown
+      ? { Escape: () => setMapOpen(false) }
+      : jump
+        ? { Escape: () => follow(null) }
+        : {}),
   });
 
   if (load.status === 'loading') {
@@ -153,7 +167,6 @@ export function TourView({ repo, pr }: { repo: string; pr: number }) {
   }
 
   const { pr: summary, outdated } = load.data;
-  const currentHome = homes.find((h) => h.id === current);
   const notices = (tour && outdated) || build.state !== 'idle' || !tour || seenError;
 
   return (
@@ -254,9 +267,42 @@ export function TourView({ repo, pr }: { repo: string; pr: number }) {
                 }
                 onBack={() => follow(null)}
                 onOpenHome={goTo}
+                onOpenMap={() => setMapOpen(true)}
                 nav={nav}
                 review={review}
               />
+              {mapShown && mapFlow && (
+                <section
+                  className="flow-map-panel"
+                  role="dialog"
+                  aria-label={`Flow map: ${mapFlow.title}`}
+                >
+                  <div className="flow-map-panel-head">
+                    <h2 className="flow-map-panel-title">Flow map: {mapFlow.title}</h2>
+                    <button
+                      type="button"
+                      onClick={() => setMapOpen(false)}
+                      title={withKey('Close', 'Esc')}
+                    >
+                      Close
+                    </button>
+                  </div>
+                  {/* A fresh map per flow: fold choices never carry over. */}
+                  <FlowMap
+                    key={mapFlow.id}
+                    flow={mapFlow}
+                    currentId={current}
+                    onOpenStep={(stepId) => {
+                      goTo(stepId);
+                      setMapOpen(false);
+                    }}
+                    onOpenLine={(stepId, file, line) => {
+                      openHome(stepId, { path: file, side: 'new', line });
+                      setMapOpen(false);
+                    }}
+                  />
+                </section>
+              )}
             </main>
           </div>
         )}
