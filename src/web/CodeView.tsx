@@ -37,6 +37,7 @@ import { useComposerMemory, type Selection } from './composer-memory.js';
 import type { HighlightedLine, Token } from './highlight.js';
 import { homesInOrder } from './homes.js';
 import { withKey } from './shortcuts.js';
+import { placeBadges, stepTargets, type PlacedBadge, type StepTarget } from './step-badges.js';
 import { useCodeFile, type CodeFile, type Tokens } from './useCodeFile.js';
 import { useKeys } from './useKeys.js';
 import type { ReviewState } from './useReview.js';
@@ -62,8 +63,8 @@ export type CodeViewProps = {
   /** Open another home of the tour (from a "belongs to" label). */
   onOpenHome: (homeId: string) => void;
   /**
-   * Go to the next step. Given only for a step's own code: then the line that calls the
-   * next step gets a "next step →" marker.
+   * Go to the next step. Given only for a step's own code: then each call into another step
+   * of the flow gets a "→ step N" badge, and the one into the next step goes here.
    */
   onNextStep?: () => void;
   /** The PR's review: threads and drafts are shown in place, new comments go here. */
@@ -179,7 +180,10 @@ function FileCode({
   const marksAt = useMemo(() => stepMarks(tour, homeId, file.path), [tour, homeId, file.path]);
   const sites = useMemo(() => stepSites(tour, homeId, file.path), [tour, homeId, file.path]);
   const siteTitle = useMemo(() => siteTitler(tour, homeId), [tour, homeId]);
-  const nextCall = useMemo(() => nextStepCall(tour, homeId, file.path), [tour, homeId, file.path]);
+  const targetsAt = useMemo(
+    () => (onNextStep ? stepTargetsAt(tour, homeId, file.path) : NO_TARGETS),
+    [tour, homeId, file.path, onNextStep],
+  );
   // An added file has no old side: no empty column for old line numbers.
   const showOld = useMemo(() => rows.some((r) => r.oldNo !== undefined), [rows]);
   // Line-number columns as wide as the longest number.
@@ -503,11 +507,12 @@ function FileCode({
                     sites={inFocus && row.newNo !== undefined ? sites : undefined}
                     marks={inFocus && row.newNo !== undefined ? marksAt.get(row.newNo) : undefined}
                     siteTitle={siteTitle}
-                    next={
-                      onNextStep && nextCall && row.newNo === nextCall.line
-                        ? { title: nextCall.title, go: onNextStep }
+                    targets={
+                      inFocus && row.newNo !== undefined && row.kind !== 'del'
+                        ? targetsAt.get(row.newNo)
                         : undefined
                     }
+                    onNextStep={onNextStep}
                     label={label}
                     onPick={diff ? pick : null}
                     drag={lineDrag}
@@ -646,30 +651,16 @@ function siteTitler(tour: Tour, homeId: string): (site: CallSite) => string {
   };
 }
 
-/**
- * The line of `homeId` that calls the next step of its flow, when the code check backs
- * that link up (proven or matched by name): the lowest such line, with the next step's
- * title. Undefined for other homes, other files, the last step, or no such link.
- */
-function nextStepCall(
-  tour: Tour,
-  homeId: string,
-  path: string,
-): { line: number; title: string } | undefined {
+const NO_TARGETS = new Map<number, StepTarget[]>();
+
+/** The lines of `homeId` that lead to other steps of its flow, when it is a step in `path`. */
+function stepTargetsAt(tour: Tour, homeId: string, path: string): Map<number, StepTarget[]> {
   const home = homesInOrder(tour).find((h) => h.id === homeId);
-  if (home?.kind !== 'step' || home.step.file !== path) return undefined;
-  const { flow, step } = home;
-  const next = flow.steps[flow.steps.indexOf(step) + 1];
-  if (!next) return undefined;
-  const lines = (flow.links ?? [])
-    .filter(
-      (l) =>
-        l.from === step.id &&
-        l.to === next.id &&
-        (l.check === 'proven' || l.check === 'name-match'),
-    )
-    .map((l) => l.line);
-  return lines.length > 0 ? { line: Math.min(...lines), title: next.title } : undefined;
+  if (home?.kind !== 'step' || home.step.file !== path) return NO_TARGETS;
+  const out = new Map<number, StepTarget[]>();
+  for (const t of stepTargets(home.flow, home.step))
+    out.set(t.line, [...(out.get(t.line) ?? []), t]);
+  return out;
 }
 
 /** The traced calls of `homeId` when it is a step in `path`; none otherwise. */
@@ -703,8 +694,10 @@ type CodeRowProps = {
   siteTitle: (site: CallSite) => string;
   /** What the code check or the tour says happens on this line. */
   marks: Mark[] | undefined;
-  /** Set on the line that calls the next step: its title, and the way there. */
-  next: { title: string; go: () => void } | undefined;
+  /** The steps this line leads to, each shown as a "→ step N" badge after its call. */
+  targets: StepTarget[] | undefined;
+  /** Goes to the next step: what the next step's badge does. */
+  onNextStep: (() => void) | undefined;
   label: Owner | null;
   /** Picks a line for a comment (`extend` on shift+click); null when comments are not possible. */
   onPick: ((side: DiffSide, line: number, extend: boolean) => void) | null;
@@ -770,7 +763,8 @@ function CodeRow({
   sites,
   siteTitle,
   marks,
-  next,
+  targets,
+  onNextStep,
   label,
   onPick,
   drag,
@@ -800,7 +794,15 @@ function CodeRow({
       <LineNo no={row.newNo} side="new" onPick={onPick} drag={drag} />
       <span className="code-marker">{MARKERS[row.kind]}</span>
       <code className="code-text">
-        {lineContent(parts, row.text.length, matches, onJump, siteTitle)}
+        {lineContent(
+          parts,
+          row.text.length,
+          matches,
+          targets ? placeBadges(row.text, matches, targets) : [],
+          onJump,
+          siteTitle,
+          onNextStep,
+        )}
       </code>
       {marks?.map((mark, k) => (
         <span
@@ -815,16 +817,6 @@ function CodeRow({
           {MARK_TEXT[mark.kind]}
         </span>
       ))}
-      {next && (
-        <button
-          type="button"
-          className="next-step-marker"
-          title={`Next step: ${next.title}`}
-          onClick={next.go}
-        >
-          next step →
-        </button>
-      )}
       {label && (
         <button type="button" className="owner-label" onClick={() => onOpenHome(label.id)}>
           belongs to {label.title}
@@ -856,18 +848,37 @@ function spans(tokens: Token[], keyPrefix: string): ReactNode[] {
   ));
 }
 
-/** The line's tokens, with each traced call wrapped in a button that follows it. */
+/**
+ * The line's tokens, with each traced call wrapped in a button that follows it, and a
+ * "→ step N" badge after each call that leads to another step of the flow.
+ */
 function lineContent(
   tokens: Token[],
   length: number,
   matches: CallMatch[],
+  badges: PlacedBadge[],
   onJump: JumpFn,
   siteTitle: (site: CallSite) => string,
+  onNextStep: (() => void) | undefined,
 ): ReactNode[] {
   const out: ReactNode[] = [];
   let pos = 0;
+  let b = 0;
+  // Plain text up to `to`, with the badges that fall inside it.
+  const text = (to: number, key: string) => {
+    for (; b < badges.length && badges[b]!.at < to; b++) {
+      const { at, target } = badges[b]!;
+      out.push(...spans(slice(tokens, pos, at), `${key}b${b}-`));
+      out.push(
+        <StepBadge key={`badge${b}`} target={target} onJump={onJump} onNextStep={onNextStep} />,
+      );
+      pos = Math.max(pos, at);
+    }
+    out.push(...spans(slice(tokens, pos, to), `${key}-`));
+    pos = Math.max(pos, to);
+  };
   matches.forEach((m, k) => {
-    out.push(...spans(slice(tokens, pos, m.from), `t${k}-`));
+    text(m.from, `t${k}`);
     out.push(
       <button
         key={`call${k}`}
@@ -885,6 +896,40 @@ function lineContent(
     );
     pos = m.to;
   });
-  out.push(...spans(slice(tokens, pos, length), 'end-'));
+  text(length, 'end');
+  // Badges at the very end of the line.
+  for (; b < badges.length; b++) {
+    const { target } = badges[b]!;
+    out.push(
+      <StepBadge key={`badge${b}`} target={target} onJump={onJump} onNextStep={onNextStep} />,
+    );
+  }
   return out;
+}
+
+/** "→ step N": a way to a step this line leads to. The next step's badge stands out. */
+function StepBadge({
+  target,
+  onJump,
+  onNextStep,
+}: {
+  target: StepTarget;
+  onJump: JumpFn;
+  onNextStep: (() => void) | undefined;
+}) {
+  const { step, no, next, via } = target;
+  const through = via.length > 0 ? `, through ${via.join(', ')}` : '';
+  return (
+    <button
+      type="button"
+      className={`step-badge${next ? ' step-badge-next' : ''}`}
+      title={`${next ? 'Next step' : 'Go to step'} ${no}: ${step.title}${through}`}
+      onClick={() =>
+        next && onNextStep ? onNextStep() : onJump(step.file, step.startLine, step.id)
+      }
+    >
+      → step {no}
+      {via.length > 0 && <span className="step-badge-via"> via helper</span>}
+    </button>
+  );
 }

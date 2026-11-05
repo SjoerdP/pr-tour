@@ -1823,23 +1823,36 @@ p.why {
   border-color: var(--fg-muted);
 }
 
-/* On the line that calls the next step: a way there, after any mark badges. */
-.next-step-marker {
-  flex: 0 0 auto;
-  margin: 1px var(--space-2);
+/* "→ step N" right after a call that leads to another step of the flow. Sits in the code
+   text, so it is set apart in the UI font. The next step's badge stands out. */
+.step-badge {
+  display: inline;
+  margin: 0 0 0 var(--space-2);
   padding: 0 var(--space-1);
-  border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent);
+  border: 1px solid var(--border);
   border-radius: 3px;
-  background: var(--accent-soft);
-  color: var(--accent);
+  background: var(--bg);
+  color: var(--fg-muted);
   font-family: var(--font-sans);
   font-size: var(--font-size-tiny);
   line-height: 16px;
+  white-space: nowrap;
   cursor: pointer;
 }
 
+.step-badge:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
 /* Beats the plain button hover, which would turn it grey. */
-.next-step-marker:hover:not(:disabled) {
+.step-badge-next {
+  border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.step-badge-next:hover:not(:disabled) {
   border-color: var(--accent);
   background: color-mix(in srgb, var(--accent) 20%, transparent);
 }
