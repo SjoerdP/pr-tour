@@ -1878,7 +1878,8 @@ p.why {
   font-size: var(--font-size-small);
 }
 
-/* The flow map panel: over the step pane, inside the tour's main column. */
+/* The flow map panel: over the step pane, inside the tour's main column. Its head stays put;
+   the map below it scrolls. */
 .flow-map-panel {
   position: absolute;
   inset: 0;
@@ -1887,8 +1888,12 @@ p.why {
   flex-direction: column;
   gap: var(--space-3);
   padding: var(--space-4);
-  overflow: auto;
   background: var(--bg);
+}
+
+/* Focus goes to the panel itself when it opens: no ring around the whole panel. */
+.flow-map-panel:focus {
+  outline: none;
 }
 
 .flow-map-panel-head {
@@ -1909,8 +1914,11 @@ p.why {
 }
 
 /* Flow map: the flow as a tree of calls. Box styles match the outline's dots: blue for
-   changed, dashed for no changes, orange for read closely. Scrolls inside itself. */
+   changed, dashed for no changes, orange for read closely. Fills the panel and scrolls both
+   ways inside itself. */
 .flow-map {
+  flex: 1 1 auto;
+  min-height: 0;
   overflow: auto;
   max-width: 100%;
   font-size: var(--font-size-small);
@@ -2003,8 +2011,10 @@ p.why {
   border-left: 1px solid var(--border-faint);
 }
 
-/* The arrow into a box: a line down from the caller, with its label. */
+/* The arrow into a box: a line down from the caller, with its label. A long label wraps at
+   the card width instead of widening its column. */
 .flow-map-edge {
+  max-width: 240px;
   margin: 0 0 0 var(--space-4);
   padding: var(--space-2) var(--space-2) var(--space-1);
   border: none;
@@ -2014,6 +2024,7 @@ p.why {
   color: var(--fg-muted);
   font-size: var(--font-size-tiny);
   text-align: left;
+  white-space: normal;
   cursor: pointer;
 }
 
