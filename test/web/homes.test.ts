@@ -5,6 +5,7 @@ import {
   homesInOrder,
   homeTouches,
   nextFlowStart,
+  openingPlace,
   previousFlowStart,
   unseenForReview,
 } from '../../src/web/homes.js';
@@ -129,6 +130,31 @@ describe('previousFlowStart', () => {
 
   it('has nowhere to go from a foundation', () => {
     expect(previousFlowStart(full, 'f2')).toBeUndefined();
+  });
+});
+
+describe('openingPlace', () => {
+  it('opens on the overview when nothing is seen', () => {
+    expect(openingPlace(full, () => false)).toEqual({ overview: true, homeId: 'f1' });
+  });
+
+  it('opens on the first home not seen once the reader started', () => {
+    const seen = new Set(['f1', 'f2']);
+    expect(openingPlace(full, (id) => seen.has(id))).toEqual({
+      overview: false,
+      homeId: 'F1.S1',
+    });
+  });
+
+  it('opens on the first home when everything is seen', () => {
+    expect(openingPlace(full, () => true)).toEqual({ overview: false, homeId: 'f1' });
+  });
+
+  it('a tour without homes opens on the overview', () => {
+    expect(openingPlace(homesInOrder(tour({})), () => false)).toEqual({
+      overview: true,
+      homeId: null,
+    });
   });
 });
 
