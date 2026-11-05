@@ -112,6 +112,7 @@ export function CodeView({
           threads={threadsOn(review.threads, file)}
           drafts={draftsOn(review.drafts, file)}
           review={review}
+          readOnly={readOnly}
         />
         <p className="muted">Binary file changed</p>
       </>
@@ -483,6 +484,7 @@ function FileCode({
           threads={threadsAt.get(-1) ?? NO_THREADS}
           drafts={draftsAt.get(-1) ?? NO_DRAFTS}
           review={review}
+          readOnly={readOnly}
         />
         {segments.map((seg) =>
           seg.kind === 'fold' ? (
@@ -544,6 +546,7 @@ function FileCode({
                       threads={rowThreads ?? NO_THREADS}
                       drafts={rowDrafts ?? NO_DRAFTS}
                       review={review}
+                      readOnly={readOnly}
                       composer={composerRow === i ? composer : null}
                     />
                   )}
