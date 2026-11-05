@@ -2009,17 +2009,59 @@ p.why {
   align-items: flex-start;
 }
 
+/* The lines between a step and the steps it calls, as in a tree: a short trunk down from the
+   step's box, a bar across the top of its calls, and each call's arrow hanging off the bar.
+   The trunk and the first arrow sit on one line, so a single call runs straight down. */
 .flow-map-branch > .flow-map-row {
+  position: relative;
   margin-left: var(--space-4);
-  padding-left: var(--space-3);
-  border-left: 1px solid var(--border-faint);
+  padding-top: var(--space-2);
+}
+
+.flow-map-branch > .flow-map-row::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  height: var(--space-2);
+  border-left: 2px solid var(--fg-muted);
+}
+
+.flow-map-branch > .flow-map-row > .flow-map-branch {
+  position: relative;
+}
+
+/* The bar: across each call but the last, and across the gap before each call but the first.
+   A call that starts a new grid row (after every 4th) gets no bar to its left, and the 4th
+   no bar to its right, so a wrapped row does not point at nothing. */
+.flow-map-branch > .flow-map-row > .flow-map-branch:not(:last-child)::after,
+.flow-map-branch > .flow-map-row > .flow-map-branch:not(:first-child)::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  border-top: 2px solid var(--fg-muted);
+}
+
+.flow-map-branch > .flow-map-row > .flow-map-branch:not(:last-child)::after {
+  left: 0;
+  right: 0;
+}
+
+.flow-map-branch > .flow-map-row > .flow-map-branch:not(:first-child)::before {
+  left: calc(-1 * var(--space-4));
+  width: calc(var(--space-4) + 2px);
+}
+
+.flow-map-branch > .flow-map-row > .flow-map-branch:nth-child(4n + 1)::before,
+.flow-map-branch > .flow-map-row > .flow-map-branch:nth-child(4n)::after {
+  display: none;
 }
 
 /* The arrow into a box: a line down from the caller, with its label. A long label wraps at
    the card width instead of widening its column. */
 .flow-map-edge {
   max-width: 240px;
-  margin: 0 0 0 var(--space-4);
+  margin: 0;
   padding: var(--space-2) var(--space-2) var(--space-1);
   border: none;
   border-left: 2px solid var(--fg-muted);

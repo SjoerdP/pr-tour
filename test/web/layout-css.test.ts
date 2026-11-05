@@ -129,6 +129,20 @@ describe('tour layout CSS', () => {
     expect(rule('.flow-map')['min-height']).toBe('0');
   });
 
+  it('the calls of a step hang off one line: a trunk, a bar across them, an arrow each', () => {
+    const trunk = rule('.flow-map-branch > .flow-map-row::before');
+    expect(trunk['border-left']).toBe('2px solid var(--fg-muted)');
+    expect(trunk.top).toBe('0');
+    expect(trunk.left).toBe('0');
+    const bar =
+      '.flow-map-branch > .flow-map-row > .flow-map-branch:not(:last-child)::after,\n' +
+      '.flow-map-branch > .flow-map-row > .flow-map-branch:not(:first-child)::before';
+    expect(rule(bar)['border-top']).toBe('2px solid var(--fg-muted)');
+    // The arrow sits at the left edge of its call, right under the bar and the trunk.
+    expect(rule('.flow-map-edge').margin).toBe('0');
+    expect(rule('.flow-map-edge')['border-left']).toBe('2px solid var(--fg-muted)');
+  });
+
   it('a long arrow label wraps at the card width', () => {
     const edge = rule('.flow-map-edge');
     expect(edge['max-width']).toBe('240px');
