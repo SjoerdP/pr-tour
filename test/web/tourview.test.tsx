@@ -23,6 +23,7 @@ vi.mock('../../src/web/CodeView.js', () => ({
     focus,
     homeId,
     plain,
+    reveal,
     onJump,
     onOpenHome,
     onNextStep,
@@ -32,13 +33,18 @@ vi.mock('../../src/web/CodeView.js', () => ({
     focus: { start: number } | null;
     homeId: string;
     plain?: boolean;
+    reveal?: { at: unknown } | null;
     onJump: (file: string, line: number, toStep?: string | null) => void;
     onOpenHome: (homeId: string) => void;
     onNextStep?: () => void;
     review?: { state: string };
   }) => (
     <div>
-      <div data-testid="code-view" data-plain={plain ? 'yes' : 'no'}>{`${homeId} ${file}`}</div>
+      <div
+        data-testid="code-view"
+        data-plain={plain ? 'yes' : 'no'}
+        data-reveal={reveal ? JSON.stringify(reveal.at) : undefined}
+      >{`${homeId} ${file}`}</div>
       <div data-testid="code-review">{review?.state ?? 'none'}</div>
       <div data-testid="code-focus">{focus?.start}</div>
       <button type="button" onClick={() => onJump('src/fees.ts', 12)}>
@@ -715,5 +721,166 @@ describe('TourView', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'next step marker' }));
     expect(outlineItem('Repay tests').getAttribute('aria-current')).toBe('step');
+  });
+});
+
+describe('flow map', () => {
+  /** The tour's flow with three linked steps: S1 calls S2 on line 15, S2 calls S3 on line 20. */
+  function threeSteps(): Tour {
+    const tour = makeTour();
+    const flow = tour.flows[0]!;
+    const first = flow.steps[0]!;
+    const at = (id: string, title: string, file: string) => ({
+      ...first,
+      id,
+      title,
+      file,
+      homes: [{ file, side: 'new' as const, start: 1, end: 30 }],
+    });
+    return {
+      ...tour,
+      flows: [
+        {
+          ...flow,
+          steps: [
+            first,
+            at('F1.S2', 'Charge the fee', 'src/fees.ts'),
+            at('F1.S3', 'Post to the ledger', 'src/ledger/post.ts'),
+          ],
+          links: [
+            { from: 'F1.S1', to: 'F1.S2', line: 15, how: 'call', source: 'both', check: 'proven' },
+            { from: 'F1.S2', to: 'F1.S3', line: 20, how: 'call', source: 'both', check: 'proven' },
+          ],
+        },
+      ],
+      hashes: { ...tour.hashes, 'F1.S2': 'h-s2', 'F1.S3': 'h-s3' },
+    };
+  }
+
+  async function showStep(title: string) {
+    getPr.mockResolvedValue(response({ tour: threeSteps() }));
+    render(
+      <>
+        <textarea aria-label="note" />
+        <TourView repo="acme/loans" pr={42} />
+      </>,
+    );
+    await screen.findByRole('navigation', { name: 'Tour outline' });
+    fireEvent.click(outlineItem(title));
+  }
+
+  const map = () => screen.queryByRole('dialog', { name: 'Flow map: Repay a loan' });
+
+  it('the Flow map button and m open the map of the current flow', async () => {
+    await showStep('Validate and record');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Flow map' }));
+    expect(map()).toBeTruthy();
+    fireEvent.keyDown(window, { key: 'Escape' });
+    expect(map()).toBeNull();
+    fireEvent.keyDown(window, { key: 'm' });
+    expect(map()).toBeTruthy();
+    fireEvent.click(within(map()!).getByRole('button', { name: 'Close' }));
+    expect(map()).toBeNull();
+  });
+
+  it('opening the map moves focus into it; closing puts focus back on the button', async () => {
+    await showStep('Validate and record');
+    const button = screen.getByRole('button', { name: 'Flow map' });
+
+    fireEvent.click(button);
+    expect(map()!.getAttribute('aria-modal')).toBe('true');
+    expect(document.activeElement).toBe(map());
+    fireEvent.keyDown(document.activeElement!, { key: 'Escape' });
+    expect(map()).toBeNull();
+    expect(document.activeElement).toBe(button);
+
+    fireEvent.keyDown(window, { key: 'm' });
+    expect(document.activeElement).toBe(map());
+    fireEvent.click(within(map()!).getByRole('button', { name: 'Close' }));
+    expect(document.activeElement).toBe(button);
+
+    fireEvent.keyDown(window, { key: 'm' });
+    fireEvent.keyDown(document.activeElement!, { key: 'm' });
+    expect(map()).toBeNull();
+    expect(document.activeElement).toBe(button);
+  });
+
+  it('clicking a box goes to that step and closes the map', async () => {
+    await showStep('Validate and record');
+    fireEvent.keyDown(window, { key: 'm' });
+
+    fireEvent.click(within(map()!).getByRole('button', { name: /Step 3/ }));
+    expect(screen.getByTestId('step-trail').textContent).toContain('step 3 of 3');
+    expect(map()).toBeNull();
+  });
+
+  it('clicking an arrow opens the calling step at the calling line', async () => {
+    await showStep('Post to the ledger');
+    fireEvent.keyDown(window, { key: 'm' });
+
+    fireEvent.click(within(map()!).getByRole('button', { name: /^line 20/ }));
+    expect(screen.getByTestId('step-trail').textContent).toContain('step 2 of 3');
+    expect(map()).toBeNull();
+    expect(screen.getByTestId('code-view').getAttribute('data-reveal')).toBe(
+      JSON.stringify({ path: 'src/fees.ts', side: 'new', line: 20 }),
+    );
+  });
+
+  it('the map closes when the reader moves to a foundation', async () => {
+    await showStep('Validate and record');
+    fireEvent.keyDown(window, { key: 'm' });
+    expect(map()).toBeTruthy();
+
+    fireEvent.click(outlineItem('Create repayments table'));
+    expect(map()).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Flow map' })).toBeNull();
+    fireEvent.keyDown(window, { key: 'm' });
+    expect(map()).toBeNull();
+  });
+
+  it('Escape closes the map before it goes back from a followed call', async () => {
+    await showStep('Validate and record');
+    // A call site without a step: a look from this step.
+    fireEvent.click(screen.getByRole('button', { name: 'site to nothing' }));
+    expect(screen.getByRole('button', { name: 'Back to this step' })).toBeTruthy();
+    fireEvent.keyDown(window, { key: 'm' });
+
+    fireEvent.keyDown(window, { key: 'Escape' });
+    expect(map()).toBeNull();
+    expect(screen.getByRole('button', { name: 'Back to this step' })).toBeTruthy();
+    fireEvent.keyDown(window, { key: 'Escape' });
+    expect(screen.queryByRole('button', { name: 'Back to this step' })).toBeNull();
+  });
+
+  it('the map closes when a rebuild swaps in a new tour', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const rebuilt = { ...threeSteps(), headSha: 'c'.repeat(40), createdAt: '2026-10-28T12:00:00Z' };
+    getPr
+      .mockResolvedValueOnce(response({ tour: threeSteps(), outdated: true }))
+      .mockResolvedValue(response({ tour: rebuilt, job: job('done', ['Saved']) }));
+    buildTour.mockResolvedValue({ job: job('running', ['Cloning']) });
+    render(<TourView repo="acme/loans" pr={42} />);
+    await screen.findByRole('navigation', { name: 'Tour outline' });
+    fireEvent.click(outlineItem('Validate and record'));
+    fireEvent.keyDown(window, { key: 'm' });
+    expect(map()).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Rebuild tour' }));
+    await screen.findByText('Cloning');
+    await act(() => vi.advanceTimersByTimeAsync(2000));
+
+    expect(screen.getByTestId('code-view').textContent).toContain('F1.S1');
+    expect(map()).toBeNull();
+    // Still a step: m opens the map of the new tour.
+    fireEvent.keyDown(window, { key: 'm' });
+    expect(map()).toBeTruthy();
+  });
+
+  it('m in a text field types and does not open the map', async () => {
+    await showStep('Validate and record');
+
+    fireEvent.keyDown(screen.getByLabelText('note'), { key: 'm' });
+    expect(map()).toBeNull();
   });
 });

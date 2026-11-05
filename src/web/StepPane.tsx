@@ -1,4 +1,12 @@
-import { useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
+import {
+  useEffect,
+  useId,
+  useRef,
+  useState,
+  type KeyboardEvent,
+  type ReactNode,
+  type Ref,
+} from 'react';
 import type { Flow, Mark, Range, SideEffect, Step, Tour } from '../shared/tour.js';
 import type { Focus as CodeFocus, Reveal } from './code-lines.js';
 import { CodeView } from './CodeView.js';
@@ -170,6 +178,10 @@ type Props = {
   onRevealLine: (file: string, line: number) => void;
   onBack: () => void;
   onOpenHome: (homeId: string) => void;
+  /** Opens the map of the step's flow (shown only for steps). */
+  onOpenMap: () => void;
+  /** The Flow map button: focus goes back to it when the map closes. */
+  mapButtonRef?: Ref<HTMLButtonElement>;
   nav: PaneNav;
   /** The PR's review, shown and added to in the code view. */
   review: ReviewState;
@@ -188,6 +200,8 @@ export function StepPane({
   onRevealLine,
   onBack,
   onOpenHome,
+  onOpenMap,
+  mapButtonRef,
   nav,
   review,
 }: Props) {
@@ -212,6 +226,17 @@ export function StepPane({
             </p>
             {/* New home, shut again. */}
             {home.kind === 'step' && <AboutFlow key={home.id} flow={home.flow} />}
+            {home.kind === 'step' && (
+              <button
+                type="button"
+                className="link-button flow-map-button"
+                ref={mapButtonRef}
+                onClick={onOpenMap}
+                title={withKey('Flow map', 'm')}
+              >
+                Flow map
+              </button>
+            )}
           </div>
           <h2 className="step-title" id={`step-title-${home.id}`}>
             {homeTitle(home)}
@@ -298,7 +323,7 @@ export function StepPane({
         >
           <span aria-hidden="true">← </span>Previous step
         </button>
-        <p className="key-hints">j / k steps · [ ] flows · n / p changes · f whole file</p>
+        <p className="key-hints">j / k steps · [ ] flows · m map · n / p changes · f whole file</p>
         <button
           type="button"
           className="primary"

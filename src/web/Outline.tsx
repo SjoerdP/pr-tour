@@ -344,7 +344,7 @@ const EFFECT_WORDS: Record<SideEffect['kind'], string> = {
 };
 
 /** Side effects grouped by kind, in first-seen order: one word each, with all their labels. */
-function effectWords(effects: SideEffect[]): Array<{ word: string; labels: string[] }> {
+export function effectWords(effects: SideEffect[]): Array<{ word: string; labels: string[] }> {
   const byKind = new Map<SideEffect['kind'], string[]>();
   for (const e of effects) byKind.set(e.kind, [...(byKind.get(e.kind) ?? []), e.label]);
   return [...byKind].map(([kind, labels]) => ({

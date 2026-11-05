@@ -116,6 +116,26 @@ describe('tour layout CSS', () => {
     expect(claude['border-style']).toBe('dashed');
   });
 
+  it('the flow map scrolls inside itself', () => {
+    expect(rule('.flow-map')['overflow']).toBe('auto');
+  });
+
+  it('the flow map fills the panel below its head and scrolls there, not the panel', () => {
+    const panel = rule('.flow-map-panel');
+    expect(panel.display).toBe('flex');
+    expect(panel['flex-direction']).toBe('column');
+    expect(panel.overflow).toBeUndefined();
+    expect(rule('.flow-map').flex).toBe('1 1 auto');
+    expect(rule('.flow-map')['min-height']).toBe('0');
+  });
+
+  it('a long arrow label wraps at the card width', () => {
+    const edge = rule('.flow-map-edge');
+    expect(edge['max-width']).toBe('240px');
+    expect(edge['white-space']).toBe('normal');
+    expect(rule('.flow-map-card').width).toBe('240px');
+  });
+
   it('colors and outline font sizes come from tokens', () => {
     const body = css.slice(css.indexOf('*,'));
     expect(body).not.toMatch(/font-size:\s*\d+px/);

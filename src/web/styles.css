@@ -547,6 +547,7 @@ pre {
 }
 
 .tour-main {
+  position: relative;
   display: flex;
   flex-direction: column;
   min-width: 0;
@@ -1874,5 +1875,323 @@ p.why {
 .code-check p,
 .code-check ul {
   margin: var(--space-1) 0;
+  font-size: var(--font-size-small);
+}
+
+/* The flow map panel: over the step pane, inside the tour's main column. Its head stays put;
+   the map below it scrolls. */
+.flow-map-panel {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  background: var(--bg);
+}
+
+/* Focus goes to the panel itself when it opens: no ring around the whole panel. */
+.flow-map-panel:focus {
+  outline: none;
+}
+
+.flow-map-panel-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.flow-map-panel-title {
+  margin: 0;
+  font-size: var(--font-size-title);
+  font-weight: 600;
+}
+
+.flow-map-button {
+  font-size: var(--font-size-small);
+}
+
+/* Flow map: the flow as a tree of calls. Box styles match the outline's dots: blue for
+   changed, dashed for no changes, orange for read closely. Fills the panel and scrolls both
+   ways inside itself. */
+.flow-map {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  max-width: 100%;
+  font-size: var(--font-size-small);
+}
+
+.flow-map-key {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-4);
+  margin: 0 0 var(--space-3);
+  padding: 0;
+  list-style: none;
+  color: var(--fg-muted);
+}
+
+.flow-map-key li {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.flow-map-key-loop {
+  color: var(--warn);
+}
+
+.flow-map-swatch {
+  display: inline-block;
+  width: 14px;
+  height: 10px;
+  border: 1px solid var(--border);
+  border-radius: 2px;
+}
+
+.flow-map-swatch.changed {
+  border-left: 3px solid var(--accent);
+}
+
+.flow-map-swatch.unchanged {
+  border-style: dashed;
+  border-color: var(--fg-faint);
+}
+
+.flow-map-swatch.read-closely {
+  outline: 1.5px solid var(--warn);
+  outline-offset: 1px;
+}
+
+.flow-map-notice {
+  margin: 0 0 var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--pending-border);
+  border-radius: var(--radius);
+  background: var(--pending-bg);
+}
+
+.flow-map-entry {
+  display: inline-block;
+  margin: 0 0 var(--space-1);
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-small);
+  background: var(--bg-subtle);
+  font-family: var(--font-mono);
+}
+
+.flow-map-tree,
+.flow-map-row {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* Calls from one step side by side, in calling-line order; more than 4 wrap. Each column is
+   as wide as the branch below it, so the map grows sideways and the panel scrolls. */
+.flow-map-row {
+  display: grid;
+  grid-template-columns: repeat(var(--flow-map-columns), max-content);
+  gap: var(--space-3) var(--space-4);
+  align-items: start;
+}
+
+.flow-map-branch {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+}
+
+.flow-map-branch > .flow-map-row {
+  margin-left: var(--space-4);
+  padding-left: var(--space-3);
+  border-left: 1px solid var(--border-faint);
+}
+
+/* The arrow into a box: a line down from the caller, with its label. A long label wraps at
+   the card width instead of widening its column. */
+.flow-map-edge {
+  max-width: 240px;
+  margin: 0 0 0 var(--space-4);
+  padding: var(--space-2) var(--space-2) var(--space-1);
+  border: none;
+  border-left: 2px solid var(--fg-muted);
+  border-radius: 0;
+  background: none;
+  color: var(--fg-muted);
+  font-size: var(--font-size-tiny);
+  text-align: left;
+  white-space: normal;
+  cursor: pointer;
+}
+
+.flow-map-edge::before {
+  content: '↓ ';
+}
+
+.flow-map-edge.unproven {
+  border-left-style: dashed;
+}
+
+.flow-map-edge:hover {
+  color: var(--accent);
+}
+
+.flow-map-card {
+  width: 240px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg);
+}
+
+.flow-map-card.changed {
+  border-left: 3px solid var(--accent);
+}
+
+.flow-map-card.unchanged {
+  border-style: dashed;
+  border-color: var(--fg-faint);
+}
+
+/* An outline, not a border colour: a changed box keeps its blue edge. */
+.flow-map-card.read-closely {
+  outline: 2px solid var(--warn);
+  outline-offset: 1px;
+}
+
+.flow-map-box {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+  padding: var(--space-2);
+  border: none;
+  border-radius: var(--radius);
+  background: none;
+  color: var(--fg);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.flow-map-box:hover {
+  background: var(--bg-hover);
+}
+
+.flow-map-box[aria-current='step'] {
+  background: var(--accent-soft);
+}
+
+.flow-map-head {
+  display: flex;
+  gap: var(--space-2);
+  min-width: 0;
+  max-width: 100%;
+}
+
+.flow-map-no {
+  flex: none;
+  color: var(--fg-muted);
+}
+
+.flow-map-name,
+.flow-map-file,
+.flow-map-title {
+  overflow: hidden;
+  max-width: 100%;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.flow-map-name,
+.flow-map-file {
+  font-family: var(--font-mono);
+}
+
+.flow-map-file {
+  color: var(--fg-muted);
+  font-size: var(--font-size-tiny);
+}
+
+.flow-map-title {
+  font-weight: 600;
+}
+
+.flow-map-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+  margin-top: 2px;
+}
+
+.flow-map-tag {
+  padding: 0 var(--space-1);
+  border: 1px solid var(--border-faint);
+  border-radius: 3px;
+  color: var(--fg-muted);
+  font-size: var(--font-size-tiny);
+}
+
+.flow-map-here {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--accent-fg);
+}
+
+.flow-map-rc,
+.flow-map-loop {
+  border-color: var(--warn-border);
+  background: var(--warn-bg);
+  color: var(--warn);
+}
+
+.flow-map-loop {
+  font-weight: 600;
+}
+
+.flow-map-notes {
+  display: flex;
+  flex-direction: column;
+  padding: 0 var(--space-2) var(--space-2);
+}
+
+.flow-map-note,
+.flow-map-fold {
+  padding: 2px 0;
+  border: none;
+  background: none;
+  color: var(--fg-muted);
+  font-size: var(--font-size-tiny);
+  text-align: left;
+  cursor: pointer;
+}
+
+.flow-map-loop-notes .flow-map-note {
+  color: var(--warn);
+  font-weight: 600;
+}
+
+.flow-map-note:hover,
+.flow-map-fold:hover {
+  text-decoration: underline;
+}
+
+.flow-map-fold {
+  margin: 0 var(--space-2) var(--space-2);
+  color: var(--accent);
+}
+
+.flow-map-unlinked {
+  margin-top: var(--space-5);
+  padding-top: var(--space-3);
+  border-top: 1px dashed var(--border);
+}
+
+.flow-map-unlinked h3 {
+  margin: 0 0 var(--space-2);
+  color: var(--fg-muted);
   font-size: var(--font-size-small);
 }
