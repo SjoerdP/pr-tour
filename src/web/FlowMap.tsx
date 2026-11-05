@@ -76,6 +76,22 @@ function holds(node: MapNode, id: string): boolean {
   return node.step.id === id || node.children.some((c) => holds(c, id));
 }
 
+/** The ids of the folded steps above step `id`: what must open to show its box. */
+function foldedAbove(
+  map: ReturnType<typeof buildFlowMap>,
+  id: string,
+  isOpen: (node: MapNode) => boolean,
+): string[] {
+  const out: string[] = [];
+  const walk = (node: MapNode) => {
+    if (!node.children.some((c) => holds(c, id))) return;
+    if (!isOpen(node)) out.push(node.step.id);
+    node.children.forEach(walk);
+  };
+  [map.root, ...map.unlinked].forEach((n) => n && walk(n));
+  return out;
+}
+
 function hasLoop(node: MapNode): boolean {
   return node.loopsFrom.length > 0 || node.children.some(hasLoop);
 }
@@ -106,10 +122,19 @@ export function FlowMap({ flow, headingLevel = 3, ...props }: Props): ReactNode 
     node.edge.from === null ||
     node.changesBelow > 0 ||
     node.children.some((c) => holds(c, props.currentId));
-  // A branch that holds the peeked step is always open; elsewhere the reader's choice wins.
-  const holdsPeeked = (node: MapNode) =>
-    !!peekedId && node.children.some((c) => holds(c, peekedId));
-  const isOpen = (node: MapNode) => holdsPeeked(node) || (opened[node.step.id] ?? startsOpen(node));
+  const isOpen = (node: MapNode) => opened[node.step.id] ?? startsOpen(node);
+
+  // When another step is peeked, unfold each folded branch that holds it, once. This runs
+  // during render, so the box is drawn before the scroll effect looks for it. After that the
+  // reader's fold button works as usual.
+  const [unfoldedFor, setUnfoldedFor] = useState<string | null | undefined>(undefined);
+  if (peekedId !== unfoldedFor) {
+    setUnfoldedFor(peekedId);
+    const folded = peekedId ? foldedAbove(map, peekedId, isOpen) : [];
+    if (folded.length > 0) {
+      setOpened((o) => ({ ...o, ...Object.fromEntries(folded.map((id) => [id, true])) }));
+    }
+  }
   const ctx: Ctx = {
     ...props,
     stepOf: (id) => steps.get(id)!,

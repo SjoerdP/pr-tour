@@ -380,4 +380,71 @@ describe('FlowMap', () => {
       else delete (Element.prototype as Partial<Element>).scrollIntoView;
     }
   });
+
+  /** A 14-step flow where S2 starts folded: it holds S3, S4 and S5, none of them changed. */
+  function longFlow(): Flow {
+    const ids = Array.from({ length: 14 }, (_, i) => `S${i + 1}`);
+    const steps = ids.map((id) => step(id, id === 'S6' ? { homes: [home] } : {}));
+    const links = [
+      link('S1', 'S2', 10),
+      link('S2', 'S3', 20),
+      link('S2', 'S4', 21),
+      link('S2', 'S5', 22),
+      ...ids.slice(5).map((id, i) => link('S1', id, 30 + i)),
+    ];
+    return flow(steps, links);
+  }
+
+  /** Shows `f` and returns a function that peeks another step. */
+  function showPeeking(f: Flow, peekedId: string | null) {
+    const { view, onOpenStep, onOpenLine } = show(f, 'S1', peekedId);
+    return (next: string | null) =>
+      view.rerender(
+        <FlowMap
+          flow={f}
+          currentId="S1"
+          peekedId={next}
+          onOpenStep={onOpenStep}
+          onOpenLine={onOpenLine}
+        />,
+      );
+  }
+
+  it('a branch unfolded by the peek folds again with its button, and stays folded', () => {
+    const peek = showPeeking(longFlow(), 'S5');
+    expect(box(5)).toBeTruthy();
+    fireEvent.click(within(card(2)).getByRole('button', { name: 'Hide steps below' }));
+    expect(screen.queryByText('Step 5')).toBeNull();
+    // Peeking a step outside the branch leaves the reader's fold alone.
+    peek('S6');
+    expect(screen.queryByText('Step 5')).toBeNull();
+    expect(within(card(2)).getByRole('button', { name: '3 steps below' })).toBeTruthy();
+  });
+
+  it('scrolls to a box that only shows once its branch unfolds', () => {
+    const scroll = vi.fn();
+    const before = Object.getOwnPropertyDescriptor(Element.prototype, 'scrollIntoView');
+    Element.prototype.scrollIntoView = scroll;
+    try {
+      const peek = showPeeking(longFlow(), null);
+      expect(screen.queryByText('Step 4')).toBeNull();
+      peek('S4');
+      expect(scroll).toHaveBeenCalledWith({ block: 'nearest', inline: 'center' });
+      expect(scroll.mock.contexts.at(-1)).toBe(box(4));
+    } finally {
+      if (before) Object.defineProperty(Element.prototype, 'scrollIntoView', before);
+      else delete (Element.prototype as Partial<Element>).scrollIntoView;
+    }
+  });
+
+  it('the reader fold choice wins on a branch without the peeked step', () => {
+    const peek = showPeeking(longFlow(), 'S6');
+    fireEvent.click(within(card(2)).getByRole('button', { name: '3 steps below' }));
+    expect(box(3)).toBeTruthy();
+    peek('S7');
+    expect(box(3)).toBeTruthy();
+    fireEvent.click(within(card(2)).getByRole('button', { name: 'Hide steps below' }));
+    peek('S8');
+    expect(screen.queryByText('Step 3')).toBeNull();
+  });
 });
