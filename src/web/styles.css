@@ -2538,3 +2538,90 @@ p.why {
   min-height: 0;
   overflow: auto;
 }
+
+/* A flow map with a peek below it. In the map panel the two split the panel's height; the
+   divider sets the map's share. In an overview card the map keeps at most 300px and the peek
+   gets its own height. */
+.map-peek {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.map-peek.panel {
+  flex: 1 1 auto;
+}
+
+.map-peek-map {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.map-peek.card .map-peek-map {
+  flex: none;
+  max-height: 300px;
+}
+
+.map-peek.panel.peeking .map-peek-map {
+  flex: var(--map-share) 1 0;
+}
+
+.map-peek.panel .map-peek-peek {
+  flex: calc(1 - var(--map-share)) 1 0;
+}
+
+.map-peek.card .map-peek-peek {
+  height: var(--peek-height);
+}
+
+.map-peek-divider {
+  flex: none;
+  height: 6px;
+  margin: var(--space-1) 0;
+  border-radius: 3px;
+  background: var(--border-faint);
+  cursor: row-resize;
+  touch-action: none;
+}
+
+.map-peek-divider:hover,
+.map-peek-divider:focus-visible {
+  background: var(--accent);
+  outline: none;
+}
+
+.map-peek-peek {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.map-peek-peek > .peek {
+  flex: 1 1 auto;
+  height: auto;
+}
+
+/* Only on narrow windows, where the peek covers the map. */
+.map-peek-back {
+  display: none;
+}
+
+/* Narrow windows: no room for both, so the peek covers the map; "← Map" goes back. */
+@media (max-width: 800px) {
+  .map-peek.peeking .map-peek-map,
+  .map-peek.peeking .map-peek-divider {
+    display: none;
+  }
+
+  .map-peek.panel .map-peek-peek {
+    flex: 1 1 auto;
+  }
+
+  .map-peek-back {
+    display: inline-block;
+    align-self: flex-start;
+    margin: var(--space-2) var(--space-4) 0;
+  }
+}

@@ -19,6 +19,8 @@ type Props = {
   stepId: string;
   /** A calling line to bring into view and flash; null for the step's start. */
   line: number | null;
+  /** Changes when the same line is asked for again, so it flashes again. */
+  nonce?: number;
   seen: boolean;
   /** CodeView's keys: true only for the peek that should answer n / p / f. */
   keys: boolean;
@@ -40,6 +42,7 @@ export function Peek({
   flow,
   stepId,
   line,
+  nonce,
   seen,
   keys,
   review,
@@ -51,13 +54,14 @@ export function Peek({
   const index = flow.steps.findIndex((s) => s.id === stepId);
   const step = flow.steps[index];
   const file = step?.file;
-  // A new reveal only when the place changes, not on every render.
+  // A new reveal only when the place (or the nonce) changes, not on every render.
   const reveal = useMemo(
     (): Reveal | null =>
       line === null || file === undefined
         ? null
         : { at: { path: file, side: 'new', line }, seq: ++revealSeq },
-    [file, line],
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- the nonce only asks for a new reveal
+    [file, line, nonce],
   );
   if (!step) return null;
 

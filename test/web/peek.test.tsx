@@ -133,7 +133,7 @@ function renderPeek(props: Partial<Props> = {}) {
     onOpenInTour: vi.fn(),
     onClose: vi.fn(),
   };
-  render(
+  const view = render(
     <Peek
       repo="acme/loans"
       pr={42}
@@ -148,7 +148,7 @@ function renderPeek(props: Partial<Props> = {}) {
       {...props}
     />,
   );
-  return handlers;
+  return { ...handlers, view };
 }
 
 beforeEach(() => {
@@ -246,5 +246,40 @@ describe('Peek', () => {
     renderPeek();
     await screen.findByText('new five');
     expect(screen.queryByRole('button', { name: /^Comment on/ })).toBeNull();
+  });
+
+  it('flashes the same line again when the nonce changes', async () => {
+    const scrollIntoView = vi.fn();
+    Element.prototype.scrollIntoView = scrollIntoView;
+    try {
+      const props = { stepId: 'F1.S1', line: 6, nonce: 1 };
+      const { view } = renderPeek(props);
+      await screen.findByText('new five');
+      await vi.waitFor(() => expect(scrollIntoView).toHaveBeenCalled());
+      const flow = makeFlow();
+      const again = () =>
+        view.rerender(
+          <Peek
+            repo="acme/loans"
+            pr={42}
+            tour={makeTour(flow)}
+            flow={flow}
+            seen={false}
+            keys
+            review={fakeReview()}
+            onMove={vi.fn()}
+            onMarkSeen={vi.fn()}
+            onOpenInTour={vi.fn()}
+            onClose={vi.fn()}
+            {...props}
+            nonce={2}
+          />,
+        );
+      scrollIntoView.mockClear();
+      again();
+      await vi.waitFor(() => expect(scrollIntoView).toHaveBeenCalled());
+    } finally {
+      delete (Element.prototype as Partial<Element>).scrollIntoView;
+    }
   });
 });
