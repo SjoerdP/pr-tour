@@ -2451,3 +2451,90 @@ p.why {
   justify-content: flex-end;
   margin-top: var(--space-5);
 }
+
+/* A peek: one step of a flow under the map. The head stays put; the code scrolls. */
+.peek {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  height: 100%;
+  border-top: 1px solid var(--border);
+  background: var(--bg);
+}
+
+.peek-head {
+  flex: none;
+  padding: var(--space-3) var(--space-4) var(--space-2);
+  border-bottom: 1px solid var(--border-faint);
+}
+
+.peek-trail {
+  margin: 0;
+  color: var(--fg-muted);
+  font-size: var(--font-size-small);
+}
+
+.peek-title-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-2) var(--space-3);
+  margin-top: var(--space-1);
+}
+
+.peek-title {
+  margin: 0;
+  font-size: var(--font-size);
+  font-weight: 600;
+}
+
+.peek-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-2);
+  font-size: var(--font-size-small);
+}
+
+/* Like the map's box tags, so the peek reads as the box it came from. */
+.peek-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+  margin: var(--space-2) 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.peek-tags li {
+  padding: 0 var(--space-1);
+  border: 1px solid var(--border-faint);
+  border-radius: 3px;
+  color: var(--fg-muted);
+  font-size: var(--font-size-tiny);
+}
+
+.peek-tags .peek-tag-risk {
+  border-color: var(--warn-border);
+  background: var(--warn-bg);
+  color: var(--warn);
+}
+
+.peek-tags .peek-tag-seen {
+  border-color: color-mix(in srgb, var(--add) 30%, transparent);
+  color: var(--add);
+}
+
+.peek-reason {
+  max-width: var(--prose-width);
+  margin: var(--space-2) 0 0;
+  color: var(--warn);
+  font-size: var(--font-size-small);
+}
+
+.peek-code {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+}

@@ -33,7 +33,7 @@ function firstRange(homes: Range[], file: string): Focus {
   return null;
 }
 
-function codeTarget(home: Home): { file: string; focus: Focus } {
+export function codeTarget(home: Home): { file: string; focus: Focus } {
   switch (home.kind) {
     case 'step': {
       // The function the code check pinned the step to, else the step's own lines.
@@ -347,14 +347,14 @@ export function StepPane({
   );
 }
 
-const CAME_FROM_LABEL: Record<CameFrom['how'], string> = {
+export const CAME_FROM_LABEL: Record<CameFrom['how'], string> = {
   call: 'Called from',
   service: 'Request from',
   event: 'Event from',
 };
 
 /** The tag that says how the code check backs up the link; null when it says nothing. */
-function proofTag(check: CameFrom['check'], source: CameFrom['source']): ReactNode {
+export function proofTag(check: CameFrom['check'], source: CameFrom['source']): ReactNode {
   if (check === 'proven') {
     return (
       <span className="came-tag came-tag-proven">
