@@ -64,7 +64,7 @@ describe('top bar', () => {
     expect(within(bar).getByRole('heading', { level: 1 }).textContent).toBe(
       'acme/loans#42 Early repayment',
     );
-    expect(within(bar).getByText('2 flows · 1 / 4 seen · notes by the author')).toBeTruthy();
+    expect(within(bar).getByText('2 flows · 1 / 9 seen · notes by the author')).toBeTruthy();
   });
 
   it('has a button that opens the PR on GitHub in a new tab', async () => {

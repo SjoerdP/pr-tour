@@ -108,3 +108,38 @@ From the benchmark runs for #8. Three runs per version, same PR head commit.
    (`--settings '{"disableAllHooks":true}'`). Hooks can add their own context to every build, so
    turning them off may make builds more predictable. It was left out of #8, because it changes
    what Claude sees and was not measured on its own.
+
+## Ideas from using pr-tour (2026-11-05)
+
+Planned order: step counts and numbers in the outline (done on `feat/outline-step-count`),
+then "→ step N" badges in the code, then the flow map, then the demo tour below.
+
+### "→ step N" badges in the code
+
+- Every call into a tour step gets a small "→ step N" badge, right after the call (option A,
+  chosen over a badge at the end of the line). The call that leads to the next step gets the
+  stronger colour. This replaces the "next step →" marker at the far right of the line.
+- A call that reaches a step through a helper also gets one: "→ step 3 (through helper)".
+  Clicking it goes to the step, not to the helper.
+- Badges come only from what the code check found (call sites and proven links), so the same
+  tour always shows the same badges. A link only Claude claims gets no badge, or a weaker one.
+
+### Demo tour with a step-through (after the flow map)
+
+New users do not know what the outline and code marks mean: the filled dot (the step has
+changes), the hollow dot (no changes, here to show the flow), step numbers, "Called from",
+the "→ step N" badges, seen counts and the keys.
+
+- Ship a made-up demo PR and tour inside pr-tour, in the style of the `acme/loans` test
+  fixtures. It needs no GitHub and no Claude build, so it works offline right after install.
+- A fixed demo can show every element on purpose. A real tour differs per build, so a
+  walkthrough on the reader's first real PR cannot count on what it will contain.
+- A short step-through on the demo points at each element in turn. It starts once, the first
+  time pr-tour opens, and can be started again later.
+- A "?" panel in every tour explains the same marks, so the help stays at hand.
+
+### Later
+
+- Make some choices configurable, like whether unchanged flow steps count in progress.
+- Open question: the server could move from TypeScript to Go (the code checker is Go
+  already). First decide what pr-tour should become and how it is shipped.

@@ -6,7 +6,7 @@ import {
   TourSchema,
   homeIds,
   lastChangedStepIndex,
-  reviewableHomeIds,
+  progressHomeIds,
   tourBodyJsonSchema,
   type Flow,
   type Step,
@@ -180,16 +180,21 @@ describe('homeIds', () => {
   });
 });
 
-describe('reviewableHomeIds', () => {
-  it('leaves out unchanged steps: they have no changed lines', () => {
-    expect(reviewableHomeIds(TourBodySchema.parse(bodyWithIds()))).toEqual(['f1', 'F1.S1', 'o1.1']);
+describe('progressHomeIds', () => {
+  it('counts every flow step, also unchanged ones', () => {
+    expect(progressHomeIds(TourBodySchema.parse(bodyWithIds()))).toEqual([
+      'f1',
+      'F1.S1',
+      'F1.S2',
+      'o1.1',
+    ]);
   });
 
-  it('leaves out any home without changed-line ranges', () => {
+  it('leaves out foundations and other items without changed-line ranges', () => {
     const body = bodyWithIds();
     body.foundations[0]!.homes = [];
     body.other[0]!.items[0]!.homes = [];
-    expect(reviewableHomeIds(TourBodySchema.parse(body))).toEqual(['F1.S1']);
+    expect(progressHomeIds(TourBodySchema.parse(body))).toEqual(['F1.S1', 'F1.S2']);
   });
 });
 
