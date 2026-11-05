@@ -831,6 +831,30 @@ describe('flow map', () => {
     expect(screen.queryByRole('button', { name: 'Back to this step' })).toBeNull();
   });
 
+  it('the map closes when a rebuild swaps in a new tour', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const rebuilt = { ...threeSteps(), headSha: 'c'.repeat(40), createdAt: '2026-10-28T12:00:00Z' };
+    getPr
+      .mockResolvedValueOnce(response({ tour: threeSteps(), outdated: true }))
+      .mockResolvedValue(response({ tour: rebuilt, job: job('done', ['Saved']) }));
+    buildTour.mockResolvedValue({ job: job('running', ['Cloning']) });
+    render(<TourView repo="acme/loans" pr={42} />);
+    await screen.findByRole('navigation', { name: 'Tour outline' });
+    fireEvent.click(outlineItem('Validate and record'));
+    fireEvent.keyDown(window, { key: 'm' });
+    expect(map()).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Rebuild tour' }));
+    await screen.findByText('Cloning');
+    await act(() => vi.advanceTimersByTimeAsync(2000));
+
+    expect(screen.getByTestId('code-view').textContent).toContain('F1.S1');
+    expect(map()).toBeNull();
+    // Still a step: m opens the map of the new tour.
+    fireEvent.keyDown(window, { key: 'm' });
+    expect(map()).toBeTruthy();
+  });
+
   it('m in a text field types and does not open the map', async () => {
     await showStep('Validate and record');
 

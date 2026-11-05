@@ -30,6 +30,13 @@ export function TourView({ repo, pr }: { repo: string; pr: number }) {
   const [jump, setJump] = useState<{ file: string; line: number } | null>(null);
   // The flow map over the step pane: shown only while the current home is a step.
   const [mapOpen, setMapOpen] = useState(false);
+  // A rebuilt tour (new head or new build) closes the map: its flows may have changed.
+  const tourKey = tour ? `${tour.headSha} ${tour.createdAt}` : null;
+  const [mapTourKey, setMapTourKey] = useState(tourKey);
+  if (mapTourKey !== tourKey) {
+    setMapTourKey(tourKey);
+    setMapOpen(false);
+  }
   // Where the code view scrolls to after a jump from the review panel (null: its own start).
   const [reveal, setReveal] = useState<Reveal | null>(null);
   const revealSeq = useRef(0);
