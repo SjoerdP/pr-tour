@@ -1378,6 +1378,27 @@ describe('flow map', () => {
         expect(markSeen).not.toHaveBeenCalled();
       });
 
+      it('Hide the map leaves focus on its button', async () => {
+        await load();
+        cardBox('Flow 1 · Repay a loan', 2);
+        const toggle = screen.getByRole('button', { name: 'Hide the map of flow 1' });
+        toggle.focus();
+        fireEvent.click(toggle);
+        expect(peekOf('Charge the fee')).toBeNull();
+        expect(document.activeElement).toBe(toggle);
+        expect(toggle.getAttribute('aria-expanded')).toBe('false');
+      });
+
+      it('a card peek closed from inside it leaves focus on the overview', async () => {
+        await load();
+        cardBox('Flow 1 · Repay a loan', 2);
+        const close = within(peekOf('Charge the fee')!).getByRole('button', { name: 'Close' });
+        close.focus();
+        fireEvent.click(close);
+        expect(peekOf('Charge the fee')).toBeNull();
+        expect(document.activeElement).toBe(overview());
+      });
+
       it('hiding another card keeps the peek', async () => {
         await load();
         fireEvent.click(screen.getByRole('button', { name: 'Show the map of flow 2' }));

@@ -289,12 +289,15 @@ export function TourView({ repo, pr }: { repo: string; pr: number }) {
 
   /**
    * Opens, moves or closes the peek. A peek that closes with focus in it hands focus to the
-   * map panel or the overview around it, so the keys and Tab go on from there.
+   * map panel or the overview around it, so the keys and Tab go on from there. Focus anywhere
+   * else (a card's "Hide the map", a box in the map) stays where it is.
    */
   function changePeek(next: PeekState | null) {
     if (next === null && peekShown) {
       const region = mapShown ? mapPanel.current : overviewPanel.current;
-      if (region?.contains(document.activeElement)) region.focus();
+      // The peek's part of the map: it goes away with the peek, "← Map" included.
+      const going = document.activeElement?.closest('.map-peek-peek');
+      if (going && region?.contains(going)) region.focus();
     }
     setPeek(next);
   }
