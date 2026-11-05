@@ -77,6 +77,8 @@ export function TourView({ repo, pr }: { repo: string; pr: number }) {
 
   /** Brings a place into view in the code (null: nothing in particular). */
   function show(at: RevealPlace | 'focus' | null) {
+    // The map would hide the code being shown.
+    setMapOpen(false);
     revealSeq.current += 1;
     setReveal(at === null ? null : { at, seq: revealSeq.current });
   }
@@ -303,10 +305,9 @@ export function TourView({ repo, pr }: { repo: string; pr: number }) {
                       goTo(stepId);
                       setMapOpen(false);
                     }}
-                    onOpenLine={(stepId, file, line) => {
-                      openHome(stepId, { path: file, side: 'new', line });
-                      setMapOpen(false);
-                    }}
+                    onOpenLine={(stepId, file, line) =>
+                      openHome(stepId, { path: file, side: 'new', line })
+                    }
                   />
                 </section>
               )}

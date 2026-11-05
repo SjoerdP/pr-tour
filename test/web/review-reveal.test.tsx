@@ -224,6 +224,19 @@ describe('review panel: a jump shows its line', () => {
     expect(rowOf(1).classList.contains('reveal-flash')).toBe(true);
   });
 
+  it('a jump closes the flow map, so the code it shows is not hidden', async () => {
+    serveReview({ threads: [thread()] });
+    const panel = await openPanel();
+    fireEvent.keyDown(window, { key: 'j' });
+    await screen.findByText('src/a.ts new 2');
+    fireEvent.keyDown(window, { key: 'm' });
+    expect(screen.getByRole('dialog', { name: /^Flow map/ })).toBeTruthy();
+
+    fireEvent.click(await within(panel).findByRole('button', { name: 'src/a.ts:81' }));
+    expect(screen.queryByRole('dialog', { name: /^Flow map/ })).toBeNull();
+    await vi.waitFor(() => expect(lastScrolled()).toBe(rowOf(81)), SETTLE);
+  });
+
   it('moving on with j does not flash anything', async () => {
     serveReview();
     render(<TourView repo="acme/loans" pr={42} />);
