@@ -200,8 +200,13 @@ export function TourView({ repo, pr }: { repo: string; pr: number }) {
     stepPane.current?.focus();
   }, [visit]);
 
+  /**
+   * Opens the map without a peek; during a visit from this same map, with the peek the visit
+   * keeps, so it is the same peek, not a fresh one.
+   */
   function openMap() {
-    setPeek(null);
+    const again = visit?.back === 'map' && mapFlow?.id === visit.mapFlowId;
+    setPeek(again ? visit.peek : null);
     setMapOpen(true);
   }
 
@@ -211,10 +216,13 @@ export function TourView({ repo, pr }: { repo: string; pr: number }) {
     (mapButton.current ?? stepPane.current)?.focus();
   }
 
-  /** Opens or closes the overview; opening it closes the map. */
+  /**
+   * Opens or closes the overview; opening it closes the map. During a visit from the overview
+   * it opens with the peek the visit keeps.
+   */
   function toggleOverview() {
     if (!overviewOpen) hideMap();
-    setPeek(null);
+    setPeek(!overviewOpen && visit?.back === 'overview' ? visit.peek : null);
     overviewFocus.current = true;
     setOverviewOpen(!overviewOpen);
   }

@@ -163,7 +163,11 @@ function FlowCard({
         aria-expanded={open}
         // Each card has this button: the name says which flow's map it is.
         aria-label={`${open ? 'Hide' : 'Show'} the map of flow ${no}`}
-        onClick={() => setOpen(!open)}
+        onClick={() => {
+          // A peek in a hidden map would still take j, k and Esc: it closes with the map.
+          if (open && peek?.flowId === flow.id) onPeek(null);
+          setOpen(!open);
+        }}
       >
         {open ? 'Hide the map' : 'Show the map'}
       </button>

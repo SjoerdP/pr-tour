@@ -1064,6 +1064,94 @@ describe('flow map', () => {
       expect(markSeen).toHaveBeenCalledWith('acme/loans', 42, 'F1.S3', 'h-s3');
     });
 
+    it('] also ends the visit', async () => {
+      await showStep('Validate and record');
+      fireEvent.keyDown(window, { key: 'm' });
+      box(2);
+      openInTour();
+
+      fireEvent.keyDown(window, { key: ']' });
+      expect(paneCode().textContent).toBe('o1.1 test/loans/repay.test.ts');
+      expect(back('map')).toBeNull();
+      expect(markSeen).toHaveBeenCalledTimes(1);
+      expect(markSeen).toHaveBeenCalledWith('acme/loans', 42, 'F1.S2', 'h-s2');
+      fireEvent.keyDown(window, { key: 'Escape' });
+      expect(paneCode().textContent).toBe('o1.1 test/loans/repay.test.ts');
+      expect(map()).toBeNull();
+    });
+
+    it('during a visit, Esc first goes back from a followed call, then goes Back', async () => {
+      await showStep('Validate and record');
+      fireEvent.keyDown(window, { key: 'm' });
+      box(2);
+      openInTour();
+      fireEvent.click(
+        within(screen.getByRole('article')).getByRole('button', {
+          name: 'site to nothing',
+        }),
+      );
+      expect(screen.getByRole('button', { name: 'Back to this step' })).toBeTruthy();
+
+      fireEvent.keyDown(window, { key: 'Escape' });
+      expect(screen.queryByRole('button', { name: 'Back to this step' })).toBeNull();
+      expect(trail()).toContain('step 2 of 3');
+      expect(back('map')).toBeTruthy();
+      fireEvent.keyDown(window, { key: 'Escape' });
+      expect(map()).toBeTruthy();
+      expect(trail()).toContain('step 1 of 3');
+      expect(markSeen).not.toHaveBeenCalled();
+    });
+
+    it('m during a visit from the map shows the same peek again', async () => {
+      await showStep('Validate and record');
+      fireEvent.keyDown(window, { key: 'm' });
+      fireEvent.click(within(map()!).getByRole('button', { name: /^line 15/ }));
+      const peek = peekOf('Validate and record the repayment');
+      expect(peek).toBeTruthy();
+      openInTour();
+      expect(trail()).toContain('step 1 of 3');
+
+      fireEvent.keyDown(window, { key: 'm' });
+      expect(peekOf('Validate and record the repayment')).toBe(peek);
+      // The map's own Close (the first; the peek has one too) keeps the peek for Back.
+      fireEvent.click(within(map()!).getAllByRole('button', { name: 'Close' })[0]!);
+      expect(map()).toBeNull();
+      fireEvent.click(back('map')!);
+      expect(peekOf('Validate and record the repayment')).toBe(peek);
+      expect(markSeen).not.toHaveBeenCalled();
+    });
+
+    it('a rebuild during a visit ends the visit and drops the peek', async () => {
+      vi.useFakeTimers({ shouldAdvanceTime: true });
+      const rebuilt = {
+        ...threeSteps(),
+        headSha: 'c'.repeat(40),
+        createdAt: '2026-10-28T12:00:00Z',
+      };
+      getPr
+        .mockResolvedValueOnce(response({ tour: threeSteps(), outdated: true }))
+        .mockResolvedValue(response({ tour: rebuilt, job: job('done', ['Saved']) }));
+      buildTour.mockResolvedValue({ job: job('running', ['Cloning']) });
+      render(<TourView repo="acme/loans" pr={42} />);
+      await screen.findByRole('navigation', { name: 'Tour outline' });
+      await startTour();
+      fireEvent.click(outlineItem('Validate and record'));
+      fireEvent.keyDown(window, { key: 'm' });
+      box(2);
+      openInTour();
+      expect(back('map')).toBeTruthy();
+
+      fireEvent.click(screen.getByRole('button', { name: 'Rebuild tour' }));
+      await screen.findByText('Cloning');
+      await act(() => vi.advanceTimersByTimeAsync(2000));
+
+      expect(back('map')).toBeNull();
+      expect(screen.queryByRole('dialog', { hidden: true, name: /^Flow map/ })).toBeNull();
+      fireEvent.keyDown(window, { key: 'm' });
+      expect(map()).toBeTruthy();
+      expect(peekOf('Charge the fee')).toBeNull();
+    });
+
     it('a second Open in tour during a visit still returns to the place before the first visit', async () => {
       await showStep('Validate and record');
       fireEvent.keyDown(window, { key: 'm' });
@@ -1200,6 +1288,52 @@ describe('flow map', () => {
         cardBox('Flow 2 · Notify the lender', 1);
         expect(peekOf('Tell the lender')).toBeTruthy();
         expect(peekOf('Charge the fee')).toBeNull();
+      });
+
+      it("hiding a card's map drops its peek: j and Esc act as with no peek", async () => {
+        await load();
+        cardBox('Flow 1 · Repay a loan', 2);
+        expect(peekOf('Charge the fee')).toBeTruthy();
+        fireEvent.click(screen.getByRole('button', { name: 'Hide the map of flow 1' }));
+
+        // Esc closes the overview at once: there is no hidden peek to close first.
+        fireEvent.keyDown(window, { key: 'Escape' });
+        expect(overview()).toBeNull();
+        // A fresh overview: flow 1's map open again, with no peek.
+        fireEvent.keyDown(window, { key: 'o' });
+        expect(screen.getByRole('region', { name: 'Flow 1 map' })).toBeTruthy();
+        expect(peekOf('Charge the fee')).toBeNull();
+
+        cardBox('Flow 1 · Repay a loan', 2);
+        fireEvent.click(screen.getByRole('button', { name: 'Hide the map of flow 1' }));
+        fireEvent.keyDown(window, { key: 'j' });
+        expect(overview()).toBeNull();
+        expect(paneCode().textContent).toBe('f1 migrations/0042_repayments.sql');
+        expect(markSeen).not.toHaveBeenCalled();
+      });
+
+      it('hiding another card keeps the peek', async () => {
+        await load();
+        fireEvent.click(screen.getByRole('button', { name: 'Show the map of flow 2' }));
+        cardBox('Flow 1 · Repay a loan', 2);
+        fireEvent.click(screen.getByRole('button', { name: 'Hide the map of flow 2' }));
+        expect(peekOf('Charge the fee')).toBeTruthy();
+      });
+
+      it('o during a visit from the overview shows the same peek again', async () => {
+        await load();
+        cardBox('Flow 1 · Repay a loan', 2);
+        const peek = peekOf('Charge the fee');
+        fireEvent.click(within(peek!).getByRole('button', { name: 'Open in tour' }));
+        expect(overview()).toBeNull();
+
+        fireEvent.keyDown(window, { key: 'o' });
+        expect(overview()).toBeTruthy();
+        expect(peekOf('Charge the fee')).toBe(peek);
+        fireEvent.keyDown(window, { key: 'o' });
+        fireEvent.click(back('overview')!);
+        expect(peekOf('Charge the fee')).toBe(peek);
+        expect(markSeen).not.toHaveBeenCalled();
       });
 
       it('j and k move the peek on the overview; without a peek they close it', async () => {
