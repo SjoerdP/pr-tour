@@ -187,6 +187,10 @@ type Props = {
   nav: PaneNav;
   /** The PR's review, shown and added to in the code view. */
   review: ReviewState;
+  /** During a visit from the map or the overview: the way back there. */
+  back?: { label: string; go: () => void };
+  /** Whether the code view answers n / p / f: not while the map covers the step. */
+  codeKeys?: boolean;
 };
 
 /** The current home: its header and notes, then its code, then the step buttons. */
@@ -207,6 +211,8 @@ export function StepPane({
   paneRef,
   nav,
   review,
+  back,
+  codeKeys = true,
 }: Props) {
   const why =
     home.kind === 'foundation'
@@ -227,6 +233,19 @@ export function StepPane({
       ref={paneRef}
     >
       <div className="step-notes">
+        {back && (
+          <p className="step-back">
+            <button
+              type="button"
+              className="link-button"
+              onClick={back.go}
+              title={withKey(back.label, 'Esc')}
+            >
+              <span aria-hidden="true">← </span>
+              {back.label}
+            </button>
+          </p>
+        )}
         <div className="step-head">
           <div className="step-trail-row">
             <p className="step-trail" data-testid="step-trail" title={trailTitle(home)}>
@@ -320,6 +339,7 @@ export function StepPane({
         // The marker on the line that calls the next step: only on the step's own code.
         {...(!jump && { onNextStep: nav.nextStep })}
         review={review}
+        keys={codeKeys}
       />
       {home.kind === 'step' && <NextFrom flow={home.flow} step={home.step} />}
       <div className="step-nav" {...keepsReviewOpen}>

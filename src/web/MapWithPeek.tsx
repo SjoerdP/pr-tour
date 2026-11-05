@@ -29,7 +29,7 @@ type Props = {
   /** Everything Peek needs that is not about the step. */
   peekProps: Omit<
     PeekProps,
-    'flow' | 'stepId' | 'line' | 'nonce' | 'seen' | 'onMove' | 'onClose'
+    'flow' | 'stepId' | 'line' | 'nonce' | 'seen' | 'onMove' | 'onClose' | 'headingLevel'
   > & {
     isSeen: (id: string) => boolean;
   };
@@ -232,6 +232,8 @@ export function MapWithPeek({ place, flow, currentId, peek, peekProps, onPeek }:
               seen={isSeen(shown.stepId)}
               onMove={(stepId, line) => onPeek({ flowId: flow.id, stepId, line })}
               onClose={() => onPeek(null)}
+              // Under the card's h4.
+              {...(place === 'card' && { headingLevel: 5 as const })}
             />
           </div>
         </>

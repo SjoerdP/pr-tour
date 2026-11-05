@@ -2,7 +2,6 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { BuildStatus } from './BuildStatus.js';
 import type { Reveal, RevealPlace } from './code-lines.js';
 import { ComposerMemory, ComposerMemoryContext } from './composer-memory.js';
-import { FlowMap } from './FlowMap.js';
 import {
   flowStepAt,
   homesInOrder,
@@ -10,6 +9,7 @@ import {
   openingPlace,
   previousFlowStart,
 } from './homes.js';
+import { MapWithPeek, type PeekState } from './MapWithPeek.js';
 import { Outline } from './Outline.js';
 import { Overview } from './Overview.js';
 import { StepPane } from './StepPane.js';
@@ -22,6 +22,18 @@ import { useSeenMarks } from './useSeenMarks.js';
 import { useTourBuild } from './useTourBuild.js';
 
 const NO_MARKS: Record<string, string> = {};
+
+/** A step shown from the map panel or the overview, and the way back there. */
+type Visit = {
+  /** What the back button reopens. */
+  back: 'map' | 'overview';
+  /** The home the tour was on before the first visit: going back returns there. */
+  place: string;
+  /** The peek that was open, opened again on the way back. */
+  peek: PeekState | null;
+  /** For the map: the flow it showed. */
+  mapFlowId: string | null;
+};
 
 /** The review screen of one PR: build its tour, then read it home by home. */
 export function TourView({ repo, pr }: { repo: string; pr: number }) {
@@ -39,8 +51,17 @@ export function TourView({ repo, pr }: { repo: string; pr: number }) {
   const [mapOpen, setMapOpen] = useState(false);
   const mapPanel = useRef<HTMLElement>(null);
   const mapButton = useRef<HTMLButtonElement>(null);
+  // The map panel's flow when it is not the current step's: after Back to a map of another flow.
+  const [mapFlowId, setMapFlowId] = useState<string | null>(null);
   // The overview of the PR, shown in place of the step pane.
   const [overviewOpen, setOverviewOpen] = useState(false);
+  // The one peek open in the map panel or on the overview: a look, never a move.
+  const [peek, setPeek] = useState<PeekState | null>(null);
+  // A step shown from the map or the overview ("Open in tour"), with the way back: `place` is
+  // the home the tour was on before the first visit, `back` and `peek` what to reopen.
+  const [visit, setVisit] = useState<Visit | null>(null);
+  // Set when a visit starts: focus goes to the visited step (see the effect below).
+  const paneFocus = useRef(false);
   const overviewPanel = useRef<HTMLElement>(null);
   const stepPane = useRef<HTMLElement>(null);
   // Set when the reader opens or leaves the overview: focus follows (see the effect below).
@@ -58,6 +79,9 @@ export function TourView({ repo, pr }: { repo: string; pr: number }) {
   if (shownTourKey !== tourKey) {
     setShownTourKey(tourKey);
     setMapOpen(false);
+    setMapFlowId(null);
+    setPeek(null);
+    setVisit(null);
     if (tour) {
       const place = openingPlace(homes, isSeen);
       setOverviewOpen(place.overview);
@@ -88,26 +112,36 @@ export function TourView({ repo, pr }: { repo: string; pr: number }) {
   // After a rebuild the old id may be gone; fall back to the first home.
   const current = currentId !== null && ids.includes(currentId) ? currentId : (ids[0] ?? null);
 
+  /** Closes the map panel and its peek. */
+  function hideMap() {
+    setMapOpen(false);
+    setMapFlowId(null);
+    setPeek(null);
+  }
+
   /**
    * Moving past a home marks it seen; opening one does not. Either way the overview closes.
    * Leaving the overview marks nothing: the reader was not reading the home the tour is on.
+   * A move to another home ends a visit: the visited step is the reader's place now.
    */
   function goTo(homeId: string | undefined) {
     if (homeId === undefined) return;
     setOverviewOpen(false);
+    setPeek(null);
     if (current === null || homeId === current) return;
     if (!overviewOpen) markLeft(current);
     setCurrentId(homeId);
+    setVisit(null);
     setJump(null);
     setReveal(null);
     about.setOpen(false);
-    setMapOpen(false);
+    hideMap();
   }
 
   /** Brings a place into view in the code (null: nothing in particular). */
   function show(at: RevealPlace | 'focus' | null) {
     // The map and the overview would hide the code being shown.
-    setMapOpen(false);
+    hideMap();
     setOverviewOpen(false);
     revealSeq.current += 1;
     setReveal(at === null ? null : { at, seq: revealSeq.current });
@@ -147,31 +181,129 @@ export function TourView({ repo, pr }: { repo: string; pr: number }) {
   }
 
   const currentHome = homes.find((h) => h.id === current);
-  const mapFlow = currentHome?.kind === 'step' ? currentHome.flow : null;
+  const flowById = (id: string | null) =>
+    id === null ? undefined : tour?.flows.find((f) => f.id === id);
+  const mapFlow = flowById(mapFlowId) ?? (currentHome?.kind === 'step' ? currentHome.flow : null);
   // The overview takes the place of the step pane, so the map is never open over it.
   const mapShown = mapOpen && mapFlow !== null && !overviewOpen;
+  // The peek on screen: the one in the shown map panel or on the shown overview.
+  const peekShown = peek !== null && (mapShown || overviewOpen) ? peek : null;
   // The map is a dialog: focus goes into it when it opens.
   useEffect(() => {
     if (mapShown) mapPanel.current?.focus();
   }, [mapShown]);
 
+  // A visit shows the visited step: focus goes to it, so Tab goes on from there.
+  useEffect(() => {
+    if (!paneFocus.current) return;
+    paneFocus.current = false;
+    stepPane.current?.focus();
+  }, [visit]);
+
+  function openMap() {
+    setPeek(null);
+    setMapOpen(true);
+  }
+
   /** Closes the map by Esc or Close, and puts focus back on the Flow map button. */
   function closeMap() {
-    setMapOpen(false);
-    mapButton.current?.focus();
+    hideMap();
+    (mapButton.current ?? stepPane.current)?.focus();
   }
 
   /** Opens or closes the overview; opening it closes the map. */
   function toggleOverview() {
-    if (!overviewOpen) setMapOpen(false);
+    if (!overviewOpen) hideMap();
+    setPeek(null);
     overviewFocus.current = true;
     setOverviewOpen(!overviewOpen);
   }
 
   /** The reader leaves the overview (if it is open): focus goes to the step. */
   function closeOverview() {
-    if (overviewOpen) overviewFocus.current = true;
+    if (overviewOpen) {
+      overviewFocus.current = true;
+      setPeek(null);
+    }
     setOverviewOpen(false);
+  }
+
+  /**
+   * "Open in tour" from the map panel or the overview: shows that home without marking
+   * anything, and keeps the way back. A visit during a visit keeps the first place.
+   */
+  function visitHome(homeId: string, back: Visit['back']) {
+    const place = visit?.place ?? current;
+    if (place === null) return;
+    setVisit({
+      back,
+      place,
+      peek: peekShown,
+      mapFlowId: back === 'map' && mapFlow ? mapFlow.id : null,
+    });
+    setCurrentId(homeId);
+    setJump(null);
+    // A peek of a calling line opens the step at that line, as the arrow used to.
+    const home = homes.find((h) => h.id === homeId);
+    if (peekShown?.stepId === homeId && peekShown.line !== null && home?.kind === 'step') {
+      revealSeq.current += 1;
+      setReveal({
+        at: { path: home.step.file, side: 'new', line: peekShown.line },
+        seq: revealSeq.current,
+      });
+    } else {
+      setReveal(null);
+    }
+    about.setOpen(false);
+    setMapOpen(false);
+    setMapFlowId(null);
+    setOverviewOpen(false);
+    setPeek(null);
+    paneFocus.current = true;
+  }
+
+  /** Ends a visit where it began: the old place, the map or overview, the same peek. */
+  function goBack() {
+    if (!visit) return;
+    setCurrentId(visit.place);
+    setJump(null);
+    setReveal(null);
+    setPeek(visit.peek);
+    if (visit.back === 'map') {
+      setMapFlowId(visit.mapFlowId);
+      setMapOpen(true);
+    } else {
+      overviewFocus.current = true;
+      setOverviewOpen(true);
+    }
+    setVisit(null);
+  }
+
+  /**
+   * Opens, moves or closes the peek. A peek that closes with focus in it hands focus to the
+   * map panel or the overview around it, so the keys and Tab go on from there.
+   */
+  function changePeek(next: PeekState | null) {
+    if (next === null && peekShown) {
+      const region = mapShown ? mapPanel.current : overviewPanel.current;
+      if (region?.contains(document.activeElement)) region.focus();
+    }
+    setPeek(next);
+  }
+
+  /** Moves the open peek along its flow's steps; at the ends it stays. */
+  function movePeek(by: 1 | -1) {
+    if (!peekShown) return;
+    const steps = flowById(peekShown.flowId)?.steps ?? [];
+    const to = steps[steps.findIndex((s) => s.id === peekShown.stepId) + by];
+    if (to) setPeek({ flowId: peekShown.flowId, stepId: to.id, line: null });
+  }
+
+  /** j / k on the map panel without a peek: a peek of the step the tour is on. */
+  function peekCurrent() {
+    if (!mapFlow) return;
+    const step = mapFlow.steps.find((s) => s.id === current) ?? mapFlow.steps[0];
+    if (step) setPeek({ flowId: mapFlow.id, stepId: step.id, line: null });
   }
 
   // Focus goes into the overview when the reader opens it, and to the step when they leave
@@ -207,9 +339,25 @@ export function TourView({ repo, pr }: { repo: string; pr: number }) {
   };
 
   useKeys({
-    // On the overview, j and k first show the home the tour is on, without moving.
-    j: () => (overviewOpen ? closeOverview() : nextStep()),
-    k: () => (overviewOpen ? closeOverview() : nav.previousStep?.()),
+    // The map panel and the overview never move the tour: with a peek, j and k move the peek;
+    // on the map without one, they peek at the step the tour is on; on the overview without
+    // one, they show the home the tour is on.
+    j: () =>
+      peekShown
+        ? movePeek(1)
+        : mapShown
+          ? peekCurrent()
+          : overviewOpen
+            ? closeOverview()
+            : nextStep(),
+    k: () =>
+      peekShown
+        ? movePeek(-1)
+        : mapShown
+          ? peekCurrent()
+          : overviewOpen
+            ? closeOverview()
+            : nav.previousStep?.(),
     // At the ends of the tour there is no flow to open; on the overview the key still closes it.
     '[': () => {
       closeOverview();
@@ -220,20 +368,31 @@ export function TourView({ repo, pr }: { repo: string; pr: number }) {
       nav.nextFlow?.();
     },
     ...(tour !== null ? { o: toggleOverview } : {}),
-    ...(mapFlow !== null && !overviewOpen
-      ? { m: () => (mapShown ? closeMap() : setMapOpen(true)) }
-      : {}),
-    // Esc closes the map first; then it goes back from a followed call to the step's own
-    // code; then it closes the overview. A call followed before the overview opened is hidden
-    // under it, so it waits until the overview is closed.
-    ...(mapShown
-      ? { Escape: closeMap }
-      : jump && !overviewOpen
-        ? { Escape: () => follow(null) }
-        : overviewOpen
-          ? { Escape: closeOverview }
-          : {}),
+    ...(mapFlow !== null && !overviewOpen ? { m: () => (mapShown ? closeMap() : openMap()) } : {}),
+    // Esc closes a peek first, then the map; then it goes back from a followed call to the
+    // step's own code; then it closes the overview; then it ends a visit. A call followed
+    // before the overview opened is hidden under it, so it waits until the overview is closed.
+    ...(peekShown
+      ? { Escape: () => changePeek(null) }
+      : mapShown
+        ? { Escape: closeMap }
+        : jump && !overviewOpen
+          ? { Escape: () => follow(null) }
+          : overviewOpen
+            ? { Escape: closeOverview }
+            : visit
+              ? { Escape: goBack }
+              : {}),
   });
+
+  // What every peek needs that is not about the step. Marking a step seen moves nothing.
+  const peekProps = { repo, pr, review, isSeen, onMarkSeen: markLeft };
+  // The map panel on screen, or the one a visit goes back to (hidden meanwhile).
+  const panelFlow = mapShown
+    ? mapFlow
+    : visit?.back === 'map'
+      ? (flowById(visit.mapFlowId) ?? null)
+      : null;
 
   if (load.status === 'loading') {
     return (
@@ -347,24 +506,23 @@ export function TourView({ repo, pr }: { repo: string; pr: number }) {
               nextFlow={nav.nextFlow}
             />
             <main className="tour-main">
-              {overviewOpen ? (
+              {/* Kept, hidden, during a visit from it: it comes back as it was. */}
+              {(overviewOpen || visit?.back === 'overview') && (
                 <Overview
                   regionRef={overviewPanel}
+                  hidden={!overviewOpen}
                   tour={tour}
                   title={summary.title}
                   started={started}
                   currentId={started ? current : null}
                   onStart={closeOverview}
-                  onOpenHome={(homeId) => {
-                    closeOverview();
-                    openHome(homeId);
-                  }}
-                  onOpenLine={(homeId, file, line) => {
-                    closeOverview();
-                    openHome(homeId, { path: file, side: 'new', line });
-                  }}
+                  peek={overviewOpen ? peek : (visit?.peek ?? null)}
+                  onPeek={changePeek}
+                  peekProps={{ ...peekProps, tour, keys: overviewOpen && peekShown !== null }}
+                  onVisit={(homeId) => visitHome(homeId, 'overview')}
                 />
-              ) : (
+              )}
+              {!overviewOpen && (
                 <StepPane
                   repo={repo}
                   pr={pr}
@@ -379,40 +537,50 @@ export function TourView({ repo, pr }: { repo: string; pr: number }) {
                   }
                   onBack={() => follow(null)}
                   onOpenHome={goTo}
-                  onOpenMap={() => setMapOpen(true)}
+                  onOpenMap={openMap}
                   mapButtonRef={mapButton}
                   paneRef={stepPane}
                   nav={nav}
                   review={review}
+                  // The map covers the step: n / p / f are the peek's then.
+                  codeKeys={!mapShown}
+                  {...(visit && {
+                    back: {
+                      label: visit.back === 'map' ? 'Back to the map' : 'Back to the overview',
+                      go: goBack,
+                    },
+                  })}
                 />
               )}
-              {mapShown && mapFlow && (
+              {/* Kept, hidden, during a visit from it: it comes back as it was. */}
+              {panelFlow && (
                 <section
                   className="flow-map-panel"
                   role="dialog"
                   aria-modal="true"
                   tabIndex={-1}
                   ref={mapPanel}
-                  aria-label={`Flow map: ${mapFlow.title}`}
+                  aria-label={`Flow map: ${panelFlow.title}`}
+                  hidden={!mapShown}
                 >
                   <div className="flow-map-panel-head">
-                    <h2 className="flow-map-panel-title">Flow map: {mapFlow.title}</h2>
+                    <h2 className="flow-map-panel-title">Flow map: {panelFlow.title}</h2>
                     <button type="button" onClick={closeMap} title={withKey('Close', 'Esc')}>
                       Close
                     </button>
                   </div>
-                  {/* A fresh map per flow: fold choices never carry over. */}
-                  <FlowMap
-                    key={mapFlow.id}
-                    flow={mapFlow}
-                    currentId={current}
-                    onOpenStep={(stepId) => {
-                      goTo(stepId);
-                      setMapOpen(false);
+                  <MapWithPeek
+                    place="panel"
+                    flow={panelFlow}
+                    currentId={mapShown ? current : (visit?.place ?? current)}
+                    peek={mapShown ? peek : (visit?.peek ?? null)}
+                    peekProps={{
+                      ...peekProps,
+                      tour,
+                      keys: mapShown && peekShown !== null,
+                      onOpenInTour: (stepId) => visitHome(stepId, 'map'),
                     }}
-                    onOpenLine={(stepId, file, line) =>
-                      openHome(stepId, { path: file, side: 'new', line })
-                    }
+                    onPeek={changePeek}
                   />
                 </section>
               )}

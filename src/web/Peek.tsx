@@ -29,6 +29,8 @@ type Props = {
   onMarkSeen: (stepId: string) => void;
   onOpenInTour: (stepId: string) => void;
   onClose: () => void;
+  /** The title's heading level: 5 under an overview card's h4. */
+  headingLevel?: 3 | 5;
 };
 
 /**
@@ -50,6 +52,7 @@ export function Peek({
   onMarkSeen,
   onOpenInTour,
   onClose,
+  headingLevel = 3,
 }: Props): ReactNode {
   const index = flow.steps.findIndex((s) => s.id === stepId);
   const step = flow.steps[index];
@@ -64,6 +67,7 @@ export function Peek({
     [file, line, nonce],
   );
   if (!step) return null;
+  const Title = `h${headingLevel}` as const;
 
   const target = codeTarget({ kind: 'step', id: step.id, step, flow });
   const flowNo = tour.flows.findIndex((f) => f.id === flow.id) + 1;
@@ -99,9 +103,9 @@ export function Peek({
           )}
         </p>
         <div className="peek-title-row">
-          <h3 className="peek-title" id={`peek-title-${step.id}`}>
+          <Title className="peek-title" id={`peek-title-${step.id}`}>
             {step.title}
-          </h3>
+          </Title>
           <div className="peek-actions">
             <button type="button" className="link-button" onClick={() => onOpenInTour(step.id)}>
               Open in tour<span aria-hidden="true"> ↗</span>

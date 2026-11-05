@@ -1,8 +1,15 @@
 import { fireEvent, render, screen, within } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import type { Tour } from '../../src/shared/tour.js';
+import type { PeekState } from '../../src/web/MapWithPeek.js';
 import { Overview } from '../../src/web/Overview.js';
+import { fakeReview } from './review-fake.js';
 import { tour as baseTour } from './tour-fixture.js';
+
+// The real code view loads files; a peek's code is not what these tests are about.
+vi.mock('../../src/web/CodeView.js', () => ({
+  CodeView: ({ homeId }: { homeId: string }) => <div data-testid="code-view">{homeId}</div>,
+}));
 
 // The PR overview: title and summary, one card per flow with its step strip and map, the
 // rest of the PR in one line, and the start button.
@@ -33,22 +40,43 @@ const tour: Tour = {
   ],
 };
 
-function show(props: { tour?: Tour; started?: boolean; currentId?: string | null } = {}) {
+function show(
+  props: {
+    tour?: Tour;
+    started?: boolean;
+    currentId?: string | null;
+    peek?: PeekState | null;
+    hidden?: boolean;
+  } = {},
+) {
   const onStart = vi.fn();
-  const onOpenHome = vi.fn();
-  const onOpenLine = vi.fn();
+  const onVisit = vi.fn();
+  const onPeek = vi.fn();
+  const onMarkSeen = vi.fn();
+  const shown = props.tour ?? tour;
   render(
     <Overview
-      tour={props.tour ?? tour}
+      tour={shown}
       title="Early repayment"
       started={props.started ?? false}
       currentId={props.currentId ?? null}
       onStart={onStart}
-      onOpenHome={onOpenHome}
-      onOpenLine={onOpenLine}
+      peek={props.peek ?? null}
+      onPeek={onPeek}
+      peekProps={{
+        repo: 'acme/loans',
+        pr: 42,
+        tour: shown,
+        keys: true,
+        review: fakeReview(),
+        isSeen: () => false,
+        onMarkSeen,
+      }}
+      onVisit={onVisit}
+      {...(props.hidden !== undefined && { hidden: props.hidden })}
     />,
   );
-  return { onStart, onOpenHome, onOpenLine };
+  return { onStart, onVisit, onPeek, onMarkSeen };
 }
 
 function card(title: string): HTMLElement {
@@ -74,7 +102,7 @@ describe('Overview', () => {
   });
 
   it('lists each flow with its entry, why, counts and steps', () => {
-    const { onOpenHome } = show();
+    const { onVisit } = show();
     expect(screen.getByRole('heading', { level: 3, name: 'Flows in this PR (2)' })).toBeTruthy();
     const first = card('Flow 1 · Repay a loan');
     expect(within(first).getAllByText('POST /loans/{id}/repay').length).toBeGreaterThan(0);
@@ -92,8 +120,9 @@ describe('Overview', () => {
     expect(steps[0]!.className).toBe('overview-step changed');
     expect(steps[1]!.className).toBe('overview-step unchanged');
     expect(steps[2]!.className).toBe('overview-step changed read-closely');
+    // A step in the strip is a visit: shown in the tour, with a way back here.
     fireEvent.click(within(strip).getByRole('button', { name: '1 Parse the request' }));
-    expect(onOpenHome).toHaveBeenCalledWith('F1.S1');
+    expect(onVisit).toHaveBeenCalledWith('F1.S1');
 
     // No read-closely steps: that part of the counts is left out.
     const second = card('Flow 2 · Notify the lender');
@@ -127,11 +156,31 @@ describe('Overview', () => {
     expect(within(first).queryByRole('region', { name: 'Flow 1 map' })).toBeNull();
   });
 
-  it('a map click opens the step', () => {
-    const { onOpenHome } = show();
+  it('a map click peeks at the step, and moves nothing in the tour', () => {
+    const { onVisit, onPeek } = show();
     const map = screen.getByRole('region', { name: 'Flow 1 map' });
     fireEvent.click(within(map).getByText('Step 2').closest('button')!);
-    expect(onOpenHome).toHaveBeenCalledWith('F1.S2');
+    expect(onPeek).toHaveBeenCalledWith({ flowId: 'F1', stepId: 'F1.S2', line: null });
+    expect(onVisit).not.toHaveBeenCalled();
+  });
+
+  it("shows the peek in its flow's card, titled under the card heading", () => {
+    const { onVisit, onMarkSeen } = show({ peek: { flowId: 'F1', stepId: 'F1.S2', line: null } });
+    const first = card('Flow 1 · Repay a loan');
+    const title = within(first).getByRole('heading', { level: 5, name: 'Load the loan' });
+    const peek = title.closest('section')!;
+    expect(within(peek).getByTestId('code-view').textContent).toBe('F1.S2');
+
+    fireEvent.click(within(peek).getByRole('button', { name: 'Open in tour' }));
+    expect(onVisit).toHaveBeenCalledWith('F1.S2');
+    fireEvent.click(within(peek).getByRole('button', { name: 'Mark as seen' }));
+    expect(onMarkSeen).toHaveBeenCalledWith('F1.S2');
+  });
+
+  it('can be kept but hidden', () => {
+    show({ hidden: true });
+    expect(screen.queryByRole('region', { name: 'Overview' })).toBeNull();
+    expect(screen.getAllByRole('button', { hidden: true, name: 'Start the tour' })).toHaveLength(2);
   });
 
   it('the heading of unlinked steps sits under the card heading', () => {
@@ -152,13 +201,13 @@ describe('Overview', () => {
     ).toBeTruthy();
   });
 
-  it('lists the rest of the PR', () => {
-    const { onOpenHome } = show();
+  it('lists the rest of the PR, each a visit', () => {
+    const { onVisit } = show();
     expect(screen.getByText('Also in this PR')).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: '1 foundation' }));
-    expect(onOpenHome).toHaveBeenCalledWith('f1');
+    expect(onVisit).toHaveBeenCalledWith('f1');
     fireEvent.click(screen.getByRole('button', { name: 'Tests (1)' }));
-    expect(onOpenHome).toHaveBeenCalledWith('o1.1');
+    expect(onVisit).toHaveBeenCalledWith('o1.1');
   });
 
   it('the dots between the rest of the PR are not read aloud', () => {

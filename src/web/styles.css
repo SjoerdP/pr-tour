@@ -1103,6 +1103,12 @@ p.why {
   flex: 1;
 }
 
+/* During a visit: the way back to the map or the overview, above the step. */
+.step-back {
+  margin: 0 0 var(--space-2);
+  font-size: var(--font-size-small);
+}
+
 .jump-bar {
   flex: none;
   margin: var(--space-2) var(--space-6) 0;
@@ -1898,6 +1904,12 @@ p.why {
 .overview:focus,
 .step-pane:focus {
   outline: none;
+}
+
+/* Kept mounted during a visit from them, but hidden: their own display must not show them. */
+.flow-map-panel[hidden],
+.overview[hidden] {
+  display: none;
 }
 
 .flow-map-panel-head {

@@ -1,7 +1,13 @@
-import { useId, useState, type ReactNode, type Ref } from 'react';
+import { useId, useState, type ComponentProps, type ReactNode, type Ref } from 'react';
 import type { Flow, Tour } from '../shared/tour.js';
-import { FlowMap } from './FlowMap.js';
 import { otherGroupsInOrder } from './homes.js';
+import { MapWithPeek, type PeekState } from './MapWithPeek.js';
+
+/** What a card's peek needs that is not about the step; "Open in tour" is `onVisit`. */
+export type OverviewPeekProps = Omit<
+  ComponentProps<typeof MapWithPeek>['peekProps'],
+  'onOpenInTour'
+>;
 
 type Props = {
   tour: Tour;
@@ -12,10 +18,16 @@ type Props = {
   /** The home the tour is on (marked in the maps); null before the reader started. */
   currentId: string | null;
   onStart: () => void;
-  onOpenHome: (homeId: string) => void;
-  onOpenLine: (homeId: string, file: string, line: number) => void;
+  /** The one peek open on the overview (null: none); a card shows it when it is of its flow. */
+  peek: PeekState | null;
+  onPeek: (peek: PeekState | null) => void;
+  peekProps: OverviewPeekProps;
+  /** Shows a home in the tour as a visit, with a way back here: the strip, the rest, a peek. */
+  onVisit: (homeId: string) => void;
   /** The overview region: focus goes to it when the reader opens the overview. */
   regionRef?: Ref<HTMLElement>;
+  /** Kept mounted but hidden during a visit, so it comes back as it was. */
+  hidden?: boolean;
 };
 
 function plural(n: number, word: string): string {
@@ -29,9 +41,12 @@ export function Overview({
   started,
   currentId,
   onStart,
-  onOpenHome,
-  onOpenLine,
+  peek,
+  onPeek,
+  peekProps,
+  onVisit,
   regionRef,
+  hidden = false,
 }: Props): ReactNode {
   const flowsHead = useId();
   const start = (
@@ -41,7 +56,13 @@ export function Overview({
   );
 
   return (
-    <section className="overview" aria-label="Overview" tabIndex={-1} ref={regionRef}>
+    <section
+      className="overview"
+      aria-label="Overview"
+      tabIndex={-1}
+      ref={regionRef}
+      hidden={hidden}
+    >
       <div className="overview-head">
         <h2 className="overview-title">{title}</h2>
         {start}
@@ -57,13 +78,15 @@ export function Overview({
               no={i + 1}
               startsOpen={i === 0}
               currentId={currentId}
-              onOpenHome={onOpenHome}
-              onOpenLine={onOpenLine}
+              peek={peek}
+              onPeek={onPeek}
+              peekProps={peekProps}
+              onVisit={onVisit}
             />
           ))}
         </section>
       )}
-      <Rest tour={tour} onOpenHome={onOpenHome} />
+      <Rest tour={tour} onVisit={onVisit} />
       <div className="overview-foot">{start}</div>
     </section>
   );
@@ -74,16 +97,20 @@ function FlowCard({
   no,
   startsOpen,
   currentId,
-  onOpenHome,
-  onOpenLine,
+  peek,
+  onPeek,
+  peekProps,
+  onVisit,
 }: {
   flow: Flow;
   /** The flow's 1-based number in the tour. */
   no: number;
   startsOpen: boolean;
   currentId: string | null;
-  onOpenHome: (homeId: string) => void;
-  onOpenLine: (homeId: string, file: string, line: number) => void;
+  peek: PeekState | null;
+  onPeek: (peek: PeekState | null) => void;
+  peekProps: OverviewPeekProps;
+  onVisit: (homeId: string) => void;
 }) {
   const [open, setOpen] = useState(startsOpen);
   const head = useId();
@@ -121,7 +148,7 @@ function FlowCard({
                 type="button"
                 className={`overview-step ${looks}`}
                 title={step.title}
-                onClick={() => onOpenHome(step.id)}
+                onClick={() => onVisit(step.id)}
               >
                 <span className="overview-step-no">{i + 1}</span>{' '}
                 <span className="overview-step-title">{step.title}</span>
@@ -142,13 +169,13 @@ function FlowCard({
       </button>
       {open && (
         <section className="overview-map" aria-label={`Flow ${no} map`}>
-          <FlowMap
+          <MapWithPeek
+            place="card"
             flow={flow}
             currentId={currentId ?? ''}
-            onOpenStep={onOpenHome}
-            onOpenLine={onOpenLine}
-            // Under the card's h4.
-            headingLevel={5}
+            peek={peek}
+            peekProps={{ ...peekProps, onOpenInTour: onVisit }}
+            onPeek={onPeek}
           />
         </section>
       )}
@@ -157,7 +184,7 @@ function FlowCard({
 }
 
 /** "Also in this PR": foundations and each other-changes group, each linking to its first home. */
-function Rest({ tour, onOpenHome }: { tour: Tour; onOpenHome: (homeId: string) => void }) {
+function Rest({ tour, onVisit }: { tour: Tour; onVisit: (homeId: string) => void }) {
   const parts: { label: string; homeId: string }[] = [];
   const firstFoundation = tour.foundations[0];
   if (firstFoundation) {
@@ -184,7 +211,7 @@ function Rest({ tour, onOpenHome }: { tour: Tour; onOpenHome: (homeId: string) =
               </span>{' '}
             </>
           )}
-          <button type="button" className="link-button" onClick={() => onOpenHome(part.homeId)}>
+          <button type="button" className="link-button" onClick={() => onVisit(part.homeId)}>
             {part.label}
           </button>
         </span>
