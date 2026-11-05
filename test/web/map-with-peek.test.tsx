@@ -247,6 +247,57 @@ describe('MapWithPeek', () => {
     expect(divider.getAttribute('aria-valuenow')).toBe('40');
     fireEvent.keyDown(divider, { key: 'ArrowDown' });
     expect(divider.getAttribute('aria-valuenow')).toBe('45');
+    // The split kept in memory lasts until a save works: one does, so no other test sees it.
+    vi.restoreAllMocks();
+    fireEvent.keyDown(divider, { key: 'ArrowUp' });
+    expect(divider.getAttribute('aria-valuenow')).toBe('40');
+  });
+
+  it('when saving fails but reading works, the divider keeps its new place', () => {
+    localStorage.setItem(KEY, JSON.stringify({ panel: 0.4, card: 0.6 }));
+    const setItem = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+      throw new Error('quota');
+    });
+    function ui() {
+      return (
+        <MapWithPeek
+          place="panel"
+          flow={makeFlow()}
+          currentId="F1.S1"
+          peek={peekAt('F1.S2')}
+          peekProps={{
+            repo: 'acme/loans',
+            pr: 42,
+            tour: makeTour([makeFlow()]),
+            keys: true,
+            review: fakeReview(),
+            isSeen: () => false,
+            onMarkSeen: vi.fn(),
+            onOpenInTour: vi.fn(),
+          }}
+          onPeek={vi.fn()}
+        />
+      );
+    }
+    const { view } = show({ peek: peekAt('F1.S2') });
+    const value = () => screen.getByRole('separator').getAttribute('aria-valuenow');
+    // Any new render reads the split again.
+    const renderAgain = () => view.rerender(ui());
+    fireEvent.keyDown(screen.getByRole('separator'), { key: 'ArrowDown' });
+    expect(value()).toBe('45');
+    fireEvent.keyDown(screen.getByRole('separator'), { key: 'ArrowDown' });
+    expect(value()).toBe('50');
+    renderAgain();
+    // Not the older stored 0.4.
+    expect(value()).toBe('50');
+
+    // Once a save works, what is stored counts again.
+    setItem.mockRestore();
+    fireEvent.keyDown(screen.getByRole('separator'), { key: 'ArrowDown' });
+    expect(JSON.parse(localStorage.getItem(KEY)!)).toMatchObject({ panel: 0.55 });
+    localStorage.setItem(KEY, JSON.stringify({ panel: 0.3, card: 0.6 }));
+    renderAgain();
+    expect(value()).toBe('30');
   });
 
   it('dragging the divider sets the split', () => {

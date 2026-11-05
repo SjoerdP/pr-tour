@@ -85,15 +85,19 @@ function parse(raw: string | null): Split {
 const listeners = new Set<() => void>();
 /** The last stored text and what it reads as: the same object while the text stays the same. */
 let cache: { raw: string | null; split: Split } = { raw: null, split: DEFAULT_SPLIT };
-/** The split while storage is blocked: kept for as long as the page lives. */
+/**
+ * The split after a save failed: it wins over what storage holds, which is older, until a
+ * save works again.
+ */
 let memory: Split | null = null;
 
 function readSplit(): Split {
+  if (memory) return memory;
   let raw: string | null;
   try {
     raw = localStorage.getItem(STORAGE_KEY);
   } catch {
-    return memory ?? DEFAULT_SPLIT;
+    return DEFAULT_SPLIT;
   }
   if (raw !== cache.raw) cache = { raw, split: parse(raw) };
   return cache.split;
@@ -104,8 +108,9 @@ function saveShare(place: keyof Split, value: number): void {
   const updated = { ...readSplit(), [place]: clamp(value) };
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
+    memory = null;
   } catch {
-    // Storage blocked: the split holds until the page reloads.
+    // Storage blocked or full: the split holds here until a save works or the page reloads.
     memory = updated;
   }
   for (const listener of listeners) listener();
