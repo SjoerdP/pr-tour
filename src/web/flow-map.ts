@@ -22,7 +22,7 @@ export type MapNode = {
   children: MapNode[];
   /** Other edges into this step, not used for the tree, that do not close a circle. */
   alsoFrom: MapEdge[];
-  /** Edges into this step that close a circle: from this step itself or a step below it. */
+  /** Edges into this step that close a circle: this step can reach their caller. */
   loopsFrom: MapEdge[];
   /** Edges out of this step that close a circle (the same edges, seen from the caller). */
   loopsTo: MapEdge[];
@@ -123,7 +123,9 @@ export function buildFlowMap(flow: Flow): FlowMap {
   for (const step of flow.steps.slice(1)) {
     const candidates = edges
       .filter((e) => e.to === step.id)
-      .sort((a, b) => rank(a.proof) - rank(b.proof) || byNo(a.from) - byNo(b.from));
+      .sort(
+        (a, b) => rank(a.proof) - rank(b.proof) || byNo(a.from) - byNo(b.from) || a.line! - b.line!,
+      );
     const pick = candidates.find((e) => !hasAncestor(e.from!, step.id));
     if (pick) parentEdge.set(step.id, pick);
   }
@@ -154,12 +156,26 @@ export function buildFlowMap(flow: Flow): FlowMap {
     node.children.sort((a, b) => a.edge.line! - b.edge.line! || a.no - b.no);
   }
 
-  // Sort the edges the tree does not use: a caller at or below the step closes a circle.
+  // Sort the edges the tree does not use: one closes a circle when its callee can reach
+  // its caller over any edges, wherever the two sit in the tree.
+  const calls = new Map<string, string[]>();
+  for (const e of edges) calls.set(e.from!, [...(calls.get(e.from!) ?? []), e.to]);
+  const reaches = (start: string, goal: string): boolean => {
+    const seen = new Set<string>();
+    const todo = [start];
+    for (let at = todo.pop(); at !== undefined; at = todo.pop()) {
+      if (at === goal) return true;
+      if (seen.has(at)) continue;
+      seen.add(at);
+      todo.push(...(calls.get(at) ?? []));
+    }
+    return false;
+  };
   const order = (a: MapEdge, b: MapEdge) => byNo(a.from) - byNo(b.from) || a.line! - b.line!;
   for (const edge of [...edges].sort(order)) {
     if (parentEdge.get(edge.to) === edge) continue;
     const target = nodeOf.get(edge.to)!;
-    if (hasAncestor(edge.from!, edge.to)) {
+    if (reaches(edge.to, edge.from!)) {
       target.loopsFrom.push(edge);
       nodeOf.get(edge.from!)!.loopsTo.push(edge);
     } else {

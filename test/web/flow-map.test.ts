@@ -153,6 +153,96 @@ describe('buildFlowMap', () => {
     expect(find(map.root, 'S2').loopsTo).toEqual([]);
   });
 
+  it('two siblings that call each other are a loop on both ends', () => {
+    const map = buildFlowMap(
+      flow(steps('S1', 'S2', 'S3'), [
+        link('S1', 'S2', 10),
+        link('S1', 'S3', 11),
+        link('S2', 'S3', 20),
+        link('S3', 'S2', 30),
+      ]),
+    );
+    const s2 = find(map.root, 'S2');
+    const s3 = find(map.root, 'S3');
+    const there = { from: 'S2', to: 'S3', line: 20, how: 'call', via: [], proof: 'proven' };
+    const back = { from: 'S3', to: 'S2', line: 30, how: 'call', via: [], proof: 'proven' };
+    expect(s2.edge.from).toBe('S1');
+    expect(s3.edge.from).toBe('S1');
+    expect(s2.loopsFrom).toEqual([back]);
+    expect(s2.loopsTo).toEqual([there]);
+    expect(s3.loopsFrom).toEqual([there]);
+    expect(s3.loopsTo).toEqual([back]);
+    expect(s2.alsoFrom).toEqual([]);
+    expect(s3.alsoFrom).toEqual([]);
+  });
+
+  it('a circle across branches is a loop, not "also called from"', () => {
+    // S2 -> S3 -> S4 -> S2, with S2 and S3 both under S1.
+    const map = buildFlowMap(
+      flow(steps('S1', 'S2', 'S3', 'S4'), [
+        link('S1', 'S2', 10),
+        link('S1', 'S3', 11),
+        link('S3', 'S4', 20),
+        link('S4', 'S2', 30),
+        link('S2', 'S3', 40),
+      ]),
+    );
+    const s2 = find(map.root, 'S2');
+    const s3 = find(map.root, 'S3');
+    const s4 = find(map.root, 'S4');
+    expect(s4.edge.from).toBe('S3');
+    expect(s2.loopsFrom.map((e) => [e.from, e.line])).toEqual([['S4', 30]]);
+    expect(s4.loopsTo.map((e) => [e.to, e.line])).toEqual([['S2', 30]]);
+    expect(s3.loopsFrom.map((e) => [e.from, e.line])).toEqual([['S2', 40]]);
+    expect(s2.loopsTo.map((e) => [e.to, e.line])).toEqual([['S3', 40]]);
+    expect([s2, s3, s4].flatMap((n) => n.alsoFrom)).toEqual([]);
+  });
+
+  it('a call back into step 1 is a loop', () => {
+    const map = buildFlowMap(flow(steps('S1', 'S2'), [link('S1', 'S2', 10), link('S2', 'S1', 30)]));
+    const back = { from: 'S2', to: 'S1', line: 30, how: 'call', via: [], proof: 'proven' };
+    expect(map.root!.loopsFrom).toEqual([back]);
+    expect(find(map.root, 'S2').loopsTo).toEqual([back]);
+    expect(map.root!.alsoFrom).toEqual([]);
+  });
+
+  it('two steps that only reach each other: one unlinked, the other its child, with loop notes', () => {
+    const map = buildFlowMap(
+      flow(steps('S1', 'S2', 'S3'), [link('S2', 'S3', 20), link('S3', 'S2', 30)]),
+    );
+    expect(map.root!.children).toEqual([]);
+    expect(map.unlinked.map((n) => n.step.id)).toEqual(['S3']);
+    const s3 = map.unlinked[0]!;
+    const s2 = s3.children[0]!;
+    expect(s2.step.id).toBe('S2');
+    expect(s2.edge.from).toBe('S3');
+    const there = { from: 'S2', to: 'S3', line: 20, how: 'call', via: [], proof: 'proven' };
+    expect(s3.loopsFrom).toEqual([there]);
+    expect(s2.loopsTo).toEqual([there]);
+    expect(s3.alsoFrom).toEqual([]);
+  });
+
+  it('the first call on the lowest line is the arrow when the proof is the same', () => {
+    const map = buildFlowMap(flow(steps('S1', 'S2'), [link('S1', 'S2', 30), link('S1', 'S2', 10)]));
+    const s2 = find(map.root, 'S2');
+    expect(s2.edge.line).toBe(10);
+    expect(s2.alsoFrom.map((e) => e.line)).toEqual([30]);
+  });
+
+  it('a conflict counts as not found', () => {
+    const map = buildFlowMap(flow(steps('S1', 'S2'), [link('S1', 'S2', 10, 'conflict')]));
+    expect(find(map.root, 'S2').edge.proof).toBe('not-found');
+  });
+
+  it('a "from" with a step number outside the flow is ignored', () => {
+    const map = buildFlowMap(
+      flow([step('S1'), step('S2', { from: { step: 9, line: 7, how: 'call' } })]),
+    );
+    expect(map.root!.children).toEqual([]);
+    expect(map.unlinked.map((n) => n.step.id)).toEqual(['S2']);
+    expect(map.unlinked[0]!.edge.from).toBeNull();
+  });
+
   it('a step nothing reaches is listed as unlinked', () => {
     const map = buildFlowMap(flow(steps('S1', 'S2', 'S3'), [link('S1', 'S2', 10)]));
     expect(map.unlinked.map((n) => n.step.id)).toEqual(['S3']);

@@ -221,6 +221,33 @@ describe('FlowMap', () => {
     expect(within(key()).getByText('↻ Loop: these steps call each other in a circle')).toBeTruthy();
   });
 
+  it('two siblings that call each other show a loop on both boxes', () => {
+    show(
+      repay([
+        link('S1', 'S2', 10),
+        link('S1', 'S3', 11),
+        link('S2', 'S3', 20),
+        link('S3', 'S2', 30),
+      ]),
+    );
+    expect(within(box(2)).getByText('↻ Loop')).toBeTruthy();
+    expect(within(box(3)).getByText('↻ Loop')).toBeTruthy();
+    expect(
+      within(card(2)).getByRole('button', {
+        name: '↻ Called again from step 3, line 30. Check that the loop stops.',
+      }),
+    ).toBeTruthy();
+    expect(within(card(2)).getByText('↻ Calls step 3 again on line 20')).toBeTruthy();
+    expect(
+      within(card(3)).getByRole('button', {
+        name: '↻ Called again from step 2, line 20. Check that the loop stops.',
+      }),
+    ).toBeTruthy();
+    expect(within(card(3)).getByText('↻ Calls step 2 again on line 30')).toBeTruthy();
+    expect(screen.queryByText(/Also called from/)).toBeNull();
+    expect(within(key()).getByText('↻ Loop: these steps call each other in a circle')).toBeTruthy();
+  });
+
   it('an unproven loop says so', () => {
     show(
       repay([
