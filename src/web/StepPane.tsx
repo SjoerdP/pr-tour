@@ -33,7 +33,7 @@ function firstRange(homes: Range[], file: string): Focus {
   return null;
 }
 
-function codeTarget(home: Home): { file: string; focus: Focus } {
+export function codeTarget(home: Home): { file: string; focus: Focus } {
   switch (home.kind) {
     case 'step': {
       // The function the code check pinned the step to, else the step's own lines.
@@ -187,6 +187,15 @@ type Props = {
   nav: PaneNav;
   /** The PR's review, shown and added to in the code view. */
   review: ReviewState;
+  /** During a visit from the map or the overview: the way back there. */
+  back?: {
+    label: string;
+    go: () => void;
+    /** Whether Esc does this now: nothing else takes Esc first. */
+    byEsc: boolean;
+  };
+  /** Whether the code view answers n / p / f: not while the map covers the step. */
+  codeKeys?: boolean;
 };
 
 /** The current home: its header and notes, then its code, then the step buttons. */
@@ -207,6 +216,8 @@ export function StepPane({
   paneRef,
   nav,
   review,
+  back,
+  codeKeys = true,
 }: Props) {
   const why =
     home.kind === 'foundation'
@@ -227,6 +238,19 @@ export function StepPane({
       ref={paneRef}
     >
       <div className="step-notes">
+        {back && (
+          <p className="step-back">
+            <button
+              type="button"
+              className="link-button"
+              onClick={back.go}
+              title={back.byEsc ? withKey(back.label, 'Esc') : back.label}
+            >
+              <span aria-hidden="true">← </span>
+              {back.label}
+            </button>
+          </p>
+        )}
         <div className="step-head">
           <div className="step-trail-row">
             <p className="step-trail" data-testid="step-trail" title={trailTitle(home)}>
@@ -320,6 +344,7 @@ export function StepPane({
         // The marker on the line that calls the next step: only on the step's own code.
         {...(!jump && { onNextStep: nav.nextStep })}
         review={review}
+        keys={codeKeys}
       />
       {home.kind === 'step' && <NextFrom flow={home.flow} step={home.step} />}
       <div className="step-nav" {...keepsReviewOpen}>
@@ -347,14 +372,17 @@ export function StepPane({
   );
 }
 
-const CAME_FROM_LABEL: Record<CameFrom['how'], string> = {
+/** What a caller link the code check did not find gets instead of its facts. */
+export const NOT_SHOWN = 'the code does not show it';
+
+export const CAME_FROM_LABEL: Record<CameFrom['how'], string> = {
   call: 'Called from',
   service: 'Request from',
   event: 'Event from',
 };
 
 /** The tag that says how the code check backs up the link; null when it says nothing. */
-function proofTag(check: CameFrom['check'], source: CameFrom['source']): ReactNode {
+export function proofTag(check: CameFrom['check'], source: CameFrom['source']): ReactNode {
   if (check === 'proven') {
     return (
       <span className="came-tag came-tag-proven">
@@ -389,8 +417,7 @@ function CameFromLine({
   const caught =
     check === 'not-found' ? (
       <p className="came-from-warn">
-        The tour says <strong>{caller.title}</strong> (step {callerNo}) calls this, but the code
-        does not show it.
+        The tour says <strong>{caller.title}</strong> (step {callerNo}) calls this, but {NOT_SHOWN}.
       </p>
     ) : (
       <p>

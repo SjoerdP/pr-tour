@@ -5,6 +5,7 @@ import type { Draft, DraftComment, ReviewThread } from '../../src/shared/review.
 import type { Tour } from '../../src/shared/tour.js';
 import * as api from '../../src/web/api.js';
 import { draftRows, threadRows } from '../../src/web/code-lines.js';
+import { ComposerMemory, ComposerMemoryContext } from '../../src/web/composer-memory.js';
 import { CodeView } from '../../src/web/CodeView.js';
 import { buildRows } from '../../src/shared/rows.js';
 import type { ReviewState } from '../../src/web/useReview.js';
@@ -779,5 +780,93 @@ describe('threadRows / draftRows', () => {
     expect(placed.get(5)?.map((d) => d.id)).toEqual([1]);
     expect(placed.get(4)?.map((d) => d.id)).toEqual([2]);
     expect(placed.get(-1)?.map((d) => d.id)).toEqual([3]);
+  });
+});
+
+describe('CodeView: read-only', () => {
+  it('shows threads and drafts without Reply, Resolve, Edit or Delete', async () => {
+    serve();
+    renderView(
+      fakeReview({
+        threads: [thread()],
+        drafts: [draft(), { id: 8, kind: 'reply', threadId: 'T1', body: 'Re', createdAt: 'x' }],
+      }),
+      { readOnly: true },
+    );
+
+    expect(await screen.findByText('Why this change?')).toBeTruthy();
+    expect(screen.getByText('Rename this')).toBeTruthy();
+    expect(screen.getByText('Re')).toBeTruthy();
+    for (const name of ['Reply', 'Resolve', 'Edit', 'Delete']) {
+      expect(screen.queryByRole('button', { name })).toBeNull();
+    }
+  });
+
+  it('opens no remembered reply or edit, and leaves them in the memory', async () => {
+    serve();
+    const memory = new ComposerMemory('acme/loans#42');
+    memory.setReply('T1', 'Half a reply');
+    memory.setEdit(7, 'Half an edit');
+    render(
+      <ComposerMemoryContext.Provider value={memory}>
+        <CodeView
+          repo="acme/loans"
+          pr={42}
+          tour={makeTour()}
+          file={PATH}
+          focus={{ start: 5, end: 5 }}
+          homeId="F1.S1"
+          review={fakeReview({ threads: [thread()], drafts: [draft()] })}
+          onJump={vi.fn()}
+          onOpenHome={vi.fn()}
+          readOnly
+        />
+      </ComposerMemoryContext.Provider>,
+    );
+
+    await screen.findByText('Why this change?');
+    expect(screen.queryByRole('textbox')).toBeNull();
+    expect(memory.reply('T1')).toBe('Half a reply');
+    expect(memory.edit(7)).toBe('Half an edit');
+  });
+
+  it('a read-only view of a file being commented on shows no composer and keeps the selection', async () => {
+    serve();
+    const memory = new ComposerMemory('acme/loans#42');
+    const view = (readOnly: boolean) => (
+      <CodeView
+        repo="acme/loans"
+        pr={42}
+        tour={makeTour()}
+        file={PATH}
+        focus={{ start: 5, end: 5 }}
+        homeId="F1.S1"
+        review={fakeReview()}
+        onJump={vi.fn()}
+        onOpenHome={vi.fn()}
+        readOnly={readOnly}
+      />
+    );
+    const { rerender } = render(
+      <ComposerMemoryContext.Provider value={memory}>{view(false)}</ComposerMemoryContext.Provider>,
+    );
+    await screen.findByText('new five');
+    fireEvent.click(lineButton(5));
+    expect(field()).toBeTruthy();
+    const picked = memory.file(`${HEAD}:${PATH}`);
+    expect(picked?.selection).toEqual({ side: 'new', anchor: 5, line: 5 });
+
+    // The read-only view mounts next to the main one, after the line was picked.
+    rerender(
+      <ComposerMemoryContext.Provider value={memory}>
+        {view(false)}
+        {view(true)}
+      </ComposerMemoryContext.Provider>,
+    );
+    const [main, peek] = await screen.findAllByRole('region', { name: 'Code' });
+    await within(peek!).findByText('new five');
+    expect(within(peek!).queryByRole('textbox')).toBeNull();
+    expect(within(main!).getByRole('textbox', { name: `Comment on ${PATH}` })).toBeTruthy();
+    expect(memory.file(`${HEAD}:${PATH}`)).toEqual(picked);
   });
 });

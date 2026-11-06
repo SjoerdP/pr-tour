@@ -227,6 +227,35 @@ describe('CodeView', () => {
     expect(screen.queryByText('line 1')).toBeNull();
   });
 
+  it('read-only shows no comment buttons on line numbers', async () => {
+    serve(modified('src/repay.ts', [replaceHunk(5, 'old five', 'new five')]), {
+      [`${HEAD}:src/repay.ts`]: lines(10, { 5: 'new five' }),
+      [`${BASE}:src/repay.ts`]: lines(10, { 5: 'old five' }),
+    });
+    renderView({ readOnly: true });
+
+    expect(await screen.findByText('new five')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: /Comment on line/ })).toBeNull();
+  });
+
+  it('keys off: n does not move to the next change', async () => {
+    serve(
+      modified('src/repay.ts', [
+        replaceHunk(5, 'old five', 'new five'),
+        replaceHunk(25, 'old twenty-five', 'new twenty-five'),
+      ]),
+      {
+        [`${HEAD}:src/repay.ts`]: lines(30, { 5: 'new five', 25: 'new twenty-five' }),
+        [`${BASE}:src/repay.ts`]: lines(30, { 5: 'old five', 25: 'old twenty-five' }),
+      },
+    );
+    renderView({ keys: false });
+
+    expect(await screen.findByText('change 1 of 2')).toBeTruthy();
+    fireEvent.keyDown(window, { key: 'n' });
+    expect(screen.getByText('change 1 of 2')).toBeTruthy();
+  });
+
   it('labels a change that belongs to another item', async () => {
     serve(
       modified('src/repay.ts', [

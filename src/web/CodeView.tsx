@@ -43,6 +43,10 @@ import { useKeys } from './useKeys.js';
 import type { ReviewState } from './useReview.js';
 
 export type JumpFn = (file: string, line: number, toStep?: string | null) => void;
+/** Whether following this call would go anywhere. */
+export type CanJumpFn = (file: string, line: number, toStep?: string | null) => boolean;
+
+const ALWAYS: CanJumpFn = () => true;
 
 export type CodeViewProps = {
   repo: string;
@@ -60,7 +64,12 @@ export type CodeViewProps = {
    * code check: a step id to go to, or null for a callee that is no step (look only).
    */
   onJump: JumpFn;
-  /** Open another home of the tour (from a "belongs to" label). */
+  /**
+   * Whether a traced call goes anywhere when followed (default: all do). A call that does not
+   * is shown as plain text, not as a button that does nothing.
+   */
+  canJump?: CanJumpFn;
+  /** Open another home of the tour (from a "belongs to" label; plain text when read-only). */
   onOpenHome: (homeId: string) => void;
   /**
    * Go to the next step. Given only for a step's own code: then each call into another step
@@ -69,6 +78,10 @@ export type CodeViewProps = {
   onNextStep?: () => void;
   /** The PR's review: threads and drafts are shown in place, new comments go here. */
   review: ReviewState;
+  /** No new comments: no line-number buttons and no composer. Threads and drafts still show. */
+  readOnly?: boolean;
+  /** Bind n, p and f. False for a second code view, so it leaves them to the main one. */
+  keys?: boolean;
 };
 
 /** The whole file of a home: changes and the focus open, unchanged code folded. */
@@ -82,9 +95,12 @@ export function CodeView({
   reveal = null,
   plain = false,
   onJump,
+  canJump = ALWAYS,
   onOpenHome,
   onNextStep,
   review,
+  readOnly = false,
+  keys = true,
 }: CodeViewProps) {
   const { load, tokens } = useCodeFile(repo, pr, tour, file, plain);
 
@@ -106,6 +122,7 @@ export function CodeView({
           threads={threadsOn(review.threads, file)}
           drafts={draftsOn(review.drafts, file)}
           review={review}
+          readOnly={readOnly}
         />
         <p className="muted">Binary file changed</p>
       </>
@@ -122,9 +139,12 @@ export function CodeView({
         homeId={homeId}
         reveal={reveal}
         onJump={onJump}
+        canJump={canJump}
         onOpenHome={onOpenHome}
         onNextStep={onNextStep}
         review={review}
+        readOnly={readOnly}
+        keys={keys}
       />
     );
   }
@@ -144,9 +164,12 @@ type FileCodeProps = {
   homeId: string;
   reveal: Reveal | null;
   onJump: JumpFn;
+  canJump: CanJumpFn;
   onOpenHome: (homeId: string) => void;
   onNextStep: (() => void) | undefined;
   review: ReviewState;
+  readOnly: boolean;
+  keys: boolean;
 };
 
 function threadsOn(threads: ReviewThread[], path: string): ReviewThread[] {
@@ -165,9 +188,12 @@ function FileCode({
   homeId,
   reveal,
   onJump,
+  canJump,
   onOpenHome,
   onNextStep,
   review,
+  readOnly,
+  keys,
 }: FileCodeProps) {
   const rows = useMemo(() => buildRows(file.newText, file.oldText, file.diff?.hunks ?? []), [file]);
   const blocks = useMemo(() => changeBlocks(rows), [rows]);
@@ -211,7 +237,9 @@ function FileCode({
   // GitHub takes comments only on files the PR changes.
   const diff = file.diff;
   // What was being written on this file comes back when it shows again (see ComposerMemory).
-  const memory = useComposerMemory();
+  // A read-only view picks no lines: it neither restores nor overwrites what is being written.
+  const sharedMemory = useComposerMemory();
+  const memory = readOnly ? null : sharedMemory;
   const memoryKey = `${tour.headSha}:${file.path}`;
   const [selection, setSelection] = useState<Selection | null>(
     () => memory?.file(memoryKey)?.selection ?? null,
@@ -339,6 +367,18 @@ function FileCode({
   // The last jump shown, so each one scrolls and flashes once.
   const revealed = useRef<number | null>(null);
   const flashed = useRef<{ el: Element; timer: number } | null>(null);
+
+  /**
+   * Centres `el` in the code. A read-only view (a peek) scrolls only its own code: scrollIntoView
+   * would also scroll every box around it, the overview and the page included.
+   */
+  function bringIntoView(el: Element) {
+    const code = container.current;
+    if (readOnly && code) centreIn(scrollerOf(code), el);
+    // jsdom has no scrollIntoView.
+    else el.scrollIntoView?.({ block: 'center' });
+  }
+
   useEffect(() => {
     if (reveal && revealRow !== null && reveal.seq !== revealed.current) {
       revealed.current = reveal.seq;
@@ -347,15 +387,14 @@ function FileCode({
         revealRow < 0 ? '.file-comments' : `[data-row="${revealRow}"]`,
       );
       if (el) {
-        el.scrollIntoView?.({ block: 'center' });
+        bringIntoView(el);
         flashed.current = flash(el, flashed.current);
       }
       return;
     }
     if (scrollTo.current === null) return;
     const el = container.current?.querySelector(`[data-row="${scrollTo.current}"]`);
-    // jsdom has no scrollIntoView.
-    el?.scrollIntoView?.({ block: 'center' });
+    if (el) bringIntoView(el);
     scrollTo.current = null;
   });
 
@@ -376,11 +415,15 @@ function FileCode({
     scrollTo.current = block.from;
   }
 
-  useKeys({
-    n: () => goToChange(current + 1),
-    p: () => goToChange(current - 1),
-    f: () => setWhole((w) => !w),
-  });
+  useKeys(
+    keys
+      ? {
+          n: () => goToChange(current + 1),
+          p: () => goToChange(current - 1),
+          f: () => setWhole((w) => !w),
+        }
+      : {},
+  );
 
   let composerRow = -1;
   let composer: ReactNode = null;
@@ -465,6 +508,7 @@ function FileCode({
           threads={threadsAt.get(-1) ?? NO_THREADS}
           drafts={draftsAt.get(-1) ?? NO_DRAFTS}
           review={review}
+          readOnly={readOnly}
         />
         {segments.map((seg) =>
           seg.kind === 'fold' ? (
@@ -514,10 +558,12 @@ function FileCode({
                     }
                     onNextStep={onNextStep}
                     label={label}
-                    onPick={diff ? pick : null}
+                    onPick={diff && !readOnly ? pick : null}
                     drag={lineDrag}
                     onJump={onJump}
+                    canJump={canJump}
                     onOpenHome={onOpenHome}
+                    readOnly={readOnly}
                   />
                   {(rowThreads || rowDrafts || composerRow === i) && (
                     <ReviewRow
@@ -526,6 +572,7 @@ function FileCode({
                       threads={rowThreads ?? NO_THREADS}
                       drafts={rowDrafts ?? NO_DRAFTS}
                       review={review}
+                      readOnly={readOnly}
                       composer={composerRow === i ? composer : null}
                     />
                   )}
@@ -547,6 +594,29 @@ const FLASH_MS = 1600;
  * mark off the one flashed before. Set on the element directly: React does not own this
  * class, and a re-render that changes the row's classes simply ends the flash early.
  */
+/**
+ * The box that scrolls the code: the code itself, or else a box between it and the box right
+ * around the code view (in a peek, the peek's code area). Never one further out, such as the
+ * overview. The code itself when none of them scrolls (also in jsdom).
+ */
+function scrollerOf(code: HTMLElement): HTMLElement {
+  const last = code.closest('.code-view')?.parentElement ?? code;
+  for (let el: HTMLElement | null = code; el; el = el.parentElement) {
+    const { overflowY } = getComputedStyle(el);
+    const scrolls = overflowY === 'auto' || overflowY === 'scroll';
+    if (scrolls && el.scrollHeight > el.clientHeight) return el;
+    if (el === last) break;
+  }
+  return code;
+}
+
+/** Scrolls `box` alone so `el` sits in its middle, as far as it can scroll. */
+function centreIn(box: HTMLElement, el: Element): void {
+  const outer = box.getBoundingClientRect();
+  const inner = el.getBoundingClientRect();
+  box.scrollTop += inner.top - outer.top - box.clientTop - (box.clientHeight - inner.height) / 2;
+}
+
 function flash(
   el: Element,
   before: { el: Element; timer: number } | null,
@@ -703,7 +773,10 @@ type CodeRowProps = {
   onPick: ((side: DiffSide, line: number, extend: boolean) => void) | null;
   drag: LineDrag;
   onJump: JumpFn;
+  canJump: CanJumpFn;
   onOpenHome: (homeId: string) => void;
+  /** A read-only view opens no other home: its "belongs to" label is plain text. */
+  readOnly: boolean;
 };
 
 /** A drag over line numbers: pressed on a line, then moved over others. */
@@ -769,7 +842,9 @@ function CodeRow({
   onPick,
   drag,
   onJump,
+  canJump,
   onOpenHome,
+  readOnly,
 }: CodeRowProps) {
   // Tokens that do not spell the row's text (a stale highlight) are not trusted.
   const parts =
@@ -800,6 +875,7 @@ function CodeRow({
           matches,
           targets ? placeBadges(row.text, matches, targets) : [],
           onJump,
+          canJump,
           siteTitle,
           onNextStep,
         )}
@@ -817,11 +893,14 @@ function CodeRow({
           {MARK_TEXT[mark.kind]}
         </span>
       ))}
-      {label && (
-        <button type="button" className="owner-label" onClick={() => onOpenHome(label.id)}>
-          belongs to {label.title}
-        </button>
-      )}
+      {label &&
+        (readOnly ? (
+          <span className="owner-label owner-label-plain">belongs to {label.title}</span>
+        ) : (
+          <button type="button" className="owner-label" onClick={() => onOpenHome(label.id)}>
+            belongs to {label.title}
+          </button>
+        ))}
     </div>
   );
 }
@@ -858,6 +937,7 @@ function lineContent(
   matches: CallMatch[],
   badges: PlacedBadge[],
   onJump: JumpFn,
+  canJump: CanJumpFn,
   siteTitle: (site: CallSite) => string,
   onNextStep: (() => void) | undefined,
 ): ReactNode[] {
@@ -879,6 +959,13 @@ function lineContent(
   };
   matches.forEach((m, k) => {
     text(m.from, `t${k}`);
+    const toStep = m.site ? (m.site.toStep ?? null) : undefined;
+    // A call that would go nowhere stays plain code.
+    if (!canJump(m.call.file, m.call.line, toStep)) {
+      out.push(...spans(slice(tokens, m.from, m.to), `c${k}-`));
+      pos = m.to;
+      return;
+    }
     out.push(
       <button
         key={`call${k}`}
@@ -886,9 +973,9 @@ function lineContent(
         className="call-link"
         title={m.site ? siteTitle(m.site) : `${m.call.file}:${m.call.line}`}
         onClick={() =>
-          m.site
-            ? onJump(m.call.file, m.call.line, m.site.toStep ?? null)
-            : onJump(m.call.file, m.call.line)
+          toStep === undefined
+            ? onJump(m.call.file, m.call.line)
+            : onJump(m.call.file, m.call.line, toStep)
         }
       >
         {spans(slice(tokens, m.from, m.to), 'c')}

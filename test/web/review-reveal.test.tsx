@@ -254,6 +254,31 @@ describe('review panel: a jump shows its line', () => {
     await vi.waitFor(() => expect(lastScrolled()).toBe(rowOf(81)), SETTLE);
   });
 
+  it('a jump to another home ends a visit from the map and marks the visited step', async () => {
+    serveReview();
+    const panel = await openPanel();
+    fireEvent.keyDown(window, { key: 'j' });
+    await screen.findByText('src/a.ts new 2');
+    vi.mocked(api.markSeen).mockClear();
+    fireEvent.keyDown(window, { key: 'm' });
+    const map = screen.getByRole('dialog', { name: /^Flow map/ });
+    fireEvent.click(within(map).getByText('Step 2').closest('button')!);
+    fireEvent.click(within(map).getByRole('button', { name: 'Open in tour' }));
+    expect(screen.getByRole('button', { name: 'Back to the map' })).toBeTruthy();
+
+    fireEvent.click(within(panel).getByRole('radio', { name: 'Approve' }));
+    const reminder = within(panel).getByRole('region', { name: 'Not seen yet' });
+    const item = within(reminder)
+      .getAllByRole('listitem')
+      .find((li) => li.textContent?.startsWith('Record the repayment'))!;
+    fireEvent.click(within(item).getByRole('button', { name: 'Go to it' }));
+
+    expect(screen.queryByRole('button', { name: 'Back to the map' })).toBeNull();
+    expect(screen.getByTestId('step-trail').textContent).toContain('step 3 of 5');
+    expect(api.markSeen).toHaveBeenCalledTimes(1);
+    expect(api.markSeen).toHaveBeenCalledWith('acme/loans', 42, 'F1.S2', 'h-12');
+  });
+
   it('moving on with j does not flash anything', async () => {
     serveReview();
     render(<TourView repo="acme/loans" pr={42} />);

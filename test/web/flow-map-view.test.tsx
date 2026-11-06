@@ -2,6 +2,7 @@ import { fireEvent, render, screen, within } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import type { Flow, FlowLink, Step } from '../../src/shared/tour.js';
 import { FlowMap } from '../../src/web/FlowMap.js';
+import { placeMapBoxes, scrolled } from './map-scroll.js';
 
 // The flow map drawn: boxes for steps, arrow labels for calls, loops, folding and the key.
 
@@ -57,13 +58,19 @@ const repay = (links = [link('S1', 'S2', 10), link('S2', 'S3', 20)]) =>
     links,
   );
 
-function show(f: Flow, currentId = 'S1') {
+function show(f: Flow, currentId = 'S1', peekedId: string | null = null) {
   const onOpenStep = vi.fn();
   const onOpenLine = vi.fn();
-  render(
-    <FlowMap flow={f} currentId={currentId} onOpenStep={onOpenStep} onOpenLine={onOpenLine} />,
+  const view = render(
+    <FlowMap
+      flow={f}
+      currentId={currentId}
+      peekedId={peekedId}
+      onOpenStep={onOpenStep}
+      onOpenLine={onOpenLine}
+    />,
   );
-  return { onOpenStep, onOpenLine };
+  return { onOpenStep, onOpenLine, view };
 }
 
 /** The box of step `no`. */
@@ -319,5 +326,151 @@ describe('FlowMap', () => {
     show(repay());
     expect(key().textContent).not.toContain('↻ Loop');
     expect(within(key()).getByText('Blue edge: the step has changes')).toBeTruthy();
+  });
+
+  it('marks the peeked box', () => {
+    show(repay(), 'S1', 'S2');
+    expect(box(2).classList.contains('peeked')).toBe(true);
+    expect(within(box(2)).getByText('Peeking')).toBeTruthy();
+    expect(box(1).classList.contains('peeked')).toBe(false);
+    expect(within(box(1)).queryByText('Peeking')).toBeNull();
+  });
+
+  it('opens a folded branch that holds the peeked step', () => {
+    const ids = Array.from({ length: 14 }, (_, i) => `S${i + 1}`);
+    const steps = ids.map((id) => step(id, id === 'S6' ? { homes: [home] } : {}));
+    // S1 calls S2 and S6..S14; S2 calls S3, S4 and S5, none of them changed: S2 folds.
+    const links = [
+      link('S1', 'S2', 10),
+      link('S2', 'S3', 20),
+      link('S2', 'S4', 21),
+      link('S2', 'S5', 22),
+      ...ids.slice(5).map((id, i) => link('S1', id, 30 + i)),
+    ];
+    show(flow(steps, links), 'S1', 'S5');
+    expect(box(5).classList.contains('peeked')).toBe(true);
+    expect(
+      within(card(2))
+        .getByRole('button', { name: 'Hide steps below' })
+        .getAttribute('aria-expanded'),
+    ).toBe('true');
+  });
+
+  /** The map's own scroll box. */
+  const mapBox = () => document.querySelector('.flow-map')!;
+
+  it('scrolls the map itself, not the page, to centre the peeked box when it changes', () => {
+    const place = placeMapBoxes();
+    try {
+      const f = repay();
+      const { view, onOpenStep, onOpenLine } = show(f, 'S1', 'S2');
+      mapBox().scrollLeft = 0;
+      mapBox().scrollTop = 0;
+      view.rerender(
+        <FlowMap
+          flow={f}
+          currentId="S1"
+          peekedId="S3"
+          onOpenStep={onOpenStep}
+          onOpenLine={onOpenLine}
+        />,
+      );
+      expect(box(3).classList.contains('peeked')).toBe(true);
+      expect(scrolled(mapBox())).toEqual({ left: 650, top: 520 });
+      // scrollIntoView would scroll every box around the map too, the page included.
+      expect(place.scrollIntoView).not.toHaveBeenCalled();
+    } finally {
+      place.restore();
+    }
+  });
+
+  it('scrolls to the peeked box again when the map is shown again', () => {
+    const place = placeMapBoxes();
+    try {
+      const f = repay();
+      const ui = (shown: boolean) => (
+        <FlowMap
+          flow={f}
+          currentId="S1"
+          peekedId="S2"
+          shown={shown}
+          onOpenStep={vi.fn()}
+          onOpenLine={vi.fn()}
+        />
+      );
+      const view = render(ui(true));
+      expect(scrolled(mapBox())).toEqual({ left: 650, top: 520 });
+      view.rerender(ui(false));
+      mapBox().scrollLeft = 0;
+      mapBox().scrollTop = 0;
+      view.rerender(ui(true));
+      expect(scrolled(mapBox())).toEqual({ left: 650, top: 520 });
+    } finally {
+      place.restore();
+    }
+  });
+
+  /** A 14-step flow where S2 starts folded: it holds S3, S4 and S5, none of them changed. */
+  function longFlow(): Flow {
+    const ids = Array.from({ length: 14 }, (_, i) => `S${i + 1}`);
+    const steps = ids.map((id) => step(id, id === 'S6' ? { homes: [home] } : {}));
+    const links = [
+      link('S1', 'S2', 10),
+      link('S2', 'S3', 20),
+      link('S2', 'S4', 21),
+      link('S2', 'S5', 22),
+      ...ids.slice(5).map((id, i) => link('S1', id, 30 + i)),
+    ];
+    return flow(steps, links);
+  }
+
+  /** Shows `f` and returns a function that peeks another step. */
+  function showPeeking(f: Flow, peekedId: string | null) {
+    const { view, onOpenStep, onOpenLine } = show(f, 'S1', peekedId);
+    return (next: string | null) =>
+      view.rerender(
+        <FlowMap
+          flow={f}
+          currentId="S1"
+          peekedId={next}
+          onOpenStep={onOpenStep}
+          onOpenLine={onOpenLine}
+        />,
+      );
+  }
+
+  it('a branch unfolded by the peek folds again with its button, and stays folded', () => {
+    const peek = showPeeking(longFlow(), 'S5');
+    expect(box(5)).toBeTruthy();
+    fireEvent.click(within(card(2)).getByRole('button', { name: 'Hide steps below' }));
+    expect(screen.queryByText('Step 5')).toBeNull();
+    // Peeking a step outside the branch leaves the reader's fold alone.
+    peek('S6');
+    expect(screen.queryByText('Step 5')).toBeNull();
+    expect(within(card(2)).getByRole('button', { name: '3 steps below' })).toBeTruthy();
+  });
+
+  it('scrolls to a box that only shows once its branch unfolds', () => {
+    const place = placeMapBoxes();
+    try {
+      const peek = showPeeking(longFlow(), null);
+      expect(screen.queryByText('Step 4')).toBeNull();
+      peek('S4');
+      expect(box(4).classList.contains('peeked')).toBe(true);
+      expect(scrolled(mapBox())).toEqual({ left: 650, top: 520 });
+    } finally {
+      place.restore();
+    }
+  });
+
+  it('the reader fold choice wins on a branch without the peeked step', () => {
+    const peek = showPeeking(longFlow(), 'S6');
+    fireEvent.click(within(card(2)).getByRole('button', { name: '3 steps below' }));
+    expect(box(3)).toBeTruthy();
+    peek('S7');
+    expect(box(3)).toBeTruthy();
+    fireEvent.click(within(card(2)).getByRole('button', { name: 'Hide steps below' }));
+    peek('S8');
+    expect(screen.queryByText('Step 3')).toBeNull();
   });
 });

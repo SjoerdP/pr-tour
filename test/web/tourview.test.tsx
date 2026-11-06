@@ -4,6 +4,7 @@ import type { Job, PrResponse, PrSummary } from '../../src/shared/api.js';
 import type { OtherGroup, Tour } from '../../src/shared/tour.js';
 import * as api from '../../src/web/api.js';
 import { TourView } from '../../src/web/TourView.js';
+import { placeMapBoxes, scrolled } from './map-scroll.js';
 import { outline, outlineItem } from './outline-helpers.js';
 import { startTour } from './overview-helpers.js';
 
@@ -29,6 +30,7 @@ vi.mock('../../src/web/CodeView.js', () => ({
     onOpenHome,
     onNextStep,
     review,
+    keys,
   }: {
     file: string;
     focus: { start: number } | null;
@@ -39,11 +41,14 @@ vi.mock('../../src/web/CodeView.js', () => ({
     onOpenHome: (homeId: string) => void;
     onNextStep?: () => void;
     review?: { state: string };
+    keys?: boolean;
   }) => (
     <div>
       <div
         data-testid="code-view"
         data-plain={plain ? 'yes' : 'no'}
+        // Whether this code view answers n / p / f (CodeView's default is yes).
+        data-keys={keys === false ? 'no' : 'yes'}
         data-reveal={reveal ? JSON.stringify(reveal.at) : undefined}
       >{`${homeId} ${file}`}</div>
       <div data-testid="code-review">{review?.state ?? 'none'}</div>
@@ -814,23 +819,32 @@ describe('flow map', () => {
     expect(document.activeElement).toBe(button);
   });
 
-  it('clicking a box goes to that step and closes the map', async () => {
+  /** The peek in the map panel or the overview: a region named by the peeked step's title. */
+  const peekOf = (title: string) => screen.queryByRole('region', { name: title });
+  /** The step pane's own code view (a peek has one too). */
+  const paneCode = () => within(screen.getByRole('article')).getByTestId('code-view');
+  const openInTour = () =>
+    fireEvent.click(within(map()!).getByRole('button', { name: 'Open in tour' }));
+
+  it('Open in tour from a box goes to that step and closes the map', async () => {
     await showStep('Validate and record');
     fireEvent.keyDown(window, { key: 'm' });
 
     fireEvent.click(within(map()!).getByRole('button', { name: /Step 3/ }));
+    openInTour();
     expect(screen.getByTestId('step-trail').textContent).toContain('step 3 of 3');
     expect(map()).toBeNull();
   });
 
-  it('clicking an arrow opens the calling step at the calling line', async () => {
+  it('Open in tour from an arrow opens the calling step at the calling line', async () => {
     await showStep('Post to the ledger');
     fireEvent.keyDown(window, { key: 'm' });
 
     fireEvent.click(within(map()!).getByRole('button', { name: /^line 20/ }));
+    openInTour();
     expect(screen.getByTestId('step-trail').textContent).toContain('step 2 of 3');
     expect(map()).toBeNull();
-    expect(screen.getByTestId('code-view').getAttribute('data-reveal')).toBe(
+    expect(paneCode().getAttribute('data-reveal')).toBe(
       JSON.stringify({ path: 'src/fees.ts', side: 'new', line: 20 }),
     );
   });
@@ -892,6 +906,540 @@ describe('flow map', () => {
 
     fireEvent.keyDown(screen.getByLabelText('note'), { key: 'm' });
     expect(map()).toBeNull();
+  });
+
+  describe('peek and visits', () => {
+    const trail = () => screen.getByTestId('step-trail').textContent;
+    const back = (to: string) => screen.queryByRole('button', { name: `Back to the ${to}` });
+    const box = (no: number) =>
+      fireEvent.click(within(map()!).getByRole('button', { name: new RegExp(`Step ${no}`) }));
+    const peekTrail = () => within(map()!).getByTestId('peek-trail').textContent;
+
+    it('a box click in the map panel opens a peek and leaves the tour where it was', async () => {
+      await showStep('Validate and record');
+      fireEvent.keyDown(window, { key: 'm' });
+
+      box(2);
+      expect(peekOf('Charge the fee')).toBeTruthy();
+      expect(map()).toBeTruthy();
+      expect(trail()).toContain('step 1 of 3');
+      expect(paneCode().textContent).toBe('F1.S1 src/loans/repay.ts');
+      expect(outlineItem('Validate and record').getAttribute('aria-current')).toBe('step');
+      expect(markSeen).not.toHaveBeenCalled();
+    });
+
+    it('j and k move the peek, not the tour, and stop at the ends', async () => {
+      await showStep('Validate and record');
+      fireEvent.keyDown(window, { key: 'm' });
+
+      // No peek yet: j peeks at the step the tour is on.
+      fireEvent.keyDown(window, { key: 'j' });
+      expect(peekTrail()).toContain('step 1 of 3');
+      fireEvent.keyDown(window, { key: 'j' });
+      expect(peekTrail()).toContain('step 2 of 3');
+      fireEvent.keyDown(window, { key: 'j' });
+      fireEvent.keyDown(window, { key: 'j' });
+      expect(peekTrail()).toContain('step 3 of 3');
+      fireEvent.keyDown(window, { key: 'k' });
+      fireEvent.keyDown(window, { key: 'k' });
+      fireEvent.keyDown(window, { key: 'k' });
+      expect(peekTrail()).toContain('step 1 of 3');
+
+      expect(map()).toBeTruthy();
+      expect(trail()).toContain('step 1 of 3');
+      expect(paneCode().textContent).toBe('F1.S1 src/loans/repay.ts');
+      expect(markSeen).not.toHaveBeenCalled();
+    });
+
+    it('k with no peek also peeks at the step the tour is on', async () => {
+      await showStep('Charge the fee');
+      fireEvent.keyDown(window, { key: 'm' });
+
+      fireEvent.keyDown(window, { key: 'k' });
+      expect(peekTrail()).toContain('step 2 of 3');
+      expect(trail()).toContain('step 2 of 3');
+      expect(markSeen).not.toHaveBeenCalled();
+    });
+
+    it('Esc closes the peek, a second Esc closes the map', async () => {
+      await showStep('Validate and record');
+      fireEvent.keyDown(window, { key: 'm' });
+      box(2);
+
+      fireEvent.keyDown(window, { key: 'Escape' });
+      expect(peekOf('Charge the fee')).toBeNull();
+      expect(map()).toBeTruthy();
+      fireEvent.keyDown(window, { key: 'Escape' });
+      expect(map()).toBeNull();
+      expect(trail()).toContain('step 1 of 3');
+
+      // The map opens again without the old peek.
+      fireEvent.keyDown(window, { key: 'm' });
+      expect(peekOf('Charge the fee')).toBeNull();
+      expect(markSeen).not.toHaveBeenCalled();
+
+      // A peek closed from inside it leaves focus on the map, not lost.
+      box(2);
+      const close = within(peekOf('Charge the fee')!).getByRole('button', { name: 'Close' });
+      close.focus();
+      fireEvent.click(close);
+      expect(peekOf('Charge the fee')).toBeNull();
+      expect(document.activeElement).toBe(map());
+    });
+
+    it('Mark as seen marks the peeked step without moving the tour', async () => {
+      await showStep('Validate and record');
+      fireEvent.keyDown(window, { key: 'm' });
+      box(2);
+
+      fireEvent.click(within(map()!).getByRole('button', { name: 'Mark as seen' }));
+      expect(markSeen).toHaveBeenCalledTimes(1);
+      expect(markSeen).toHaveBeenCalledWith('acme/loans', 42, 'F1.S2', 'h-s2');
+      expect(within(map()!).queryByRole('button', { name: 'Mark as seen' })).toBeNull();
+      expect(map()).toBeTruthy();
+      expect(peekOf('Charge the fee')).toBeTruthy();
+      expect(trail()).toContain('step 1 of 3');
+      expect(outlineItem('Validate and record').getAttribute('aria-current')).toBe('step');
+    });
+
+    it('Open in tour visits the step; Back returns to the map with the same peek and the old place, marking nothing', async () => {
+      await showStep('Validate and record');
+      fireEvent.keyDown(window, { key: 'm' });
+      box(2);
+      const peek = peekOf('Charge the fee');
+
+      openInTour();
+      expect(map()).toBeNull();
+      expect(trail()).toContain('step 2 of 3');
+      expect(paneCode().textContent).toBe('F1.S2 src/fees.ts');
+      expect(outlineItem('Charge the fee').getAttribute('aria-current')).toBe('step');
+      expect(document.activeElement).toBe(screen.getByRole('article'));
+      expect(back('overview')).toBeNull();
+
+      fireEvent.click(back('map')!);
+      expect(map()).toBeTruthy();
+      // The same peek, kept while the map was hidden.
+      expect(peekOf('Charge the fee')).toBe(peek);
+      expect(trail()).toContain('step 1 of 3');
+      expect(paneCode().textContent).toBe('F1.S1 src/loans/repay.ts');
+      expect(outlineItem('Validate and record').getAttribute('aria-current')).toBe('step');
+      expect(back('map')).toBeNull();
+      expect(markSeen).not.toHaveBeenCalled();
+
+      // Esc goes back too, once nothing else uses it.
+      openInTour();
+      expect(trail()).toContain('step 2 of 3');
+      fireEvent.keyDown(window, { key: 'Escape' });
+      expect(map()).toBeTruthy();
+      expect(trail()).toContain('step 1 of 3');
+      expect(markSeen).not.toHaveBeenCalled();
+    });
+
+    it('Back scrolls the map to the peeked box again', async () => {
+      const place = placeMapBoxes();
+      try {
+        await showStep('Validate and record');
+        fireEvent.keyDown(window, { key: 'm' });
+        box(2);
+        const flowMap = map()!.querySelector('.flow-map')!;
+        expect(scrolled(flowMap)).toEqual({ left: 650, top: 520 });
+
+        openInTour();
+        // The browser may lose the scroll of a hidden map.
+        flowMap.scrollLeft = 0;
+        flowMap.scrollTop = 0;
+        fireEvent.click(back('map')!);
+        expect(map()!.querySelector('.flow-map')).toBe(flowMap);
+        expect(scrolled(flowMap)).toEqual({ left: 650, top: 520 });
+        expect(place.scrollIntoView).not.toHaveBeenCalled();
+        expect(markSeen).not.toHaveBeenCalled();
+      } finally {
+        place.restore();
+      }
+    });
+
+    it('moving on from a visited step ends the visit and marks it when left', async () => {
+      await showStep('Validate and record');
+      fireEvent.keyDown(window, { key: 'm' });
+      box(2);
+      openInTour();
+
+      fireEvent.keyDown(window, { key: 'j' });
+      expect(trail()).toContain('step 3 of 3');
+      expect(back('map')).toBeNull();
+      expect(map()).toBeNull();
+      expect(markSeen).toHaveBeenCalledTimes(1);
+      expect(markSeen).toHaveBeenCalledWith('acme/loans', 42, 'F1.S2', 'h-s2');
+      // No visit left to go back from.
+      fireEvent.keyDown(window, { key: 'Escape' });
+      expect(trail()).toContain('step 3 of 3');
+      expect(map()).toBeNull();
+    });
+
+    it('an outline click also ends the visit', async () => {
+      await showStep('Validate and record');
+      fireEvent.keyDown(window, { key: 'm' });
+      box(3);
+      openInTour();
+
+      fireEvent.click(outlineItem('Create repayments table'));
+      expect(back('map')).toBeNull();
+      expect(markSeen).toHaveBeenCalledTimes(1);
+      expect(markSeen).toHaveBeenCalledWith('acme/loans', 42, 'F1.S3', 'h-s3');
+    });
+
+    it('] also ends the visit', async () => {
+      await showStep('Validate and record');
+      fireEvent.keyDown(window, { key: 'm' });
+      box(2);
+      openInTour();
+
+      fireEvent.keyDown(window, { key: ']' });
+      expect(paneCode().textContent).toBe('o1.1 test/loans/repay.test.ts');
+      expect(back('map')).toBeNull();
+      expect(markSeen).toHaveBeenCalledTimes(1);
+      expect(markSeen).toHaveBeenCalledWith('acme/loans', 42, 'F1.S2', 'h-s2');
+      fireEvent.keyDown(window, { key: 'Escape' });
+      expect(paneCode().textContent).toBe('o1.1 test/loans/repay.test.ts');
+      expect(map()).toBeNull();
+    });
+
+    it('during a visit, Esc first goes back from a followed call, then goes Back', async () => {
+      await showStep('Validate and record');
+      fireEvent.keyDown(window, { key: 'm' });
+      box(2);
+      openInTour();
+      fireEvent.click(
+        within(screen.getByRole('article')).getByRole('button', {
+          name: 'site to nothing',
+        }),
+      );
+      expect(screen.getByRole('button', { name: 'Back to this step' })).toBeTruthy();
+      // Esc goes back from the call first: the Back button does not offer it.
+      expect(back('map')!.title).toBe('Back to the map');
+
+      fireEvent.keyDown(window, { key: 'Escape' });
+      expect(screen.queryByRole('button', { name: 'Back to this step' })).toBeNull();
+      expect(trail()).toContain('step 2 of 3');
+      expect(back('map')!.title).toBe('Back to the map (Esc)');
+      fireEvent.keyDown(window, { key: 'Escape' });
+      expect(map()).toBeTruthy();
+      expect(trail()).toContain('step 1 of 3');
+      expect(markSeen).not.toHaveBeenCalled();
+    });
+
+    it('m during a visit from the map shows the same peek again', async () => {
+      await showStep('Validate and record');
+      fireEvent.keyDown(window, { key: 'm' });
+      fireEvent.click(within(map()!).getByRole('button', { name: /^line 15/ }));
+      const peek = peekOf('Validate and record the repayment');
+      expect(peek).toBeTruthy();
+      openInTour();
+      expect(trail()).toContain('step 1 of 3');
+
+      fireEvent.keyDown(window, { key: 'm' });
+      expect(peekOf('Validate and record the repayment')).toBe(peek);
+      // The map's own Close (the first; the peek has one too) keeps the peek for Back.
+      fireEvent.click(within(map()!).getAllByRole('button', { name: 'Close' })[0]!);
+      expect(map()).toBeNull();
+      fireEvent.click(back('map')!);
+      expect(peekOf('Validate and record the repayment')).toBe(peek);
+      expect(markSeen).not.toHaveBeenCalled();
+    });
+
+    it('a rebuild during a visit ends the visit and drops the peek', async () => {
+      vi.useFakeTimers({ shouldAdvanceTime: true });
+      const rebuilt = {
+        ...threeSteps(),
+        headSha: 'c'.repeat(40),
+        createdAt: '2026-10-28T12:00:00Z',
+      };
+      getPr
+        .mockResolvedValueOnce(response({ tour: threeSteps(), outdated: true }))
+        .mockResolvedValue(response({ tour: rebuilt, job: job('done', ['Saved']) }));
+      buildTour.mockResolvedValue({ job: job('running', ['Cloning']) });
+      render(<TourView repo="acme/loans" pr={42} />);
+      await screen.findByRole('navigation', { name: 'Tour outline' });
+      await startTour();
+      fireEvent.click(outlineItem('Validate and record'));
+      fireEvent.keyDown(window, { key: 'm' });
+      box(2);
+      openInTour();
+      expect(back('map')).toBeTruthy();
+
+      fireEvent.click(screen.getByRole('button', { name: 'Rebuild tour' }));
+      await screen.findByText('Cloning');
+      await act(() => vi.advanceTimersByTimeAsync(2000));
+
+      expect(back('map')).toBeNull();
+      expect(screen.queryByRole('dialog', { hidden: true, name: /^Flow map/ })).toBeNull();
+      fireEvent.keyDown(window, { key: 'm' });
+      expect(map()).toBeTruthy();
+      expect(peekOf('Charge the fee')).toBeNull();
+    });
+
+    it('a second Open in tour during a visit still returns to the place before the first visit', async () => {
+      await showStep('Validate and record');
+      fireEvent.keyDown(window, { key: 'm' });
+      box(2);
+      openInTour();
+      expect(trail()).toContain('step 2 of 3');
+
+      fireEvent.keyDown(window, { key: 'm' });
+      box(3);
+      openInTour();
+      expect(trail()).toContain('step 3 of 3');
+
+      fireEvent.click(back('map')!);
+      expect(trail()).toContain('step 1 of 3');
+      expect(map()).toBeTruthy();
+      // The map comes back with the latest peek.
+      expect(peekOf('Post to the ledger')).toBeTruthy();
+      expect(peekOf('Charge the fee')).toBeNull();
+      expect(markSeen).not.toHaveBeenCalled();
+    });
+
+    it('n acts on the peek, not on the step pane under the map', async () => {
+      await showStep('Validate and record');
+      expect(paneCode().getAttribute('data-keys')).toBe('yes');
+
+      fireEvent.keyDown(window, { key: 'm' });
+      expect(paneCode().getAttribute('data-keys')).toBe('no');
+      box(2);
+      const peekCode = within(peekOf('Charge the fee')!).getByTestId('code-view');
+      expect(peekCode.getAttribute('data-keys')).toBe('yes');
+      expect(paneCode().getAttribute('data-keys')).toBe('no');
+
+      // During a visit the hidden peek takes no keys; the visited step does.
+      openInTour();
+      expect(paneCode().getAttribute('data-keys')).toBe('yes');
+      const all = screen.getAllByTestId('code-view');
+      expect(all.filter((c) => c.getAttribute('data-keys') === 'yes')).toEqual([paneCode()]);
+
+      fireEvent.keyDown(window, { key: 'Escape' });
+      fireEvent.keyDown(window, { key: 'Escape' });
+      fireEvent.keyDown(window, { key: 'Escape' });
+      expect(map()).toBeNull();
+      expect(paneCode().getAttribute('data-keys')).toBe('yes');
+    });
+
+    describe('on the overview', () => {
+      /** threeSteps with a second flow of one step. */
+      function twoFlows(): Tour {
+        const tour = threeSteps();
+        const first = tour.flows[0]!;
+        const notify = {
+          ...first.steps[0]!,
+          id: 'F2.S1',
+          title: 'Tell the lender',
+          file: 'src/notify.ts',
+          homes: [{ file: 'src/notify.ts', side: 'new' as const, start: 1, end: 9 }],
+        };
+        return {
+          ...tour,
+          flows: [
+            first,
+            {
+              id: 'F2',
+              title: 'Notify the lender',
+              entry: { kind: 'event', label: 'loan.repaid' },
+              steps: [notify],
+            },
+          ],
+          hashes: { ...tour.hashes, 'F2.S1': 'h-n1' },
+        };
+      }
+
+      async function load() {
+        getPr.mockResolvedValue(response({ tour: twoFlows() }));
+        render(<TourView repo="acme/loans" pr={42} />);
+        await screen.findByRole('navigation', { name: 'Tour outline' });
+      }
+
+      const overview = () => screen.queryByRole('region', { name: 'Overview' });
+      const card = (name: string) => screen.getByRole('region', { name });
+
+      const cardBox = (name: string, no: number) =>
+        fireEvent.click(within(card(name)).getByRole('button', { name: new RegExp(`Step ${no}`) }));
+
+      it('a strip click is a visit with Back to the overview', async () => {
+        await load();
+        fireEvent.click(screen.getByRole('button', { name: 'Show the map of flow 2' }));
+        cardBox('Flow 1 · Repay a loan', 2);
+        const peek = peekOf('Charge the fee');
+        expect(peek).toBeTruthy();
+
+        const strip = within(card('Flow 1 · Repay a loan')).getByRole('list', { name: 'Steps' });
+        fireEvent.click(within(strip).getByRole('button', { name: /Post to the ledger/ }));
+        expect(overview()).toBeNull();
+        expect(trail()).toContain('step 3 of 3');
+        expect(document.activeElement).toBe(screen.getByRole('article'));
+        expect(back('map')).toBeNull();
+
+        fireEvent.click(back('overview')!);
+        expect(overview()).toBeTruthy();
+        expect(document.activeElement).toBe(overview());
+        // As it was: flow 2's map still open, the same peek in flow 1.
+        expect(screen.getByRole('region', { name: 'Flow 2 map' })).toBeTruthy();
+        expect(peekOf('Charge the fee')).toBe(peek);
+        expect(markSeen).not.toHaveBeenCalled();
+        fireEvent.click(screen.getAllByRole('button', { name: 'Start the tour' })[0]!);
+        expect(paneCode().textContent).toBe('f1 migrations/0042_repayments.sql');
+        expect(markSeen).not.toHaveBeenCalled();
+      });
+
+      it('Back to the overview scrolls the card map to the peeked box again', async () => {
+        const place = placeMapBoxes();
+        try {
+          await load();
+          cardBox('Flow 1 · Repay a loan', 2);
+          const flowMap = card('Flow 1 map').querySelector('.flow-map')!;
+          expect(scrolled(flowMap)).toEqual({ left: 650, top: 520 });
+
+          fireEvent.click(
+            within(peekOf('Charge the fee')!).getByRole('button', { name: 'Open in tour' }),
+          );
+          flowMap.scrollLeft = 0;
+          flowMap.scrollTop = 0;
+          fireEvent.click(back('overview')!);
+          expect(card('Flow 1 map').querySelector('.flow-map')).toBe(flowMap);
+          expect(scrolled(flowMap)).toEqual({ left: 650, top: 520 });
+          expect(markSeen).not.toHaveBeenCalled();
+        } finally {
+          place.restore();
+        }
+      });
+
+      it('Also in this PR and Open in tour are visits too', async () => {
+        await load();
+        fireEvent.click(screen.getByRole('button', { name: 'Tests (1)' }));
+        expect(paneCode().textContent).toBe('o1.1 test/loans/repay.test.ts');
+        fireEvent.keyDown(window, { key: 'Escape' });
+        expect(overview()).toBeTruthy();
+
+        cardBox('Flow 1 · Repay a loan', 2);
+        fireEvent.click(
+          within(peekOf('Charge the fee')!).getByRole('button', { name: 'Open in tour' }),
+        );
+        expect(paneCode().textContent).toBe('F1.S2 src/fees.ts');
+        fireEvent.click(back('overview')!);
+        expect(peekOf('Charge the fee')).toBeTruthy();
+        expect(markSeen).not.toHaveBeenCalled();
+      });
+
+      it('opening a peek in one card closes the peek in another', async () => {
+        await load();
+        fireEvent.click(screen.getByRole('button', { name: 'Show the map of flow 2' }));
+        cardBox('Flow 1 · Repay a loan', 2);
+        expect(peekOf('Charge the fee')).toBeTruthy();
+
+        cardBox('Flow 2 · Notify the lender', 1);
+        expect(peekOf('Tell the lender')).toBeTruthy();
+        expect(peekOf('Charge the fee')).toBeNull();
+      });
+
+      it("hiding a card's map drops its peek: j and Esc act as with no peek", async () => {
+        await load();
+        cardBox('Flow 1 · Repay a loan', 2);
+        expect(peekOf('Charge the fee')).toBeTruthy();
+        fireEvent.click(screen.getByRole('button', { name: 'Hide the map of flow 1' }));
+
+        // Esc closes the overview at once: there is no hidden peek to close first.
+        fireEvent.keyDown(window, { key: 'Escape' });
+        expect(overview()).toBeNull();
+        // A fresh overview: flow 1's map open again, with no peek.
+        fireEvent.keyDown(window, { key: 'o' });
+        expect(screen.getByRole('region', { name: 'Flow 1 map' })).toBeTruthy();
+        expect(peekOf('Charge the fee')).toBeNull();
+
+        cardBox('Flow 1 · Repay a loan', 2);
+        fireEvent.click(screen.getByRole('button', { name: 'Hide the map of flow 1' }));
+        fireEvent.keyDown(window, { key: 'j' });
+        expect(overview()).toBeNull();
+        expect(paneCode().textContent).toBe('f1 migrations/0042_repayments.sql');
+        expect(markSeen).not.toHaveBeenCalled();
+      });
+
+      it('Back to a card whose map was hidden meanwhile brings no unseen peek', async () => {
+        await load();
+        cardBox('Flow 1 · Repay a loan', 2);
+        fireEvent.click(
+          within(peekOf('Charge the fee')!).getByRole('button', { name: 'Open in tour' }),
+        );
+        fireEvent.keyDown(window, { key: 'o' });
+        fireEvent.click(screen.getByRole('button', { name: 'Hide the map of flow 1' }));
+        fireEvent.keyDown(window, { key: 'o' });
+        fireEvent.click(back('overview')!);
+        expect(overview()).toBeTruthy();
+        expect(screen.queryByRole('region', { name: 'Flow 1 map' })).toBeNull();
+
+        // No hidden peek takes the keys: Esc closes the overview at once.
+        fireEvent.keyDown(window, { key: 'Escape' });
+        expect(overview()).toBeNull();
+        expect(paneCode().textContent).toBe('f1 migrations/0042_repayments.sql');
+        expect(markSeen).not.toHaveBeenCalled();
+      });
+
+      it('Hide the map leaves focus on its button', async () => {
+        await load();
+        cardBox('Flow 1 · Repay a loan', 2);
+        const toggle = screen.getByRole('button', { name: 'Hide the map of flow 1' });
+        toggle.focus();
+        fireEvent.click(toggle);
+        expect(peekOf('Charge the fee')).toBeNull();
+        expect(document.activeElement).toBe(toggle);
+        expect(toggle.getAttribute('aria-expanded')).toBe('false');
+      });
+
+      it('a card peek closed from inside it leaves focus on the overview', async () => {
+        await load();
+        cardBox('Flow 1 · Repay a loan', 2);
+        const close = within(peekOf('Charge the fee')!).getByRole('button', { name: 'Close' });
+        close.focus();
+        fireEvent.click(close);
+        expect(peekOf('Charge the fee')).toBeNull();
+        expect(document.activeElement).toBe(overview());
+      });
+
+      it('hiding another card keeps the peek', async () => {
+        await load();
+        fireEvent.click(screen.getByRole('button', { name: 'Show the map of flow 2' }));
+        cardBox('Flow 1 · Repay a loan', 2);
+        fireEvent.click(screen.getByRole('button', { name: 'Hide the map of flow 2' }));
+        expect(peekOf('Charge the fee')).toBeTruthy();
+      });
+
+      it('o during a visit from the overview shows the same peek again', async () => {
+        await load();
+        cardBox('Flow 1 · Repay a loan', 2);
+        const peek = peekOf('Charge the fee');
+        fireEvent.click(within(peek!).getByRole('button', { name: 'Open in tour' }));
+        expect(overview()).toBeNull();
+
+        fireEvent.keyDown(window, { key: 'o' });
+        expect(overview()).toBeTruthy();
+        expect(peekOf('Charge the fee')).toBe(peek);
+        fireEvent.keyDown(window, { key: 'o' });
+        fireEvent.click(back('overview')!);
+        expect(peekOf('Charge the fee')).toBe(peek);
+        expect(markSeen).not.toHaveBeenCalled();
+      });
+
+      it('j and k move the peek on the overview; without a peek they close it', async () => {
+        await load();
+        cardBox('Flow 1 · Repay a loan', 1);
+        fireEvent.keyDown(window, { key: 'j' });
+        expect(peekOf('Charge the fee')).toBeTruthy();
+        expect(overview()).toBeTruthy();
+        fireEvent.keyDown(window, { key: 'Escape' });
+        expect(peekOf('Charge the fee')).toBeNull();
+        expect(overview()).toBeTruthy();
+        fireEvent.keyDown(window, { key: 'j' });
+        expect(overview()).toBeNull();
+        expect(paneCode().textContent).toBe('f1 migrations/0042_repayments.sql');
+        expect(markSeen).not.toHaveBeenCalled();
+      });
+    });
   });
 });
 

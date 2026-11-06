@@ -181,6 +181,29 @@ describe('tour layout CSS', () => {
     expect(css).not.toMatch(/\.overview-rest-part[^{]*::before/);
   });
 
+  it('an overview card caps its map only while a peek is open', () => {
+    expect(() => rule('.map-peek.card .map-peek-map')).toThrow();
+    const capped = rule('.map-peek.card.peeking .map-peek-map');
+    expect(capped['max-height']).toBe('300px');
+    expect(capped.flex).toBe('none');
+  });
+
+  it('a map panel or overview kept during a visit is hidden without losing its boxes', () => {
+    // display: none would drop the scroll positions of the map, the peek and the overview.
+    expect(css).not.toMatch(/\[hidden\][^{]*\{[^}]*display:\s*none/);
+    const panel = rule('.flow-map-panel[hidden]');
+    expect(panel.display).toBe('flex');
+    expect(panel.visibility).toBe('hidden');
+    expect(panel['pointer-events']).toBe('none');
+    const overview = rule('.overview[hidden]');
+    expect(overview.position).toBe('absolute');
+    expect(overview.inset).toBe('0');
+    expect(overview.visibility).toBe('hidden');
+    expect(overview['pointer-events']).toBe('none');
+    // Both are placed over the main area, which holds them.
+    expect(rule('.tour-main').position).toBe('relative');
+  });
+
   it('colors and outline font sizes come from tokens', () => {
     const body = css.slice(css.indexOf('*,'));
     expect(body).not.toMatch(/font-size:\s*\d+px/);

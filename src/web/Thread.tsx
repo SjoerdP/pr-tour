@@ -20,6 +20,8 @@ type Props = {
   onResolve: (resolved: boolean) => Promise<unknown> | void;
   /** A review is being sent: its reply drafts cannot be edited or deleted meanwhile. */
   locked?: boolean;
+  /** Show the thread only: no Reply or Resolve, and no reply drafts' Edit or Delete. */
+  readOnly?: boolean;
   /** The time relative times count from; tests pass a fixed one. */
   now?: Date;
 };
@@ -36,11 +38,14 @@ export function Thread({
   onDeleteDraft,
   onResolve,
   locked = false,
+  readOnly = false,
   now,
 }: Props) {
   const [expanded, setExpanded] = useState(!thread.resolved);
-  // An open reply, and its text, come back when the thread shows again.
-  const memory = useComposerMemory();
+  // An open reply, and its text, come back when the thread shows again. A read-only thread
+  // opens no reply, so it leaves the memory alone.
+  const sharedMemory = useComposerMemory();
+  const memory = readOnly ? null : sharedMemory;
   const [replying, setReplyingState] = useState(() => memory?.reply(thread.id) !== undefined);
   function setReplying(open: boolean) {
     setReplyingState(open);
@@ -103,6 +108,7 @@ export function Thread({
               draft={draft}
               path={thread.path}
               locked={locked}
+              readOnly={readOnly}
               onEdit={(body) => onEditDraft(draft.id, body)}
               onDelete={() => onDeleteDraft(draft.id)}
             />
@@ -119,14 +125,16 @@ export function Thread({
               onCancel={() => setReplying(false)}
             />
           ) : (
-            <div className="thread-actions">
-              <button type="button" onClick={() => setReplying(true)}>
-                Reply
-              </button>
-              <button type="button" disabled={busy} onClick={() => void resolve()}>
-                {thread.resolved ? 'Unresolve' : 'Resolve'}
-              </button>
-            </div>
+            !readOnly && (
+              <div className="thread-actions">
+                <button type="button" onClick={() => setReplying(true)}>
+                  Reply
+                </button>
+                <button type="button" disabled={busy} onClick={() => void resolve()}>
+                  {thread.resolved ? 'Unresolve' : 'Resolve'}
+                </button>
+              </div>
+            )
           )}
           {error !== null && (
             <p className="composer-error" role="alert">
@@ -170,12 +178,14 @@ export const OLDER_DRAFT_NOTICE =
  * A draft (a reply or a new comment) not yet sent: its text, with Edit and Delete. `older`
  * marks a comment made on an older version of the PR. `locked` (a review is being sent)
  * turns Edit and Delete off: a deleted draft would still be sent, and an edit lost.
+ * `readOnly` shows the draft's text only.
  */
 export function PendingDraft({
   draft,
   path,
   older = false,
   locked = false,
+  readOnly = false,
   onEdit,
   onDelete,
 }: {
@@ -183,11 +193,14 @@ export function PendingDraft({
   path: string;
   older?: boolean;
   locked?: boolean;
+  readOnly?: boolean;
   onEdit: (body: string) => Promise<unknown> | void;
   onDelete: () => Promise<unknown> | void;
 }) {
-  // An open edit, and its text, come back when the draft shows again.
-  const memory = useComposerMemory();
+  // An open edit, and its text, come back when the draft shows again. A read-only draft
+  // opens no edit, so it leaves the memory alone.
+  const sharedMemory = useComposerMemory();
+  const memory = readOnly ? null : sharedMemory;
   const [editing, setEditingState] = useState(() => memory?.edit(draft.id) !== undefined);
   function setEditing(open: boolean) {
     setEditingState(open);
@@ -235,14 +248,16 @@ export function PendingDraft({
       ) : (
         <>
           <CommentBody body={draft.body} />
-          <div className="thread-actions">
-            <button type="button" disabled={locked} onClick={() => setEditing(true)}>
-              Edit
-            </button>
-            <button type="button" disabled={busy || locked} onClick={() => void remove()}>
-              Delete
-            </button>
-          </div>
+          {!readOnly && (
+            <div className="thread-actions">
+              <button type="button" disabled={locked} onClick={() => setEditing(true)}>
+                Edit
+              </button>
+              <button type="button" disabled={busy || locked} onClick={() => void remove()}>
+                Delete
+              </button>
+            </div>
+          )}
         </>
       )}
       {error !== null && (

@@ -13,9 +13,11 @@ type ItemsProps = {
   threads: ReviewThread[];
   drafts: DraftComment[];
   review: ReviewState;
+  /** Show threads and drafts only: no Reply, Resolve, Edit or Delete. */
+  readOnly?: boolean;
 };
 
-function Items({ path, headSha, threads, drafts, review }: ItemsProps) {
+function Items({ path, headSha, threads, drafts, review, readOnly = false }: ItemsProps) {
   return (
     <>
       {threads.map((thread) => (
@@ -25,6 +27,7 @@ function Items({ path, headSha, threads, drafts, review }: ItemsProps) {
           drafts={review.drafts}
           viewerIsAuthor={review.viewerIsAuthor}
           locked={review.submitting}
+          readOnly={readOnly}
           onReply={(body) => review.add({ kind: 'reply', threadId: thread.id, body })}
           onEditDraft={(id, body) => review.update(id, body)}
           onDeleteDraft={(id) => review.remove(id)}
@@ -38,6 +41,7 @@ function Items({ path, headSha, threads, drafts, review }: ItemsProps) {
           path={path}
           older={isOlderDraft(draft, headSha)}
           locked={review.submitting}
+          readOnly={readOnly}
           onEdit={(body) => review.update(draft.id, body)}
           onDelete={() => review.remove(draft.id)}
         />
