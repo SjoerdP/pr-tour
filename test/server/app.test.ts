@@ -493,7 +493,9 @@ describe('POST /api/pr/:owner/:name/:pr/tour', () => {
     const second = await api('/api/pr/acme/greet/7/tour', { method: 'POST' });
 
     expect(first.status).toBe(202);
-    expect(await json<{ job: Job }>(first)).toEqual({ job: { state: 'running', log: [] } });
+    const { job } = await json<{ job: Job }>(first);
+    expect({ state: job.state, log: job.log }).toEqual({ state: 'running', log: [] });
+    expect(typeof job.startedAt).toBe('string');
     expect(second.status).toBe(202);
     expect(fakes.builder.build).toHaveBeenCalledTimes(1);
     expect(fakes.builder.build).toHaveBeenCalledWith(
@@ -598,7 +600,11 @@ describe('POST /api/pr/:owner/:name/:pr/tour', () => {
     await api('/api/pr/acme/greet/7/tour', { method: 'POST' });
     const body = await json<PrResponse>(await api('/api/pr/acme/greet/7'));
 
-    expect(body.job).toEqual({ state: 'running', log: ['Fetching acme/greet#7'] });
+    expect({ state: body.job?.state, log: body.job?.log }).toEqual({
+      state: 'running',
+      log: ['Fetching acme/greet#7'],
+    });
+    expect(typeof body.job?.startedAt).toBe('string');
   });
 
   it('failed job shows error', async () => {

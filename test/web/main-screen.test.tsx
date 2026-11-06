@@ -96,6 +96,20 @@ describe('About: code check', () => {
     review: { ran: true, ms: 5, changes: [{ what: 'Moved step 2', reason: 'it runs first' }] },
   };
 
+  it('says how long the tour took to build, when it knows', async () => {
+    await open({ ...baseTour, buildMs: 372_000 });
+    expect(screen.getByRole('region', { name: 'About this PR' }).textContent).toContain(
+      'Built in 6 min 12 s.',
+    );
+  });
+
+  it('says nothing about build time for a tour without it', async () => {
+    await open(baseTour);
+    expect(screen.getByRole('region', { name: 'About this PR' }).textContent).not.toContain(
+      'Built in',
+    );
+  });
+
   it('shows coverage, the engine note and the review changes', async () => {
     await open({ ...baseTour, analysis });
     const text = screen.getByRole('region', { name: 'About this PR' }).textContent;

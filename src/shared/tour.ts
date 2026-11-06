@@ -233,6 +233,8 @@ export const TourMetaSchema = z.object({
   headSha: z.string(),
   source: z.enum(['author', 'inferred']),
   createdAt: z.string(),
+  /** How long building the tour took, in ms. Left out for imported tours and older tours. */
+  buildMs: z.number().int().min(0).optional(),
 });
 
 /**

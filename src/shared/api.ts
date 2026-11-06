@@ -46,6 +46,9 @@ export type Job = {
   log: string[];
   /** What the build is doing right now, such as how many files Claude has read. */
   progress?: string;
+  /** When the job started and, once it is done or failed, when it ended (ISO times). */
+  startedAt?: string;
+  endedAt?: string;
 };
 
 /**

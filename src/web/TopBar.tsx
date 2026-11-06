@@ -2,6 +2,7 @@ import { useEffect, useId, useRef, useState, type KeyboardEvent } from 'react';
 import type { PrSummary } from '../shared/api.js';
 import { progressHomeIds, type Analysis, type Tour } from '../shared/tour.js';
 import type { RevealPlace } from './code-lines.js';
+import { durationText } from './duration.js';
 import { inKeepOpenArea, keepsReviewOpen } from './keep-review-open.js';
 import { isReviewColumn } from './review-column.js';
 import { ReviewPanel, type ReviewDraftText } from './ReviewPanel.js';
@@ -207,6 +208,9 @@ export function TopBar({
       {tour && open && (
         <section ref={panel} id={panelId} className="about-panel" aria-label="About this PR">
           <p className="about-summary">{tour.summary}</p>
+          {tour.buildMs !== undefined && (
+            <p className="about-built muted">Built in {durationText(tour.buildMs)}.</p>
+          )}
           <TourMap tour={tour} onOpenHome={onOpenHome} />
           {problems.length > 0 && (
             <div className="check-problems">
