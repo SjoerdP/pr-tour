@@ -433,6 +433,14 @@ describe('TourBuilder.build', () => {
     expect(stored?.summary).toBe(FULL_GREET.summary);
   });
 
+  it('build records how long it took on the tour', async () => {
+    const { tours } = builder(validAnswer);
+    const built = await tours.build('acme/greet', 7);
+    expect(built.buildMs).toEqual(expect.any(Number));
+    expect(built.buildMs).toBeGreaterThanOrEqual(0);
+    expect(store.getTour('acme/greet', 7)?.buildMs).toBe(built.buildMs);
+  });
+
   it('build passes the diff as a file, not inline', async () => {
     let diffPath = '';
     let diffOnDisk = '';

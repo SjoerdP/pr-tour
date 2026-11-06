@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { Jobs } from '../../src/server/jobs.js';
 
 /** A promise and the functions that settle it. */
@@ -29,7 +29,36 @@ describe('Jobs', () => {
     run.resolve();
     await flush();
 
-    expect(jobs.get('k')).toEqual({ state: 'done', log: [] });
+    expect(jobs.get('k')).toMatchObject({ state: 'done', log: [] });
+  });
+
+  it('a job records when it started and when it ended', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    try {
+      vi.setSystemTime(new Date('2026-11-06T10:00:00Z'));
+      const jobs = new Jobs();
+      const run = deferred();
+      jobs.start('k', () => run.promise);
+      expect(jobs.get('k')).toMatchObject({ startedAt: '2026-11-06T10:00:00.000Z' });
+      expect(jobs.get('k')?.endedAt).toBeUndefined();
+
+      vi.setSystemTime(new Date('2026-11-06T10:06:12Z'));
+      run.resolve();
+      await flush();
+      expect(jobs.get('k')).toMatchObject({
+        startedAt: '2026-11-06T10:00:00.000Z',
+        endedAt: '2026-11-06T10:06:12.000Z',
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('a failed job records when it ended', async () => {
+    const jobs = new Jobs();
+    jobs.start('k', () => Promise.reject(new Error('boom')));
+    await flush();
+    expect(jobs.get('k')?.endedAt).toEqual(expect.any(String));
   });
 
   it('a job shows its latest progress line until it is cleared', () => {
@@ -45,7 +74,8 @@ describe('Jobs', () => {
     expect(jobs.get('k')?.progress).toBe('Claude has read 2 files and run 0 searches');
 
     progress(undefined);
-    expect(jobs.get('k')).toEqual({ state: 'running', log: [] });
+    expect(jobs.get('k')?.progress).toBeUndefined();
+    expect(jobs.get('k')).toMatchObject({ state: 'running', log: [] });
   });
 
   it('a job that throws is failed with the error message', async () => {

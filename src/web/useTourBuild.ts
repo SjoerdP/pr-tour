@@ -24,13 +24,33 @@ export type Build =
   | { state: 'idle' }
   | { state: 'confirm'; drafts: number }
   | { state: 'starting' }
-  | { state: 'running'; log: string[]; progress?: string; pollError?: string }
-  | { state: 'failed'; error: string; log: string[] };
+  | {
+      state: 'running';
+      log: string[];
+      progress?: string;
+      pollError?: string;
+      /** When the build started on the server (ISO); absent from an older server. */
+      startedAt?: string;
+    }
+  | { state: 'failed'; error: string; log: string[]; startedAt?: string; endedAt?: string };
 
 function buildFromJob(job: Job | null): Build {
   if (!job || job.state === 'done') return { state: 'idle' };
-  if (job.state === 'running') return { state: 'running', log: job.log, progress: job.progress };
-  return { state: 'failed', error: job.error ?? 'The build failed.', log: job.log };
+  if (job.state === 'running') {
+    return {
+      state: 'running',
+      log: job.log,
+      progress: job.progress,
+      ...(job.startedAt !== undefined && { startedAt: job.startedAt }),
+    };
+  }
+  return {
+    state: 'failed',
+    error: job.error ?? 'The build failed.',
+    log: job.log,
+    ...(job.startedAt !== undefined && { startedAt: job.startedAt }),
+    ...(job.endedAt !== undefined && { endedAt: job.endedAt }),
+  };
 }
 
 function logOf(build: Build): string[] {

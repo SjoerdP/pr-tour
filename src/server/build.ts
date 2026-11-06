@@ -323,6 +323,7 @@ export class TourBuilder {
     onLog: (line: string) => void = () => {},
     onProgress: (line: string | undefined) => void = () => {},
   ): Promise<Tour> {
+    const started = Date.now();
     const { summary, worktree, diff, mergeBase } = await this.checkout(repo, pr, onLog);
 
     const diffPath = join(this.deps.home, 'tmp', `${slug(repo)}-${pr}-${summary.headSha}.diff`);
@@ -348,7 +349,7 @@ export class TourBuilder {
       rmSync(functionsPath, { force: true });
     }
 
-    return this.finishAndSave(body, summary, mergeBase, 'inferred', diff, worktree, onLog);
+    return this.finishAndSave(body, summary, mergeBase, 'inferred', diff, worktree, onLog, started);
   }
 
   /** Pass A on a checkout; null when there are no Go files, no checker, or the checker fails. */
@@ -627,6 +628,8 @@ export class TourBuilder {
     diff: string,
     worktree: string,
     onLog: (line: string) => void,
+    /** When the build started (ms since the epoch); the saved tour records how long it took. */
+    started?: number,
   ): Promise<Tour> {
     onLog('Checking the tour against the diff');
     const finished = finishTour(
@@ -647,6 +650,7 @@ export class TourBuilder {
     if (source === 'inferred' && findings(tour).length > 0) {
       tour = await this.passC(tour, worktree, diff, onLog);
     }
+    if (started !== undefined) tour = { ...tour, buildMs: Math.max(0, Date.now() - started) };
     this.deps.store.saveTour(tour);
     const moved = tour.check.fixes?.length ?? 0;
     const fixed =

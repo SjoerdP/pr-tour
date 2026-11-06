@@ -1,3 +1,5 @@
+import { useEffect, useState } from 'react';
+import { clockText, durationText } from './duration.js';
 import type { Build } from './useTourBuild.js';
 
 /**
@@ -36,7 +38,7 @@ export function BuildStatus({
     return (
       <div className="build-status">
         <p className="error" role="alert">
-          The tour build failed: {build.error}
+          The tour build failed{tookText(build.startedAt, build.endedAt)}: {build.error}
         </p>
         <button type="button" onClick={onRetry}>
           Try again
@@ -47,7 +49,16 @@ export function BuildStatus({
   }
   return (
     <div className="build-status" aria-busy="true">
-      <p className="muted">Building the tour… A large pull request can take 15 minutes or more.</p>
+      <p className="muted">
+        Building the tour…
+        {build.state === 'running' && build.startedAt !== undefined && (
+          <>
+            {' '}
+            <Clock since={build.startedAt} />
+          </>
+        )}{' '}
+        A large pull request can take 15 minutes or more.
+      </p>
       {build.state === 'running' && build.pollError && (
         <p className="warn" role="status">
           {build.pollError}
@@ -68,5 +79,28 @@ function JobLog({ log, progress }: { log: string[]; progress?: string }) {
       ))}
       {progress !== undefined && <div className="job-progress">{progress}</div>}
     </pre>
+  );
+}
+
+/** " after 4 min 3 s" when both times are known; nothing otherwise. */
+function tookText(startedAt: string | undefined, endedAt: string | undefined): string {
+  if (startedAt === undefined || endedAt === undefined) return '';
+  const ms = Date.parse(endedAt) - Date.parse(startedAt);
+  return Number.isNaN(ms) ? '' : ` after ${durationText(ms)}`;
+}
+
+/** Time since `since`, ticking every second. */
+function Clock({ since }: { since: string }) {
+  const start = Date.parse(since);
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, []);
+  if (Number.isNaN(start)) return null;
+  return (
+    <time className="build-clock" title="Time since the build started">
+      {clockText(now - start)}
+    </time>
   );
 }

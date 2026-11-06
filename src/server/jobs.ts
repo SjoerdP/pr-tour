@@ -24,7 +24,7 @@ export class Jobs {
     ) => Promise<unknown>,
   ): void {
     if (this.jobs.get(key)?.state === 'running') return;
-    const job: Job = { state: 'running', log: [] };
+    const job: Job = { state: 'running', log: [], startedAt: new Date().toISOString() };
     this.jobs.set(key, job);
     const log = (line: string) => {
       job.log.push(line);
@@ -39,11 +39,13 @@ export class Jobs {
     void run.then(
       () => {
         job.state = 'done';
+        job.endedAt = new Date().toISOString();
       },
       (err: unknown) => {
         // Kept as the job's state for the UI to show; the caller logs details.
         job.state = 'failed';
         job.error = err instanceof Error ? err.message : String(err);
+        job.endedAt = new Date().toISOString();
       },
     );
   }
