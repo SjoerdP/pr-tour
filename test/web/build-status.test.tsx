@@ -42,6 +42,9 @@ describe('BuildStatus', () => {
       />,
     );
     expect(screen.getByTitle('Time since the build started').textContent).toBe('4:10');
+    expect(screen.getByText(/^Building the tour/).textContent).toBe(
+      'Building the tour (4:10 so far). A large pull request can take 15 minutes or more.',
+    );
     act(() => {
       vi.advanceTimersByTime(2000);
     });

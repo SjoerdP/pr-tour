@@ -50,12 +50,12 @@ export function BuildStatus({
   return (
     <div className="build-status" aria-busy="true">
       <p className="muted">
-        Building the tour…
-        {build.state === 'running' && build.startedAt !== undefined && (
+        {build.state === 'running' && build.startedAt !== undefined ? (
           <>
-            {' '}
-            <Clock since={build.startedAt} />
+            Building the tour (<Clock since={build.startedAt} /> so far).
           </>
+        ) : (
+          'Building the tour…'
         )}{' '}
         A large pull request can take 15 minutes or more.
       </p>
