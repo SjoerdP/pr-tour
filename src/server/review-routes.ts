@@ -63,7 +63,7 @@ const ThreadIdSchema = z.object({ threadId: z.string().regex(/^[\w-]{1,100}$/) }
 const ResolveBodySchema = z.object({ resolved: z.boolean() });
 
 const ProblemMarkBodySchema = z.object({
-  key: z.string().min(1).max(1000),
+  key: z.string().min(1).max(4000),
   mark: z.enum(['real', 'not']).nullable(),
 });
 

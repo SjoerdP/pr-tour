@@ -1,6 +1,7 @@
 // Possible problems from CI on GitHub: the check runs of the tour's head commit, their line
 // annotations, and failed runs.
 
+import { createHash } from 'node:crypto';
 import type { Level, Problem } from '../shared/problems.js';
 import type { Tour } from '../shared/tour.js';
 import { lineChanges, type FileDiff } from './diff.js';
@@ -20,7 +21,7 @@ export type CheckRunNode = {
   annotations: {
     nodes: Array<{
       path: string;
-      annotationLevel: AnnotationLevel;
+      annotationLevel: AnnotationLevel | null;
       title: string | null;
       message: string;
       location: { start: { line: number }; end: { line: number } };
@@ -30,7 +31,7 @@ export type CheckRunNode = {
 
 // The commit goes in as `$sha`, never into the query text.
 // GitHub refuses a query that may return more than 500,000 nodes, counting the nested
-// limits multiplied: 20 suites × 50 runs × 50 annotations is 50,000.
+// limits multiplied: 20 + 20 × 50 + 20 × 50 × 100 is about 101,000.
 const CHECK_RUNS_QUERY = `query($owner: String!, $name: String!, $sha: GitObjectID!) {
   repository(owner: $owner, name: $name) {
     object(oid: $sha) {
@@ -38,7 +39,7 @@ const CHECK_RUNS_QUERY = `query($owner: String!, $name: String!, $sha: GitObject
         statusCheckRollup { state }
         checkSuites(first: 20) { nodes { checkRuns(first: 50) { nodes {
           name status conclusion detailsUrl summary text
-          annotations(first: 50) { nodes {
+          annotations(first: 100) { nodes {
             path annotationLevel title message
             location { start { line } end { line } }
           } }
@@ -101,7 +102,8 @@ const FAILED_RUN = new Set(['FAILURE', 'TIMED_OUT', 'STARTUP_FAILURE']);
 /**
  * The possible problems in check runs `runs` of the tour's head commit. An annotation counts
  * only on a line the PR added (`files`); others are dropped. A failed run with no annotation
- * kept is one problem: on a step when it names one of the steps' tests, else PR-wide.
+ * kept is one problem: on a step when its output (or a dropped annotation) names one of the
+ * steps' tests on a failure line, else PR-wide.
  */
 export function ciProblems(runs: CheckRunNode[], files: FileDiff[], tour: Tour): Problem[] {
   const added = new Map<string, string>();
@@ -115,17 +117,22 @@ export function ciProblems(runs: CheckRunNode[], files: FileDiff[], tour: Tour):
   const problems: Problem[] = [];
   for (const run of runs) {
     let kept = 0;
+    const dropped: string[] = [];
     for (const a of run.annotations.nodes) {
       const line = a.location.start.line;
       const lineText = added.get(lineId(a.path, line));
-      if (lineText === undefined) continue;
+      if (lineText === undefined) {
+        dropped.push(a.title ?? '', a.message);
+        continue;
+      }
       kept++;
       const [first = '', ...rest] = a.message.split('\n');
       const title = a.title?.trim() || first.trim();
       const why = a.title?.trim() ? a.message.trim() : rest.join('\n').trim();
       problems.push({
-        key: `ci|${run.name}|${a.path}|${lineText}|${title}`,
-        level: ANNOTATION_LEVEL[a.annotationLevel],
+        // The line's text, hashed: a long line would make a key too long to save a mark.
+        key: `ci|${run.name}|${a.path}|${shortHash(lineText)}|${title}`,
+        level: (a.annotationLevel && ANNOTATION_LEVEL[a.annotationLevel]) ?? 'look',
         title,
         ...(why ? { why } : {}),
         sources: [run.name],
@@ -135,8 +142,10 @@ export function ciProblems(runs: CheckRunNode[], files: FileDiff[], tour: Tour):
     }
     if (kept > 0 || run.conclusion === null || !FAILED_RUN.has(run.conclusion)) continue;
 
-    const output = `${run.summary ?? ''}\n${run.text ?? ''}`;
-    const failing = tests.filter((test) => wholeWord(test).test(output));
+    const failures = [run.summary ?? '', run.text ?? '', ...dropped]
+      .flatMap((text) => text.split('\n'))
+      .filter(isFailureLine);
+    const failing = tests.filter((test) => failures.some((l) => wholeWord(test).test(l)));
     const base = {
       level: 'bug' as const,
       sources: ['CI'],
@@ -160,6 +169,20 @@ export function ciProblems(runs: CheckRunNode[], files: FileDiff[], tour: Tour):
     }
   }
   return uniqueByKey(problems);
+}
+
+/** A line of test output that reports a failure: `--- FAIL: TestX`, `✗ charges a fee`. */
+const FAILURE_WORD = /\bfail(ed|ure|s)?\b|✗|❌|×/i;
+/** A line that reports a pass: `--- PASS: TestX`, Go's `ok  acme/loans`, `✓ charges a fee`. */
+const PASS_WORD = /\bPASS(ED)?\b|\bpassed\b|^\s*ok\b|✓|✔/;
+
+function isFailureLine(line: string): boolean {
+  return FAILURE_WORD.test(line) && !PASS_WORD.test(line);
+}
+
+/** The first 16 hex digits of the SHA-1 of `text`. */
+function shortHash(text: string): string {
+  return createHash('sha1').update(text).digest('hex').slice(0, 16);
 }
 
 function lineId(file: string, line: number): string {

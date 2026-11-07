@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 import type { FileDiff } from '../../src/server/diff.js';
 import { ProblemsGitHub, ciProblems, type CheckRunNode } from '../../src/server/problems-github.js';
@@ -75,6 +76,11 @@ const tour: Tour = {
   hashes: {},
 };
 
+/** The short hash of a line's text that a CI line problem's key holds. */
+function lineHash(text: string): string {
+  return createHash('sha1').update(text).digest('hex').slice(0, 16);
+}
+
 type Annotation = CheckRunNode['annotations']['nodes'][number];
 
 function annotation(extra: Partial<Annotation> = {}): Annotation {
@@ -130,7 +136,7 @@ describe('ciProblems', () => {
 
     expect(problems).toEqual([
       {
-        key: 'ci|lint|loans/fees.go|\tfee := l.Amount / 100|fee is never checked for overflow',
+        key: `ci|lint|loans/fees.go|${lineHash('\tfee := l.Amount / 100')}|fee is never checked for overflow`,
         level: 'risk',
         title: 'fee is never checked for overflow',
         sources: ['lint'],
@@ -138,7 +144,7 @@ describe('ciProblems', () => {
         url: 'https://github.com/acme/loans/runs/1',
       },
       {
-        key: 'ci|lint|loans/fees.go|\tl.Fees = append(l.Fees, fee)|Unchecked error',
+        key: `ci|lint|loans/fees.go|${lineHash('\tl.Fees = append(l.Fees, fee)')}|Unchecked error`,
         level: 'bug',
         title: 'Unchecked error',
         why: 'The error from append is dropped.\nCheck it.',
@@ -147,7 +153,7 @@ describe('ciProblems', () => {
         url: 'https://github.com/acme/loans/runs/1',
       },
       {
-        key: 'ci|lint|loans/fees.go|\treturn nil|Consider a constant',
+        key: `ci|lint|loans/fees.go|${lineHash('\treturn nil')}|Consider a constant`,
         level: 'look',
         title: 'Consider a constant',
         why: 'for the fee rate.',
@@ -274,6 +280,99 @@ describe('ciProblems', () => {
     ]);
   });
 
+  it('a passing test in the output of a failed run is not a failing step', () => {
+    const problems = ciProblems(
+      [
+        run({
+          name: 'test',
+          conclusion: 'FAILURE',
+          summary: [
+            '=== RUN   TestChargeFee',
+            '--- PASS: TestChargeFee (0.00s)',
+            '=== RUN   TestOther',
+            '--- FAIL: TestOther (0.01s)',
+            'FAIL',
+          ].join('\n'),
+        }),
+      ],
+      files,
+      tour,
+    );
+
+    expect(problems).toEqual([
+      {
+        key: `ci|${HEAD}|test|`,
+        level: 'bug',
+        title: 'CI check "test" fails',
+        sources: ['CI'],
+        at: { kind: 'pr' },
+        url: 'https://github.com/acme/loans/runs/1',
+      },
+    ]);
+  });
+
+  it("reads failing test names in a failed run's dropped annotations too", () => {
+    const problems = ciProblems(
+      [
+        run({
+          name: 'test',
+          conclusion: 'FAILURE',
+          annotations: {
+            nodes: [
+              // On no changed line: dropped as a line problem, but it names the test.
+              annotation({
+                path: 'loans/fees_test.go',
+                annotationLevel: 'FAILURE',
+                title: 'TestChargeFee failed',
+                message: 'expected fee 1, got 0',
+                location: { start: { line: 12 }, end: { line: 12 } },
+              }),
+            ],
+          },
+        }),
+      ],
+      files,
+      tour,
+    );
+
+    expect(problems.map((p) => p.at)).toEqual([{ kind: 'step', test: 'TestChargeFee' }]);
+  });
+
+  it('an annotation without a level is worth a look', () => {
+    const problems = ciProblems(
+      [run({ annotations: { nodes: [annotation({ annotationLevel: null })] } })],
+      files,
+      tour,
+    );
+
+    expect(problems.map((p) => p.level)).toEqual(['look']);
+  });
+
+  it('a long line keeps the key short: the key holds a hash of the line', () => {
+    const long = `\tfee := ${'l.Amount + '.repeat(500)}0`;
+    const longFiles: FileDiff[] = [
+      {
+        ...files[0]!,
+        hunks: [
+          {
+            oldStart: 36,
+            oldLines: 0,
+            newStart: 40,
+            newLines: 1,
+            lines: [{ kind: 'add', newNo: 40, text: long }],
+          },
+        ],
+      },
+    ];
+
+    const [p] = ciProblems([run({ annotations: { nodes: [annotation()] } })], longFiles, tour);
+
+    expect(p?.key).toBe(
+      `ci|lint|loans/fees.go|${lineHash(long)}|fee is never checked for overflow`,
+    );
+    expect(p?.key.length).toBeLessThan(200);
+  });
+
   it('a successful run adds nothing', () => {
     const problems = ciProblems(
       [run({ conclusion: 'SUCCESS', summary: '--- FAIL: TestChargeFee (0.01s)' })],
@@ -318,7 +417,7 @@ describe('ProblemsGitHub.checkRuns', () => {
     const limits = [...(fieldValue(args, 'query') ?? '').matchAll(/first: (\d+)/g)].map((m) =>
       Number(m[1]),
     );
-    expect(limits).toEqual([20, 50, 50]);
+    expect(limits).toEqual([20, 50, 100]);
     expect(limits.reduce((a, b) => a * b, 1)).toBeLessThan(500_000);
   });
 

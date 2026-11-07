@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
 import { createApp } from '../../src/server/app.js';
@@ -856,7 +857,7 @@ describe('GET /problems', () => {
     expect(await json<ProblemsResponse>(res)).toEqual({
       problems: [
         {
-          key: 'ci|lint|greet.js|  const separator = ": ";|separator is never used',
+          key: `ci|lint|greet.js|${createHash('sha1').update('  const separator = ": ";').digest('hex').slice(0, 16)}|separator is never used`,
           level: 'risk',
           title: 'separator is never used',
           why: 'Remove it or use it.',
@@ -1016,10 +1017,17 @@ describe('POST /problems/marks', () => {
     expect(fakes.store.problemMarks('acme/greet', 7)).toEqual({});
   });
 
+  it('POST marks takes a long key', async () => {
+    const key = `ci|lint|greet.js|0123456789abcdef|${'t'.repeat(3900)}`;
+    const res = await api('/problems/marks', { method: 'POST', body: { key, mark: 'real' } });
+    expect(res.status).toBe(204);
+    expect(fakes.store.problemMarks('acme/greet', 7)).toEqual({ [key]: 'real' });
+  });
+
   it('POST marks rejects a bad body', async () => {
     for (const body of [
       { key: '', mark: 'real' },
-      { key: 'k'.repeat(1001), mark: 'real' },
+      { key: 'k'.repeat(4001), mark: 'real' },
       { key: 'PRRT_1', mark: 'maybe' },
       { key: 'PRRT_1' },
     ]) {
