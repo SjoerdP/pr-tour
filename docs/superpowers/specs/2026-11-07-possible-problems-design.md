@@ -193,6 +193,12 @@ Read through `gh`, for the tour's head commit only:
 
 - A switch where a build starts: `Also look for possible problems (takes a few minutes more)`.
   Remembered per repo in the local database. Off by default.
+- A tour built without it can get it later: the overview's "Possible problems" block shows
+  `Let Claude look for possible problems` when Claude's check has not run for this tour. It
+  runs only the check, not a new tour build. When it ran, `Run Claude's check again` replaces
+  its earlier result.
+- Turning the switch off never removes a result that is already there; the overview says
+  `Claude's check is off for this repo` in its list of sources.
 - `pr-tour import` (author tours) does not run it. A later flag may.
 - It runs after the tour is checked and saved, as its own step with its own log line and
   timer. The tour can be read while it runs; its problems appear when it is done.
