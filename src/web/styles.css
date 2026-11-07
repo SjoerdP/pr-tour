@@ -2572,6 +2572,12 @@ span.problem-where {
   margin-left: auto;
 }
 
+/* Why a mark was not saved: its own line under the marks. */
+.problem-mark-error {
+  flex-basis: 100%;
+  padding: var(--space-1) var(--space-2);
+}
+
 /*
  * Pins: a dot per possible problem in its level's colour, on a step's outline row and its map
  * box. They lie over the row or box, so they change neither its size nor the map's lines.

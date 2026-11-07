@@ -281,6 +281,49 @@ describe('review panel: a jump shows its line', () => {
     expect(api.markSeen).toHaveBeenCalledWith('acme/loans', 42, 'F1.S2', 'h-12');
   });
 
+  /** An open bot thread on a changed line of a file no home holds: a problem placed nowhere. */
+  const offTour = () =>
+    thread({
+      id: 'T9',
+      path: 'lib/x.ts',
+      line: 2,
+      bot: true,
+      comments: [
+        {
+          id: 'c9',
+          author: 'coderabbitai[bot]',
+          body: 'This map is written without a lock.',
+          createdAt: '2026-10-28T09:00:00Z',
+          url: 'https://github.com/acme/loans/pull/42#discussion_c9',
+        },
+      ],
+    });
+
+  it('"Go to it" on a problem no home holds shows its file at the line', async () => {
+    serveReview({ threads: [offTour()] });
+    const panel = await openPanel();
+    fireEvent.click(within(panel).getByRole('radio', { name: 'Approve' }));
+    const section = await within(panel).findByRole('region', {
+      name: 'Possible problems not marked',
+    });
+
+    fireEvent.click(within(section).getByRole('button', { name: 'Go to it' }));
+    await screen.findByText('lib/x.ts new 2');
+    await vi.waitFor(() => expect(lastScrolled()).toBe(rowOf(2)), SETTLE);
+  });
+
+  it('a problem under "Elsewhere in this PR" shows its file at the line', async () => {
+    serveReview({ threads: [offTour()] });
+    await openPanel();
+    fireEvent.keyDown(window, { key: 'o' });
+    const elsewhere = await screen.findByRole('region', { name: 'Elsewhere in this PR' });
+
+    fireEvent.click(within(elsewhere).getByRole('button', { name: 'lib/x.ts, line 2' }));
+    await screen.findByText('lib/x.ts new 2');
+    expect(screen.queryByRole('region', { name: 'Elsewhere in this PR' })).toBeNull();
+    await vi.waitFor(() => expect(lastScrolled()).toBe(rowOf(2)), SETTLE);
+  });
+
   it('moving on with j does not flash anything', async () => {
     serveReview();
     render(<TourView repo="acme/loans" pr={42} />);

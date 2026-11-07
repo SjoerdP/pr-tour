@@ -28,7 +28,8 @@ export function ProblemSources({ sources }: { sources: string[] }) {
 
 /**
  * "Real problem" and "Not a problem": pressing one marks the problem, pressing it again takes
- * the mark away. `onMark` hears each new mark; `children` go after the two buttons.
+ * the mark away. `onMark` hears each new mark; `children` go after the two buttons. When the
+ * problem's mark was not saved, the reason shows after them.
  */
 export function ProblemMarks({
   problemKey,
@@ -39,27 +40,34 @@ export function ProblemMarks({
   onMark?: (mark: ProblemMark | null) => void;
   children?: ReactNode;
 }) {
-  const { markOf, setMark } = useProblemsContext();
+  const { markOf, setMark, error, errorKey } = useProblemsContext();
   const mark = markOf(problemKey);
   return (
-    <span className="problem-marks">
-      {(['real', 'not'] as const).map((m) => (
-        <button
-          key={m}
-          type="button"
-          className="problem-mark"
-          aria-pressed={mark === m}
-          onClick={() => {
-            const next = mark === m ? null : m;
-            setMark(problemKey, next);
-            onMark?.(next);
-          }}
-        >
-          {m === 'real' ? 'Real problem' : 'Not a problem'}
-        </button>
-      ))}
-      {children}
-    </span>
+    <>
+      <span className="problem-marks">
+        {(['real', 'not'] as const).map((m) => (
+          <button
+            key={m}
+            type="button"
+            className="problem-mark"
+            aria-pressed={mark === m}
+            onClick={() => {
+              const next = mark === m ? null : m;
+              setMark(problemKey, next);
+              onMark?.(next);
+            }}
+          >
+            {m === 'real' ? 'Real problem' : 'Not a problem'}
+          </button>
+        ))}
+        {children}
+      </span>
+      {error !== null && errorKey === problemKey && (
+        <span className="error problem-mark-error" role="status">
+          {error}
+        </span>
+      )}
+    </>
   );
 }
 

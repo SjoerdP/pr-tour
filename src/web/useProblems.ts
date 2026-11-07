@@ -53,7 +53,7 @@ function botProblem(thread: ReviewThread): Problem | null {
  * the open review threads of bots. Read again every minute while CI runs.
  *
  * `setMark` shows the mark at once and saves it in the background. If saving fails the
- * mark is taken back and `error` says so.
+ * mark is taken back and `error` says so, next to the marks of problem `errorKey`.
  */
 export function useProblems(
   repo: string,
@@ -71,7 +71,7 @@ export function useProblems(
   const [round, setRound] = useState(0);
   // Marks set here that the server may not have sent back yet; null: taken away.
   const [local, setLocal] = useState<Record<string, ProblemMark | null>>({});
-  const [error, setError] = useState<string | null>(null);
+  const [failure, setFailure] = useState<{ key: string; text: string } | null>(null);
 
   useEffect(() => {
     if (tourKey === null) return;
@@ -117,10 +117,10 @@ export function useProblems(
       const before = markOf(key) ?? null;
       setLocal((prev) => ({ ...prev, [key]: mark }));
       setProblemMark(repo, pr, key, mark).then(
-        () => setError(null),
+        () => setFailure(null),
         (err: unknown) => {
           setLocal((prev) => ({ ...prev, [key]: before }));
-          setError(`Could not save the mark: ${errorText(err)}`);
+          setFailure({ key, text: `Could not save the mark: ${errorText(err)}` });
         },
       );
     },
@@ -133,9 +133,11 @@ export function useProblems(
     current?.failed != null
       ? `Could not read possible problems: ${current.failed}`
       : (answer?.error ?? null);
+  const error = failure?.text ?? null;
+  const errorKey = failure?.key ?? null;
   // One value while nothing changed, so the views that read it do not render again.
   return useMemo(
-    () => ({ problems, markOf, setMark, loading, pending, outdated, note, error }),
-    [problems, markOf, setMark, loading, pending, outdated, note, error],
+    () => ({ problems, markOf, setMark, loading, pending, outdated, note, error, errorKey }),
+    [problems, markOf, setMark, loading, pending, outdated, note, error, errorKey],
   );
 }

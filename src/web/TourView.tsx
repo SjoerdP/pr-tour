@@ -165,6 +165,16 @@ export function TourView({ repo, pr }: { repo: string; pr: number }) {
     setReveal(at === null ? null : { at, seq: revealSeq.current });
   }
 
+  /**
+   * Shows a file of the PR at a line, from the current home: a possible problem on a line no
+   * home holds. The overview and the map close, as for a jump from the review panel.
+   */
+  function showLine(file: string, line: number) {
+    closeOverview();
+    setJump({ file, line });
+    show({ path: file, side: 'new', line });
+  }
+
   /** Follows a traced call, or goes back from one: no place to bring into view. */
   function follow(to: { file: string; line: number } | null) {
     setJump(to);
@@ -296,11 +306,15 @@ export function TourView({ repo, pr }: { repo: string; pr: number }) {
 
   /**
    * Opens a problem's home at its line. From the map panel or the overview it is a visit; from
-   * the outline or the review panel (or with neither open) a move.
+   * the outline or the review panel (or with neither open) a move. A problem on a line no
+   * home holds shows its file at the line.
    */
   function goToProblem(p: PlacedProblem, from: 'move' | 'main') {
-    if (p.homeId === null) return;
     const at = p.at.kind === 'line' ? p.at : null;
+    if (p.homeId === null) {
+      if (at?.side === 'new') showLine(at.file, at.line);
+      return;
+    }
     if (from === 'main' && (mapShown || overviewOpen)) {
       const line = at?.side === 'new' ? { file: at.file, line: at.line } : undefined;
       visitHome(p.homeId, mapShown ? 'map' : 'overview', line);
@@ -580,6 +594,7 @@ export function TourView({ repo, pr }: { repo: string; pr: number }) {
                     onPeek={changePeek}
                     peekProps={{ ...peekProps, tour, keys: overviewOpen && peekShown !== null }}
                     onVisit={(homeId, at) => visitHome(homeId, 'overview', at)}
+                    onShowLine={showLine}
                   />
                 )}
                 {!overviewOpen && (

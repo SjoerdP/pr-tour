@@ -270,6 +270,35 @@ Name it fee.`,
     );
   });
 
+  it('shows why a mark was not saved next to the marks of that problem', async () => {
+    const other = problem('other', 'look', line(PATH, 44), 'F1.S1');
+    render(
+      <WithProblems
+        value={{
+          problems: [FEE, other],
+          error: 'Could not save the mark: disk full',
+          errorKey: 'fee',
+        }}
+      >
+        <CodeView
+          repo="acme/loans"
+          pr={42}
+          tour={makeTour()}
+          file={PATH}
+          focus={{ start: 5, end: 5 }}
+          homeId="F1.S1"
+          review={fakeReview()}
+          onJump={vi.fn()}
+          onOpenHome={vi.fn()}
+          readOnly={false}
+        />
+      </WithProblems>,
+    );
+    const card = await findCard(FEE.title);
+    expect(within(card).getByRole('status').textContent).toBe('Could not save the mark: disk full');
+    expect(within(await findCard(other.title)).queryByRole('status')).toBeNull();
+  });
+
   it('a bot thread shows its level and the mark buttons, and no second card', async () => {
     const botThread: ReviewThread = {
       id: 'T1',
@@ -327,7 +356,11 @@ Name it fee.`,
 });
 
 describe('Possible problems at the top of the step', () => {
-  function renderStep(problems: PlacedProblem[], other: Tour['other'] = []) {
+  function renderStep(
+    problems: PlacedProblem[],
+    other: Tour['other'] = [],
+    review: ReviewState = fakeReview(),
+  ) {
     const tour = makeTour(other);
     const onOpenHome = vi.fn();
     const home = homesInOrder(tour).find((h) => h.id === 'F1.S1')!;
@@ -352,7 +385,7 @@ describe('Possible problems at the top of the step', () => {
             previousFlow: undefined,
             nextFlow: undefined,
           }}
-          review={fakeReview()}
+          review={review}
         />
       </WithProblems>,
     );
@@ -383,6 +416,38 @@ describe('Possible problems at the top of the step', () => {
     // The marks work here too; there is no line to comment on.
     expect(within(card).getByRole('button', { name: 'Real problem' })).toBeTruthy();
     expect(within(card).queryByRole('button', { name: 'Comment' })).toBeNull();
+  });
+
+  it('a file-level bot thread shows once, as its thread, with the chip', async () => {
+    const fileThread: ReviewThread = {
+      id: 'T2',
+      path: PATH,
+      side: null,
+      line: null,
+      startLine: null,
+      outdated: false,
+      resolved: false,
+      bot: true,
+      comments: [
+        {
+          id: 'c2',
+          author: 'coderabbitai[bot]',
+          body: 'This file has no tests.',
+          createdAt: '2026-11-07T09:00:00Z',
+          url: 'https://github.com/acme/loans/pull/42#discussion_c2',
+        },
+      ],
+    };
+    const fileProblem = problem('bot|T2', 'look', { kind: 'file', file: PATH }, 'F1.S1', {
+      title: 'This file has no tests.',
+      threadId: 'T2',
+    });
+    renderStep([fileProblem], [], fakeReview({ threads: [fileThread] }));
+
+    const thread = await screen.findByRole('region', { name: `Thread on ${PATH}` });
+    expect(within(thread).getByText('Worth a look')).toBeTruthy();
+    expect(screen.queryByRole('region', { name: 'Possible problems in this step' })).toBeNull();
+    expect(screen.getAllByText('This file has no tests.')).toHaveLength(1);
   });
 
   it('no band when the step has no step or file problems', () => {

@@ -19,7 +19,12 @@ export type ProblemsValue = {
   note: string | null;
   /** Why the last mark was not saved. */
   error: string | null;
-  /** Opens the problem's home at its line: "Go to the line" in a pin's popup. */
+  /** The problem whose mark was not saved: `error` shows next to its marks. */
+  errorKey: string | null;
+  /**
+   * Opens the problem's place: its home at its line, or the file at the line when no home
+   * holds it. "Go to the line" in a pin's popup, and "Go to it" in the review panel.
+   */
   onGoTo?: (problem: PlacedProblem) => void;
 };
 
@@ -33,6 +38,7 @@ export const EMPTY_PROBLEMS: ProblemsValue = {
   outdated: false,
   note: null,
   error: null,
+  errorKey: null,
 };
 
 export const ProblemsContext = createContext<ProblemsValue>(EMPTY_PROBLEMS);

@@ -57,6 +57,7 @@ function show(
   const onVisit = vi.fn();
   const onPeek = vi.fn();
   const onMarkSeen = vi.fn();
+  const onShowLine = vi.fn();
   const shown = props.tour ?? tour;
   render(
     <WithProblems value={props.problems ?? {}}>
@@ -78,11 +79,12 @@ function show(
           onMarkSeen,
         }}
         onVisit={onVisit}
+        onShowLine={onShowLine}
         {...(props.hidden !== undefined && { hidden: props.hidden })}
       />
     </WithProblems>,
   );
-  return { onStart, onVisit, onPeek, onMarkSeen };
+  return { onStart, onVisit, onPeek, onMarkSeen, onShowLine };
 }
 
 /** Sorted as the hook sorts them: worst first, PR-wide first, then tour order. */
@@ -349,8 +351,8 @@ describe('Overview', () => {
     expect(setMark).toHaveBeenLastCalledWith('name', null);
   });
 
-  it('lists unplaced line problems under Elsewhere in this PR', () => {
-    const { onVisit } = show({
+  it('lists unplaced line problems under Elsewhere in this PR; a click shows the line', () => {
+    const { onVisit, onShowLine } = show({
       problems: {
         problems: [
           problem('fee', 'bug', line('src/a.ts', 4), 'F1.S1'),
@@ -362,10 +364,26 @@ describe('Overview', () => {
     const elsewhere = within(block).getByRole('region', { name: 'Elsewhere in this PR' });
     const far = within(elsewhere).getByRole('listitem');
     expect(within(far).getByText('Nil map write')).toBeTruthy();
-    expect(within(far).getByText('src/b.ts, line 7')).toBeTruthy();
     expect(within(elsewhere).queryByText('Title fee')).toBeNull();
-    fireEvent.click(within(far).getByText('src/b.ts, line 7'));
+    fireEvent.click(within(far).getByRole('button', { name: 'src/b.ts, line 7' }));
+    expect(onShowLine).toHaveBeenCalledWith('src/b.ts', 7);
     expect(onVisit).not.toHaveBeenCalled();
+  });
+
+  it('an unplaced file problem, or one on a deleted line, names its place without a link', () => {
+    const { onShowLine } = show({
+      problems: {
+        problems: [
+          problem('file', 'risk', { kind: 'file', file: 'src/c.ts' }, null),
+          problem('old', 'look', { kind: 'line', file: 'src/d.ts', side: 'old', line: 3 }, null),
+        ],
+      },
+    });
+    const elsewhere = screen.getByRole('region', { name: 'Elsewhere in this PR' });
+    expect(within(elsewhere).getByText('src/c.ts')).toBeTruthy();
+    expect(within(elsewhere).getByText('src/d.ts')).toBeTruthy();
+    expect(within(elsewhere).queryByRole('button', { name: /src\// })).toBeNull();
+    expect(onShowLine).not.toHaveBeenCalled();
   });
 
   it('says when nothing was found', () => {
@@ -428,8 +446,16 @@ describe('Overview', () => {
     expect(within(block).queryByText('No possible problems found.')).toBeNull();
   });
 
-  it('shows why a mark was not saved', () => {
-    show({ problems: { problems: PROBLEMS, error: 'Could not save the mark: disk full' } });
-    expect(screen.getByRole('status').textContent).toBe('Could not save the mark: disk full');
+  it('shows why a mark was not saved, next to the marks of that problem', () => {
+    show({
+      problems: {
+        problems: PROBLEMS,
+        error: 'Could not save the mark: disk full',
+        errorKey: 'fee',
+      },
+    });
+    const status = screen.getByRole('status');
+    expect(status.textContent).toBe('Could not save the mark: disk full');
+    expect(status.closest('.problem-card')!.textContent).toContain('The fee is charged twice.');
   });
 });

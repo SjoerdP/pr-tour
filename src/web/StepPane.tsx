@@ -258,10 +258,14 @@ export function StepPane({
     ? { file: jump.file, focus: { start: jump.line, end: jump.line } }
     : codeTarget(home);
   const homeFacts = [...facts(home), ...reviewFacts(home, review)];
-  // Problems about the whole step (a failing test) or a whole file of it: a band up top.
+  // Problems about the whole step (a failing test) or a whole file of it: a band up top. A
+  // bot's thread on a file shows as its thread, under "Comments on this file", not here.
   const { problems } = useProblemsContext();
   const band = problems.filter(
-    (p) => p.homeId === home.id && (p.at.kind === 'step' || p.at.kind === 'file'),
+    (p) =>
+      p.homeId === home.id &&
+      p.threadId === undefined &&
+      (p.at.kind === 'step' || p.at.kind === 'file'),
   );
 
   return (

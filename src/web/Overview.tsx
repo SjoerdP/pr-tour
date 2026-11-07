@@ -28,6 +28,8 @@ type Props = {
    * a possible problem (at its line, when it has one).
    */
   onVisit: (homeId: string, at?: VisitAt) => void;
+  /** Shows a file of the PR at a line: a possible problem on a line no home holds. */
+  onShowLine?: (file: string, line: number) => void;
   /** The overview region: focus goes to it when the reader opens the overview. */
   regionRef?: Ref<HTMLElement>;
   /** Kept mounted but hidden during a visit, so it comes back as it was. */
@@ -49,6 +51,7 @@ export function Overview({
   onPeek,
   peekProps,
   onVisit,
+  onShowLine,
   regionRef,
   hidden = false,
 }: Props): ReactNode {
@@ -72,7 +75,7 @@ export function Overview({
         {start}
       </div>
       <p className="overview-summary">{tour.summary}</p>
-      <PossibleProblems tour={tour} onVisit={onVisit} />
+      <PossibleProblems tour={tour} onVisit={onVisit} onShowLine={onShowLine} />
       {tour.flows.length > 0 && (
         <section className="overview-flows" aria-labelledby={flowsHead}>
           <h3 id={flowsHead}>Flows in this PR ({tour.flows.length})</h3>

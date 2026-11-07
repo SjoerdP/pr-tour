@@ -161,6 +161,7 @@ describe('useProblems', () => {
     });
     expect(result.current.markOf('pr')).toBe('real');
     expect(result.current.error).toBe('Could not save the mark: disk full');
+    expect(result.current.errorKey).toBe('pr');
   });
 
   it('keeps the same value while nothing changed', async () => {

@@ -376,8 +376,20 @@ describe('ReviewPanel: possible problems in the approve reminder', () => {
     expect(screen.getByText('1 possible problem is not marked')).toBeTruthy();
   });
 
-  it('a problem with no home and no safe url has no button and no link', () => {
+  it('a problem on a line no home holds has "Go to it" too', () => {
+    const onGoTo = vi.fn();
     const elsewhere = problem('p5', 'risk', line('lib/x.ts', 3), null, { title: 'Off the tour' });
+    renderPanel(fakeReview(), { problems: { problems: [elsewhere], onGoTo } });
+    approve();
+    const section = screen.getByRole('region', { name: 'Possible problems not marked' });
+    fireEvent.click(within(section).getByRole('button', { name: 'Go to it' }));
+    expect(onGoTo).toHaveBeenCalledWith(elsewhere);
+  });
+
+  it('a problem with no home and no safe url has no button and no link', () => {
+    const elsewhere = problem('p5', 'risk', { kind: 'file', file: 'lib/x.ts' }, null, {
+      title: 'Off the tour',
+    });
     const unsafe = problem('p6', 'bug', { kind: 'pr' }, null, {
       title: 'Bad link',
       url: 'javascript:alert(1)',

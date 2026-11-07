@@ -78,6 +78,14 @@ function realText(n: number): string {
 }
 
 /**
+ * A problem has a place to go to: its home, or a line of the PR on the head side when no
+ * home holds it.
+ */
+function canGoTo(problem: PlacedProblem): boolean {
+  return problem.homeId !== null || (problem.at.kind === 'line' && problem.at.side === 'new');
+}
+
+/**
  * One possible problem in the approve reminder: its level, its title and "Go to it". A
  * PR-wide problem has no place to go: its title links to its page (a CI run) instead.
  */
@@ -99,7 +107,7 @@ function ProblemRow({
       ) : (
         problem.title
       )}
-      {problem.homeId !== null && onGoTo && (
+      {onGoTo && canGoTo(problem) && (
         <>
           {' '}
           <button type="button" className="link-button" onClick={() => onGoTo(problem)}>

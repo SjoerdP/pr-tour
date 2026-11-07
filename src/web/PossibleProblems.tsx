@@ -13,6 +13,8 @@ type Props = {
   tour: Tour;
   /** Opens a home as a visit, at the line when there is one. */
   onVisit: (homeId: string, at?: VisitAt) => void;
+  /** Shows a file of the PR at a line: for a problem on a line no home holds. */
+  onShowLine?: ((file: string, line: number) => void) | undefined;
 };
 
 /** How the count line names each level: one and many. */
@@ -64,8 +66,8 @@ function isElsewhere(p: PlacedProblem): boolean {
  * The overview's list of possible problems, worst first. A problem marked "Not a problem"
  * stays, dimmed, at the end of its level.
  */
-export function PossibleProblems({ tour, onVisit }: Props): ReactNode {
-  const { problems, markOf, loading, pending, outdated, note, error } = useProblemsContext();
+export function PossibleProblems({ tour, onVisit, onShowLine }: Props): ReactNode {
+  const { problems, markOf, loading, pending, outdated, note } = useProblemsContext();
   const head = useId();
   const elsewhereHead = useId();
   const homes = useMemo(() => new Map(homesInOrder(tour).map((h) => [h.id, h])), [tour]);
@@ -97,6 +99,18 @@ export function PossibleProblems({ tour, onVisit }: Props): ReactNode {
           onClick={() => (at ? onVisit(home.id, at) : onVisit(home.id))}
         >
           {homeLabel(tour, home)}
+          {lineText}
+        </button>
+      );
+    }
+    if (at && onShowLine) {
+      return (
+        <button
+          type="button"
+          className="link-button problem-where"
+          onClick={() => onShowLine(at.file, at.line)}
+        >
+          {at.file}
           {lineText}
         </button>
       );
@@ -162,11 +176,6 @@ export function PossibleProblems({ tour, onVisit }: Props): ReactNode {
           {n}
         </p>
       ))}
-      {error && (
-        <p className="error" role="status">
-          {error}
-        </p>
-      )}
       {placed.length > 0 && <ul className="problem-list">{placed.map(card)}</ul>}
       {elsewhere.length > 0 && (
         <section className="problem-elsewhere" aria-labelledby={elsewhereHead}>
