@@ -3,6 +3,8 @@ import type { Draft, DraftReply, ReviewThread, ThreadComment } from '../shared/r
 import { Composer } from './Composer.js';
 import { useComposerMemory } from './composer-memory.js';
 import { errorText } from './errors.js';
+import { LevelChip, ProblemMarks, ProblemSources } from './ProblemCard.js';
+import { useProblemsContext } from './ProblemsContext.js';
 import { safeHref } from './safe-href.js';
 
 type Props = {
@@ -28,7 +30,8 @@ type Props = {
 
 /**
  * One review thread from GitHub: its comments (bodies as plain text), its pending reply
- * drafts, and Reply / Resolve. A resolved thread starts collapsed to one line.
+ * drafts, and Reply / Resolve. A resolved thread starts collapsed to one line. A bot's
+ * thread that is a possible problem shows its level, sources and marks in its head.
  */
 export function Thread({
   thread,
@@ -53,6 +56,8 @@ export function Thread({
   }
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const { problems } = useProblemsContext();
+  const problem = problems.find((p) => p.threadId === thread.id);
 
   const replies = drafts.filter(
     (d): d is DraftReply => d.kind === 'reply' && d.threadId === thread.id,
@@ -82,8 +87,9 @@ export function Thread({
 
   return (
     <section className="thread" aria-label={`Thread on ${thread.path}`}>
-      {(thread.resolved || thread.outdated) && (
+      {(thread.resolved || thread.outdated || problem) && (
         <div className="thread-head">
+          {problem && <LevelChip level={problem.level} />}
           {thread.resolved && (
             <button
               type="button"
@@ -95,6 +101,8 @@ export function Thread({
             </button>
           )}
           {thread.outdated && <span className="thread-label">Outdated</span>}
+          {problem && <ProblemSources sources={problem.sources} />}
+          {problem && !readOnly && <ProblemMarks problemKey={problem.key} />}
         </div>
       )}
       {open && (

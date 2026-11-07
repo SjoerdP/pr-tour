@@ -1,15 +1,11 @@
 import { fireEvent, render, screen, within } from '@testing-library/react';
-import { useState, type ReactNode } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 import type { PlacedProblem } from '../../src/shared/problems.js';
 import type { Tour } from '../../src/shared/tour.js';
 import type { PeekState } from '../../src/web/MapWithPeek.js';
 import { Overview } from '../../src/web/Overview.js';
-import {
-  EMPTY_PROBLEMS,
-  ProblemsContext,
-  type ProblemsValue,
-} from '../../src/web/ProblemsContext.js';
+import type { ProblemsValue } from '../../src/web/ProblemsContext.js';
+import { line, problem, WithProblems } from './problems-fake.js';
 import { fakeReview } from './review-fake.js';
 import { tour as baseTour } from './tour-fixture.js';
 
@@ -88,48 +84,6 @@ function show(
   );
   return { onStart, onVisit, onPeek, onMarkSeen };
 }
-
-/** Gives the overview these problems; marks set by its buttons are kept, as the hook does. */
-function WithProblems({ value, children }: { value: Partial<ProblemsValue>; children: ReactNode }) {
-  const [marks, setMarks] = useState<Record<string, 'real' | 'not'>>({});
-  const given = { ...EMPTY_PROBLEMS, ...value };
-  return (
-    <ProblemsContext.Provider
-      value={{
-        ...given,
-        markOf: (key) => marks[key] ?? given.markOf(key),
-        setMark: (key, mark) => {
-          given.setMark(key, mark);
-          setMarks((prev) => {
-            const next = { ...prev };
-            if (mark === null) delete next[key];
-            else next[key] = mark;
-            return next;
-          });
-        },
-      }}
-    >
-      {children}
-    </ProblemsContext.Provider>
-  );
-}
-
-function problem(
-  key: string,
-  level: PlacedProblem['level'],
-  at: PlacedProblem['at'],
-  homeId: string | null,
-  more: Partial<PlacedProblem> = {},
-): PlacedProblem {
-  return { key, level, title: `Title ${key}`, sources: ['CodeRabbit'], at, homeId, ...more };
-}
-
-const line = (file: string, n: number) => ({
-  kind: 'line' as const,
-  file,
-  side: 'new' as const,
-  line: n,
-});
 
 /** Sorted as the hook sorts them: worst first, PR-wide first, then tour order. */
 const PROBLEMS: PlacedProblem[] = [

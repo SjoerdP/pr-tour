@@ -2404,8 +2404,12 @@ p.why {
   list-style: none;
 }
 
-.problem-card {
+.problem-card,
+.problem-chip {
   --level: var(--level-look);
+}
+
+.problem-card {
   min-width: 0;
   padding: var(--space-2) var(--space-3);
   border: 1px solid var(--border);
@@ -2413,11 +2417,12 @@ p.why {
   border-radius: var(--radius);
 }
 
-.problem-card.problem-bug {
+/* On a card, and on a chip alone (in a bot's thread). */
+.problem-bug {
   --level: var(--level-bug);
 }
 
-.problem-card.problem-risk {
+.problem-risk {
   --level: var(--level-risk);
 }
 
@@ -2502,6 +2507,57 @@ span.problem-where {
 .problem-mark[aria-pressed='true'] {
   border-color: var(--accent);
   background: var(--accent-soft);
+}
+
+/*
+ * A problem in the tour: under its line, like a thread, and in a band at the top of its step.
+ * Tinted in its level's colour.
+ */
+.problem-inline {
+  padding: var(--space-2) var(--space-3);
+  border-color: color-mix(in srgb, var(--level) 30%, var(--border-faint));
+  background: color-mix(in srgb, var(--level) 6%, var(--bg));
+  font-size: var(--font-size-small);
+}
+
+.problem-inline .problem-foot {
+  margin-top: var(--space-1);
+}
+
+/* Smaller buttons than the overview's: the card sits between lines of code. */
+.problem-inline .problem-mark,
+.thread-head .problem-mark {
+  padding: 0 var(--space-2);
+  font-size: var(--font-size-tiny);
+  line-height: 20px;
+}
+
+/* Marked "Not a problem": one muted line, a click opens it. */
+.problem-inline.problem-not {
+  opacity: 1;
+  background: var(--bg);
+}
+
+.problem-inline.problem-not:has(.problem-unfold) {
+  padding-block: var(--space-1);
+}
+
+.problem-unfold {
+  color: var(--fg-muted);
+  text-align: left;
+  overflow-wrap: anywhere;
+}
+
+.step-problems {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+}
+
+/* A bot's thread that is a possible problem: the marks sit at the right of its head. */
+.thread-head .problem-marks {
+  margin-left: auto;
 }
 
 .overview-flows > h3 {

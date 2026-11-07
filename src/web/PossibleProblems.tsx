@@ -1,7 +1,8 @@
 import { useId, useMemo, type ReactNode } from 'react';
-import { LEVEL_LABEL, LEVEL_ORDER, type Level, type PlacedProblem } from '../shared/problems.js';
+import { LEVEL_ORDER, type Level, type PlacedProblem } from '../shared/problems.js';
 import type { Tour } from '../shared/tour.js';
 import { homesInOrder, type Home } from './homes.js';
+import { LevelChip, ProblemMarks, ProblemSources } from './ProblemCard.js';
 import { useProblemsContext } from './ProblemsContext.js';
 import { safeHref } from './safe-href.js';
 
@@ -64,8 +65,7 @@ function isElsewhere(p: PlacedProblem): boolean {
  * stays, dimmed, at the end of its level.
  */
 export function PossibleProblems({ tour, onVisit }: Props): ReactNode {
-  const { problems, markOf, setMark, loading, pending, outdated, note, error } =
-    useProblemsContext();
+  const { problems, markOf, loading, pending, outdated, note, error } = useProblemsContext();
   const head = useId();
   const elsewhereHead = useId();
   const homes = useMemo(() => new Map(homesInOrder(tour).map((h) => [h.id, h])), [tour]);
@@ -122,7 +122,7 @@ export function PossibleProblems({ tour, onVisit }: Props): ReactNode {
         className={`problem-card problem-${p.level}${mark === 'not' ? ' problem-not' : ''}`}
       >
         <div className="problem-head">
-          <span className="problem-chip">{LEVEL_LABEL[p.level]}</span>{' '}
+          <LevelChip level={p.level} />{' '}
           <span className="problem-title">
             {href ? (
               <a href={href} target="_blank" rel="noreferrer">
@@ -136,26 +136,8 @@ export function PossibleProblems({ tour, onVisit }: Props): ReactNode {
         {p.why !== undefined && <p className="problem-why muted">{p.why}</p>}
         <div className="problem-foot">
           {place}
-          <span className="problem-sources">
-            {p.sources.map((s) => (
-              <span key={s} className="problem-source">
-                {s}
-              </span>
-            ))}
-          </span>
-          <span className="problem-marks">
-            {(['real', 'not'] as const).map((m) => (
-              <button
-                key={m}
-                type="button"
-                className="problem-mark"
-                aria-pressed={mark === m}
-                onClick={() => setMark(p.key, mark === m ? null : m)}
-              >
-                {m === 'real' ? 'Real problem' : 'Not a problem'}
-              </button>
-            ))}
-          </span>
+          <ProblemSources sources={p.sources} />
+          <ProblemMarks problemKey={p.key} />
         </div>
       </li>
     );

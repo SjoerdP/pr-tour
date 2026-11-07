@@ -1,10 +1,11 @@
 import { fireEvent, render, screen, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { FileDiff, Hunk } from '../../src/shared/diff.js';
+import type { PlacedProblem } from '../../src/shared/problems.js';
 import type { Draft, DraftComment, ReviewThread } from '../../src/shared/review.js';
 import type { Tour } from '../../src/shared/tour.js';
 import * as api from '../../src/web/api.js';
-import { draftRows, threadRows } from '../../src/web/code-lines.js';
+import { draftRows, problemRows, threadRows } from '../../src/web/code-lines.js';
 import { ComposerMemory, ComposerMemoryContext } from '../../src/web/composer-memory.js';
 import { CodeView } from '../../src/web/CodeView.js';
 import { buildRows } from '../../src/shared/rows.js';
@@ -123,6 +124,14 @@ function draft(overrides: Partial<DraftComment> = {}): Draft {
     createdAt: '2026-10-28T10:00:00Z',
     ...overrides,
   };
+}
+
+function problem(
+  key: string,
+  at: PlacedProblem['at'],
+  more: Partial<PlacedProblem> = {},
+): PlacedProblem {
+  return { key, level: 'risk', title: key, sources: ['CI'], at, homeId: null, ...more };
 }
 
 function renderView(
@@ -748,7 +757,7 @@ describe('CodeView: binary files', () => {
   });
 });
 
-describe('threadRows / draftRows', () => {
+describe('threadRows / draftRows / problemRows', () => {
   const rows = buildRows(lines(10, { 5: 'new five' }), lines(10, { 5: 'old five' }), [HUNK]);
   // Rows: 0-3 lines 1-4, 4 old five, 5 new five, 6.. lines 6-10.
 
@@ -781,6 +790,31 @@ describe('threadRows / draftRows', () => {
     expect(placed.get(5)?.map((d) => d.id)).toEqual([1]);
     expect(placed.get(4)?.map((d) => d.id)).toEqual([2]);
     expect(placed.get(-1)?.map((d) => d.id)).toEqual([3]);
+  });
+
+  it('places line problems of the file by side and line; bot threads and others are left out', () => {
+    const at = (side: 'new' | 'old', line: number, file = PATH) => ({
+      kind: 'line' as const,
+      file,
+      side,
+      line,
+    });
+    const placed = problemRows(
+      rows,
+      [
+        problem('new', at('new', 5)),
+        problem('old', at('old', 5)),
+        problem('thread', at('new', 5), { threadId: 'T1' }),
+        problem('other-file', at('new', 5, 'src/fees.ts')),
+        problem('step', { kind: 'step', test: 'TestRepay' }),
+        problem('file', { kind: 'file', file: PATH }),
+        problem('gone', at('new', 99)),
+      ],
+      PATH,
+    );
+    expect([...placed.keys()].sort()).toEqual([4, 5]);
+    expect(placed.get(5)?.map((p) => p.key)).toEqual(['new']);
+    expect(placed.get(4)?.map((p) => p.key)).toEqual(['old']);
   });
 });
 

@@ -13,6 +13,8 @@ import { CodeView } from './CodeView.js';
 import { FlowEndNote } from './FlowEndNote.js';
 import { cameFrom, homeTouches, homeTitle, type CameFrom, type Home } from './homes.js';
 import { keepsReviewOpen } from './keep-review-open.js';
+import { ProblemCard } from './ProblemCard.js';
+import { useProblemsContext } from './ProblemsContext.js';
 import { withKey } from './shortcuts.js';
 import type { ReviewState } from './useReview.js';
 
@@ -229,6 +231,11 @@ export function StepPane({
     ? { file: jump.file, focus: { start: jump.line, end: jump.line } }
     : codeTarget(home);
   const homeFacts = [...facts(home), ...reviewFacts(home, review)];
+  // Problems about the whole step (a failing test) or a whole file of it: a band up top.
+  const { problems } = useProblemsContext();
+  const band = problems.filter(
+    (p) => p.homeId === home.id && (p.at.kind === 'step' || p.at.kind === 'file'),
+  );
 
   return (
     <article
@@ -293,6 +300,13 @@ export function StepPane({
                 </li>
               ))}
             </ul>
+          )}
+          {band.length > 0 && (
+            <section className="step-problems" aria-label="Possible problems in this step">
+              {band.map((p) => (
+                <ProblemCard key={p.key} problem={p} />
+              ))}
+            </section>
           )}
         </div>
 
