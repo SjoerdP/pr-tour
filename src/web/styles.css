@@ -66,6 +66,11 @@
   --pending-border: #ecd9a0;
   --suggestion-bg: color-mix(in srgb, var(--add) 8%, transparent);
   --composer-min-height: 72px;
+
+  /* Possible problems, one colour per level: likely bug, risk, worth a look. */
+  --level-bug: #cf222e;
+  --level-risk: #c2410c;
+  --level-look: #0969da;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -97,6 +102,10 @@
     --pending-bg: #241d0d;
     --pending-border: #5c4813;
     --suggestion-bg: color-mix(in srgb, var(--add) 12%, transparent);
+
+    --level-bug: #f85149;
+    --level-risk: #f0883e;
+    --level-look: #4493f8;
   }
 }
 
@@ -2361,6 +2370,140 @@ p.why {
   max-width: var(--prose-width);
   margin: var(--space-2) 0 var(--space-5);
   overflow-wrap: anywhere;
+}
+
+/* Possible problems: one card per problem, worst first, above the flows. */
+.overview-problems {
+  margin-bottom: var(--space-5);
+}
+
+.overview-problems > h3 {
+  margin: 0 0 var(--space-1);
+  font-size: var(--font-size);
+}
+
+.overview-problems > p {
+  margin: var(--space-1) 0 0;
+}
+
+.problem-counts {
+  color: var(--fg-muted);
+  font-size: var(--font-size-small);
+}
+
+.problem-elsewhere > h4 {
+  margin: var(--space-4) 0 0;
+  font-size: var(--font-size-small);
+  color: var(--fg-muted);
+}
+
+.problem-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: var(--space-3) 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.problem-card {
+  --level: var(--level-look);
+  min-width: 0;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--level);
+  border-radius: var(--radius);
+}
+
+.problem-card.problem-bug {
+  --level: var(--level-bug);
+}
+
+.problem-card.problem-risk {
+  --level: var(--level-risk);
+}
+
+/* Marked "Not a problem": still listed, at the end of its level, dimmed. */
+.problem-card.problem-not {
+  opacity: 0.55;
+}
+
+.problem-head {
+  overflow-wrap: anywhere;
+}
+
+.problem-chip {
+  display: inline-block;
+  margin-right: var(--space-1);
+  padding: 0 var(--space-1);
+  border-radius: var(--radius-small);
+  background: color-mix(in srgb, var(--level) 14%, transparent);
+  color: var(--level);
+  font-size: var(--font-size-tiny);
+  font-weight: 600;
+  line-height: 16px;
+  vertical-align: 1px;
+  white-space: nowrap;
+}
+
+.problem-title {
+  font-weight: 600;
+}
+
+.problem-why {
+  max-width: var(--prose-width);
+  margin: var(--space-1) 0 0;
+  overflow-wrap: anywhere;
+}
+
+.problem-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1) var(--space-3);
+  margin-top: var(--space-2);
+  font-size: var(--font-size-small);
+}
+
+.problem-where {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  text-align: left;
+}
+
+span.problem-where {
+  color: var(--fg-muted);
+}
+
+.problem-sources {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+}
+
+.problem-source {
+  padding: 0 var(--space-1);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-small);
+  color: var(--fg-muted);
+  font-size: var(--font-size-tiny);
+  line-height: 16px;
+}
+
+/* The two marks sit at the right end; on narrow windows they wrap below. */
+.problem-marks {
+  display: flex;
+  gap: var(--space-1);
+  margin-left: auto;
+}
+
+.problem-mark {
+  font-size: var(--font-size-small);
+}
+
+.problem-mark[aria-pressed='true'] {
+  border-color: var(--accent);
+  background: var(--accent-soft);
 }
 
 .overview-flows > h3 {

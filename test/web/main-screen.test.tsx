@@ -16,6 +16,7 @@ vi.mock('../../src/web/api.js', () => ({
   buildTour: vi.fn(),
   markSeen: vi.fn(),
   getReview: vi.fn(),
+  getProblems: () => new Promise(() => {}),
 }));
 
 vi.mock('../../src/web/CodeView.js', () => ({

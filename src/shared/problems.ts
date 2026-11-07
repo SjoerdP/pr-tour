@@ -158,10 +158,21 @@ export function botLevel(body: string): Level {
   return row?.level ?? 'look';
 }
 
-/** Label lines bots put above the actual comment. */
-const LABEL_LINES = ['_⚠️ Potential issue_', '_🛠️ Refactor suggestion_'];
 /** A line of only emoji, `*` and `_` (and spaces). */
 const DECORATION_ONLY = /^(?:\p{Extended_Pictographic}|\p{Emoji_Modifier}|\uFE0F|\u200D|[*_\s])*$/u;
+/** A short italic label such as `_⚠️ Potential issue_` or `_🟠 Major_`. */
+const ITALIC_LABEL = /^_[^_]{1,30}_$/u;
+
+/**
+ * A label line bots put above the actual comment: only italic labels and emoji, maybe split
+ * by `|`, as in CodeRabbit's `_⚠️ Potential issue_ | _🟠 Major_`.
+ */
+function isLabelLine(line: string): boolean {
+  return line
+    .split('|')
+    .map((part) => part.trim())
+    .every((part) => ITALIC_LABEL.test(part) || DECORATION_ONLY.test(part));
+}
 /** `**x**`, `__x__`, `*x*`, `_x_` or `` `x` `` around words, not inside them (snake_case stays). */
 const MARKDOWN_AROUND = /(?<![\w*_`])(\*\*|__|\*|_|`)(?=\S)(.+?)(?<=\S)\1(?![\w*_`])/gu;
 const TITLE_MAX = 100;
@@ -171,7 +182,7 @@ export function botTitle(body: string): string {
   const line = body
     .split('\n')
     .map((l) => l.trim())
-    .find((l) => !LABEL_LINES.includes(l) && !DECORATION_ONLY.test(l));
+    .find((l) => !isLabelLine(l));
   if (line === undefined) return '';
   let title = line;
   for (let prev = ''; prev !== title;) {

@@ -267,6 +267,11 @@ describe('bot comments', () => {
     expect(botTitle('**⚠️**\nKeep snake_case_names as they are.')).toBe(
       'Keep snake_case_names as they are.',
     );
+    expect(botTitle('_⚠️ Potential issue_ | _🟠 Major_\n\n**Charge the fee once.**')).toBe(
+      'Charge the fee once.',
+    );
+    expect(botTitle('_🟠 Major_\nCharge the fee once.')).toBe('Charge the fee once.');
+    expect(botTitle('_⚠️ Potential issue_ | _🟠 Major_')).toBe('');
     const long = botTitle('x'.repeat(150));
     expect(long).toHaveLength(100);
     expect(long.endsWith('…')).toBe(true);

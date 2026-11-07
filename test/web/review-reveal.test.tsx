@@ -17,6 +17,7 @@ vi.mock('../../src/web/api.js', async (importOriginal) => ({
   buildTour: vi.fn(),
   markSeen: vi.fn(),
   getReview: vi.fn(),
+  getProblems: () => new Promise(() => {}),
   getFile: vi.fn(),
   getDiff: vi.fn(),
 }));

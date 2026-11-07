@@ -15,6 +15,7 @@ vi.mock('../../src/web/api.js', async (importActual) => ({
   markSeen: vi.fn(),
   // The tour view loads the PR's review; these tests are not about it: it never arrives.
   getReview: () => new Promise(() => {}),
+  getProblems: vi.fn(),
 }));
 
 // The real code view loads files from the server; these tests are about the tour around it.
@@ -77,6 +78,7 @@ vi.mock('../../src/web/CodeView.js', () => ({
 const getPr = vi.mocked(api.getPr);
 const buildTour = vi.mocked(api.buildTour);
 const markSeen = vi.mocked(api.markSeen);
+const getProblems = vi.mocked(api.getProblems);
 
 const summary: PrSummary = {
   repo: 'acme/loans',
@@ -187,6 +189,8 @@ function withGroups(tour: Tour, ...groups: OtherGroup[]): Tour {
 
 beforeEach(() => {
   markSeen.mockResolvedValue(undefined);
+  // Possible problems are read next to the tour; most tests are not about them.
+  getProblems.mockReturnValue(new Promise(() => {}));
 });
 
 afterEach(() => {
@@ -1324,6 +1328,79 @@ describe('flow map', () => {
         expect(paneCode().textContent).toBe('F1.S2 src/fees.ts');
         fireEvent.click(back('overview')!);
         expect(peekOf('Charge the fee')).toBeTruthy();
+        expect(markSeen).not.toHaveBeenCalled();
+      });
+
+      it('a possible problem opens its home at its line, as a visit', async () => {
+        const line = (file: string, n: number) => ({
+          kind: 'line' as const,
+          file,
+          side: 'new' as const,
+          line: n,
+        });
+        getProblems.mockResolvedValue({
+          problems: [
+            {
+              key: 'p1',
+              level: 'bug',
+              title: 'The fee is charged twice.',
+              sources: ['golangci-lint'],
+              at: line('src/fees.ts', 12),
+            },
+            {
+              key: 'p2',
+              level: 'risk',
+              title: 'The seed reads an old column.',
+              sources: ['golangci-lint'],
+              at: line('migrations/seed.sql', 3),
+            },
+          ],
+          marks: {},
+          pending: false,
+          outdated: false,
+          error: null,
+        });
+        const tour = twoFlows();
+        const [foundation] = tour.foundations;
+        getPr.mockResolvedValue(
+          response({
+            tour: {
+              ...tour,
+              // The foundation also owns lines in a second file.
+              foundations: [
+                {
+                  ...foundation!,
+                  homes: [
+                    ...foundation!.homes,
+                    { file: 'migrations/seed.sql', side: 'new', start: 1, end: 5 },
+                  ],
+                },
+              ],
+            },
+          }),
+        );
+        render(<TourView repo="acme/loans" pr={42} />);
+
+        fireEvent.click(
+          await screen.findByRole('button', { name: 'Flow 1 · step 2 · Charge the fee, line 12' }),
+        );
+        expect(paneCode().textContent).toBe('F1.S2 src/fees.ts');
+        expect(paneCode().getAttribute('data-reveal')).toBe(
+          JSON.stringify({ path: 'src/fees.ts', side: 'new', line: 12 }),
+        );
+        expect(screen.queryByText(/^Showing/)).toBeNull();
+        fireEvent.click(back('overview')!);
+        expect(overview()).toBeTruthy();
+
+        // A line in another file of the home: shown as a jump there.
+        fireEvent.click(
+          screen.getByRole('button', {
+            name: 'Foundation · migration · Create repayments table, line 3',
+          }),
+        );
+        expect(paneCode().textContent).toBe('f1 migrations/seed.sql');
+        expect(screen.getByText(/^Showing/).textContent).toContain('migrations/seed.sql');
+        expect(back('overview')).toBeTruthy();
         expect(markSeen).not.toHaveBeenCalled();
       });
 

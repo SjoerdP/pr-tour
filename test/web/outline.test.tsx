@@ -15,6 +15,7 @@ vi.mock('../../src/web/api.js', () => ({
   markSeen: vi.fn(),
   // The tour view loads the PR's review; these tests are not about it: it never arrives.
   getReview: () => new Promise(() => {}),
+  getProblems: () => new Promise(() => {}),
 }));
 
 vi.mock('../../src/web/CodeView.js', () => ({

@@ -13,6 +13,7 @@ vi.mock('../../src/web/api.js', async (importActual) => ({
   buildTour: vi.fn(),
   markSeen: vi.fn(),
   getReview: () => new Promise(() => {}),
+  getProblems: () => new Promise(() => {}),
 }));
 
 // The code view only says which file and line it shows.

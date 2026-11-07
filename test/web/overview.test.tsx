@@ -1,8 +1,15 @@
 import { fireEvent, render, screen, within } from '@testing-library/react';
+import { useState, type ReactNode } from 'react';
 import { describe, expect, it, vi } from 'vitest';
+import type { PlacedProblem } from '../../src/shared/problems.js';
 import type { Tour } from '../../src/shared/tour.js';
 import type { PeekState } from '../../src/web/MapWithPeek.js';
 import { Overview } from '../../src/web/Overview.js';
+import {
+  EMPTY_PROBLEMS,
+  ProblemsContext,
+  type ProblemsValue,
+} from '../../src/web/ProblemsContext.js';
 import { fakeReview } from './review-fake.js';
 import { tour as baseTour } from './tour-fixture.js';
 
@@ -47,6 +54,7 @@ function show(
     currentId?: string | null;
     peek?: PeekState | null;
     hidden?: boolean;
+    problems?: Partial<ProblemsValue>;
   } = {},
 ) {
   const onStart = vi.fn();
@@ -55,29 +63,90 @@ function show(
   const onMarkSeen = vi.fn();
   const shown = props.tour ?? tour;
   render(
-    <Overview
-      tour={shown}
-      title="Early repayment"
-      started={props.started ?? false}
-      currentId={props.currentId ?? null}
-      onStart={onStart}
-      peek={props.peek ?? null}
-      onPeek={onPeek}
-      peekProps={{
-        repo: 'acme/loans',
-        pr: 42,
-        tour: shown,
-        keys: true,
-        review: fakeReview(),
-        isSeen: () => false,
-        onMarkSeen,
-      }}
-      onVisit={onVisit}
-      {...(props.hidden !== undefined && { hidden: props.hidden })}
-    />,
+    <WithProblems value={props.problems ?? {}}>
+      <Overview
+        tour={shown}
+        title="Early repayment"
+        started={props.started ?? false}
+        currentId={props.currentId ?? null}
+        onStart={onStart}
+        peek={props.peek ?? null}
+        onPeek={onPeek}
+        peekProps={{
+          repo: 'acme/loans',
+          pr: 42,
+          tour: shown,
+          keys: true,
+          review: fakeReview(),
+          isSeen: () => false,
+          onMarkSeen,
+        }}
+        onVisit={onVisit}
+        {...(props.hidden !== undefined && { hidden: props.hidden })}
+      />
+    </WithProblems>,
   );
   return { onStart, onVisit, onPeek, onMarkSeen };
 }
+
+/** Gives the overview these problems; marks set by its buttons are kept, as the hook does. */
+function WithProblems({ value, children }: { value: Partial<ProblemsValue>; children: ReactNode }) {
+  const [marks, setMarks] = useState<Record<string, 'real' | 'not'>>({});
+  const given = { ...EMPTY_PROBLEMS, ...value };
+  return (
+    <ProblemsContext.Provider
+      value={{
+        ...given,
+        markOf: (key) => marks[key] ?? given.markOf(key),
+        setMark: (key, mark) => {
+          given.setMark(key, mark);
+          setMarks((prev) => {
+            const next = { ...prev };
+            if (mark === null) delete next[key];
+            else next[key] = mark;
+            return next;
+          });
+        },
+      }}
+    >
+      {children}
+    </ProblemsContext.Provider>
+  );
+}
+
+function problem(
+  key: string,
+  level: PlacedProblem['level'],
+  at: PlacedProblem['at'],
+  homeId: string | null,
+  more: Partial<PlacedProblem> = {},
+): PlacedProblem {
+  return { key, level, title: `Title ${key}`, sources: ['CodeRabbit'], at, homeId, ...more };
+}
+
+const line = (file: string, n: number) => ({
+  kind: 'line' as const,
+  file,
+  side: 'new' as const,
+  line: n,
+});
+
+/** Sorted as the hook sorts them: worst first, PR-wide first, then tour order. */
+const PROBLEMS: PlacedProblem[] = [
+  problem('ci', 'bug', { kind: 'pr' }, null, {
+    title: 'CI check "build" fails',
+    sources: ['CI tests'],
+    url: 'https://github.com/acme/loans/actions/runs/1',
+  }),
+  problem('fee', 'bug', line('src/a.ts', 4), 'F1.S1', {
+    title: 'The fee is charged twice.',
+    why: 'Both branches call chargeFee.',
+    sources: ['CodeRabbit', 'golangci-lint'],
+  }),
+  problem('table', 'risk', { kind: 'file', file: 'm.sql' }, 'f1'),
+  problem('name', 'look', line('test/repay.test.ts', 2), 'o1.1'),
+  problem('other', 'look', line('test/repay.test.ts', 5), 'o1.1'),
+];
 
 function card(title: string): HTMLElement {
   return screen.getByRole('region', { name: title });
@@ -231,5 +300,157 @@ describe('Overview', () => {
   it('leaves out the rest line when there is nothing else', () => {
     show({ tour: { ...tour, foundations: [], other: [] } });
     expect(screen.queryByText('Also in this PR')).toBeNull();
+  });
+
+  it('lists possible problems worst first with counts', () => {
+    show({ problems: { problems: PROBLEMS } });
+    const block = screen.getByRole('region', { name: 'Possible problems (5)' });
+    // Above the flows.
+    const flows = screen.getByRole('region', { name: 'Flows in this PR (2)' });
+    expect(block.compareDocumentPosition(flows) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(within(block).getByText('2 likely bugs · 1 risk · 2 worth a look')).toBeTruthy();
+    const cards = within(block).getAllByRole('listitem');
+    expect(cards.map((c) => c.querySelector('.problem-title')!.textContent)).toEqual([
+      'CI check "build" fails',
+      'The fee is charged twice.',
+      'Title table',
+      'Title name',
+      'Title other',
+    ]);
+    const fee = cards[1]!;
+    expect(within(fee).getByText('Likely bug')).toBeTruthy();
+    expect(within(fee).getByText('Both branches call chargeFee.')).toBeTruthy();
+    expect(within(fee).getByText('CodeRabbit')).toBeTruthy();
+    expect(within(fee).getByText('golangci-lint')).toBeTruthy();
+    expect(
+      within(fee).getByRole('button', { name: 'Flow 1 · step 1 · Parse the request, line 4' }),
+    ).toBeTruthy();
+    for (const name of ['Real problem', 'Not a problem']) {
+      expect(within(fee).getByRole('button', { name }).getAttribute('aria-pressed')).toBe('false');
+    }
+    expect(within(cards[2]!).getByText('Risk')).toBeTruthy();
+    expect(
+      within(cards[2]!).getByRole('button', {
+        name: 'Foundation · migration · Create repayments table',
+      }),
+    ).toBeTruthy();
+    expect(within(cards[3]!).getByText('Worth a look')).toBeTruthy();
+    // A PR-wide problem has no place to go; its title links to the CI run.
+    const ci = cards[0]!;
+    const link = within(ci).getByRole('link', { name: 'CI check "build" fails' });
+    expect(link.getAttribute('href')).toBe('https://github.com/acme/loans/actions/runs/1');
+    expect(link.getAttribute('target')).toBe('_blank');
+    expect(link.getAttribute('rel')).toBe('noreferrer');
+    expect(within(ci).queryByRole('button', { name: /Flow|Foundation|line/ })).toBeNull();
+  });
+
+  it('a where-link opens the home as a visit', () => {
+    const { onVisit } = show({ problems: { problems: PROBLEMS } });
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Flow 1 · step 1 · Parse the request, line 4' }),
+    );
+    expect(onVisit).toHaveBeenLastCalledWith('F1.S1', { file: 'src/a.ts', line: 4 });
+    // No line: the home opens at its start.
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Foundation · migration · Create repayments table' }),
+    );
+    expect(onVisit).toHaveBeenLastCalledWith('f1');
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Other changes · Tests · Repay tests, line 2' }),
+    );
+    expect(onVisit).toHaveBeenLastCalledWith('o1.1', { file: 'test/repay.test.ts', line: 2 });
+  });
+
+  it('Not a problem dims the card and moves it down', () => {
+    const setMark = vi.fn();
+    show({ problems: { problems: PROBLEMS, setMark } });
+    const block = screen.getByRole('region', { name: 'Possible problems (5)' });
+    const titles = () =>
+      within(block)
+        .getAllByRole('listitem')
+        .map((c) => c.querySelector('.problem-title')!.textContent);
+    const name = within(block).getAllByRole('listitem')[3]!;
+    const not = within(name).getByRole('button', { name: 'Not a problem' });
+    fireEvent.click(not);
+    expect(setMark).toHaveBeenLastCalledWith('name', 'not');
+    expect(not.getAttribute('aria-pressed')).toBe('true');
+    expect(name.className).toContain('problem-not');
+    // At the end of its level, still above nothing worse.
+    expect(titles()).toEqual([
+      'CI check "build" fails',
+      'The fee is charged twice.',
+      'Title table',
+      'Title other',
+      'Title name',
+    ]);
+    // Real problem: shown as pressed; the card is not dimmed.
+    fireEvent.click(within(name).getByRole('button', { name: 'Real problem' }));
+    expect(setMark).toHaveBeenLastCalledWith('name', 'real');
+    expect(name.className).not.toContain('problem-not');
+    expect(
+      within(name).getByRole('button', { name: 'Real problem' }).getAttribute('aria-pressed'),
+    ).toBe('true');
+    // A second click takes the mark away.
+    fireEvent.click(within(name).getByRole('button', { name: 'Real problem' }));
+    expect(setMark).toHaveBeenLastCalledWith('name', null);
+  });
+
+  it('lists unplaced line problems under Elsewhere in this PR', () => {
+    const { onVisit } = show({
+      problems: {
+        problems: [
+          problem('fee', 'bug', line('src/a.ts', 4), 'F1.S1'),
+          problem('far', 'risk', line('src/b.ts', 7), null, { title: 'Nil map write' }),
+        ],
+      },
+    });
+    const block = screen.getByRole('region', { name: 'Possible problems (2)' });
+    const elsewhere = within(block).getByRole('region', { name: 'Elsewhere in this PR' });
+    const far = within(elsewhere).getByRole('listitem');
+    expect(within(far).getByText('Nil map write')).toBeTruthy();
+    expect(within(far).getByText('src/b.ts, line 7')).toBeTruthy();
+    expect(within(elsewhere).queryByText('Title fee')).toBeNull();
+    fireEvent.click(within(far).getByText('src/b.ts, line 7'));
+    expect(onVisit).not.toHaveBeenCalled();
+  });
+
+  it('says when nothing was found', () => {
+    show({ problems: { problems: [] } });
+    const block = screen.getByRole('region', { name: 'Possible problems' });
+    expect(within(block).getByText('No possible problems found.')).toBeTruthy();
+    expect(within(block).getByText('Read: CI checks and review bots.').className).toContain(
+      'muted',
+    );
+  });
+
+  it('shows the outdated and pending notes', () => {
+    show({
+      problems: {
+        problems: [],
+        pending: true,
+        outdated: true,
+        note: 'Could not read CI results from GitHub: rate limited',
+      },
+    });
+    const block = screen.getByRole('region', { name: 'Possible problems' });
+    for (const text of [
+      'CI is still running; more may come.',
+      'CI results of newer commits are not shown until the tour is rebuilt.',
+      'Could not read CI results from GitHub: rate limited',
+    ]) {
+      expect(within(block).getByText(text).className).toContain('muted');
+    }
+  });
+
+  it('says while CI results are read, and not yet that none were found', () => {
+    show({ problems: { problems: [], loading: true } });
+    const block = screen.getByRole('region', { name: 'Possible problems' });
+    expect(within(block).getByText('Reading CI results…')).toBeTruthy();
+    expect(within(block).queryByText('No possible problems found.')).toBeNull();
+  });
+
+  it('shows why a mark was not saved', () => {
+    show({ problems: { problems: PROBLEMS, error: 'Could not save the mark: disk full' } });
+    expect(screen.getByRole('status').textContent).toBe('Could not save the mark: disk full');
   });
 });
