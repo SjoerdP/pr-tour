@@ -103,12 +103,12 @@ export function TourView({ repo, pr }: { repo: string; pr: number }) {
   const review = useReview(repo, pr);
   // The tour's possible problems, shared by every view that shows them.
   const problems = useProblems(repo, pr, tour, review.threads);
-  // "Go to the line" in a pin's popup. The outline's pins move the tour there; the pins in
-  // the map panel and on the overview visit it, with the way back. Read through a ref, so the
-  // values below change only when the problems do.
-  const problemMove = useRef<(p: PlacedProblem, from: 'outline' | 'main') => void>(() => {});
-  const outlineProblems = useMemo(
-    () => ({ ...problems, onGoTo: (p: PlacedProblem) => problemMove.current(p, 'outline') }),
+  // "Go to the line" in a pin's popup. The outline's pins and the review panel's "Go to it"
+  // move the tour there; the pins in the map panel and on the overview visit it, with the way
+  // back. Read through a ref, so the values below change only when the problems do.
+  const problemMove = useRef<(p: PlacedProblem, from: 'move' | 'main') => void>(() => {});
+  const moveProblems = useMemo(
+    () => ({ ...problems, onGoTo: (p: PlacedProblem) => problemMove.current(p, 'move') }),
     [problems],
   );
   const mainProblems = useMemo(
@@ -296,9 +296,9 @@ export function TourView({ repo, pr }: { repo: string; pr: number }) {
 
   /**
    * Opens a problem's home at its line. From the map panel or the overview it is a visit; from
-   * the outline (or with neither open) a move.
+   * the outline or the review panel (or with neither open) a move.
    */
-  function goToProblem(p: PlacedProblem, from: 'outline' | 'main') {
+  function goToProblem(p: PlacedProblem, from: 'move' | 'main') {
     if (p.homeId === null) return;
     const at = p.at.kind === 'line' ? p.at : null;
     if (from === 'main' && (mapShown || overviewOpen)) {
@@ -476,23 +476,26 @@ export function TourView({ repo, pr }: { repo: string; pr: number }) {
       <ProblemsContext.Provider value={mainProblems}>
         {/* An open review panel takes a column on wide windows: see .review-open in the CSS. */}
         <div className={reviewOpen ? 'tour-app review-open' : 'tour-app'}>
-          <TopBar
-            pr={summary}
-            tour={tour}
-            isSeen={isSeen}
-            overviewOpen={tour !== null && overviewOpen}
-            onOverview={toggleOverview}
-            aboutOpen={about.open}
-            onAboutChange={about.setOpen}
-            reviewOpen={reviewOpen}
-            onReviewChange={setReviewChoice}
-            review={review}
-            onOpenHome={openHome}
-            onJump={(file, line, at) => {
-              setJump({ file, line });
-              show(at ?? null);
-            }}
-          />
+          {/* The review panel's "Go to it" moves the tour, as it does for unseen items. */}
+          <ProblemsContext.Provider value={moveProblems}>
+            <TopBar
+              pr={summary}
+              tour={tour}
+              isSeen={isSeen}
+              overviewOpen={tour !== null && overviewOpen}
+              onOverview={toggleOverview}
+              aboutOpen={about.open}
+              onAboutChange={about.setOpen}
+              reviewOpen={reviewOpen}
+              onReviewChange={setReviewChoice}
+              review={review}
+              onOpenHome={openHome}
+              onJump={(file, line, at) => {
+                setJump({ file, line });
+                show(at ?? null);
+              }}
+            />
+          </ProblemsContext.Provider>
 
           {notices && (
             <div className="notices">
@@ -549,7 +552,7 @@ export function TourView({ repo, pr }: { repo: string; pr: number }) {
 
           {tour && current !== null && currentHome && (
             <div className="tour-body">
-              <ProblemsContext.Provider value={outlineProblems}>
+              <ProblemsContext.Provider value={moveProblems}>
                 <Outline
                   tour={tour}
                   currentId={current}

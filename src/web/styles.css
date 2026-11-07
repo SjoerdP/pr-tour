@@ -1744,6 +1744,11 @@ p.why {
   padding-left: var(--space-4);
 }
 
+/* A level chip on each row needs a little air between rows. */
+.approve-problems li + li {
+  margin-top: var(--space-1);
+}
+
 .review-actions {
   display: flex;
   flex-wrap: wrap;

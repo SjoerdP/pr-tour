@@ -4,7 +4,9 @@ import { describe, expect, it, vi } from 'vitest';
 import type { Draft, DraftComment, ReviewThread } from '../../src/shared/review.js';
 import type { Tour } from '../../src/shared/tour.js';
 import { ReviewPanel, type ReviewDraftText } from '../../src/web/ReviewPanel.js';
+import type { ProblemsValue } from '../../src/web/ProblemsContext.js';
 import type { ReviewState } from '../../src/web/useReview.js';
+import { line, problem, WithProblems } from './problems-fake.js';
 import { fakeReview } from './review-fake.js';
 import { tour as baseTour } from './tour-fixture.js';
 
@@ -63,7 +65,7 @@ const tour: Tour = {
 
 function renderPanel(
   review: ReviewState = fakeReview(),
-  options: { isSeen?: (id: string) => boolean } = {},
+  options: { isSeen?: (id: string) => boolean; problems?: Partial<ProblemsValue> } = {},
 ) {
   const props = {
     review,
@@ -73,7 +75,11 @@ function renderPanel(
     onJump: vi.fn(),
     onClose: vi.fn(),
   };
-  render(<Harness {...props} />);
+  render(
+    <WithProblems value={options.problems ?? {}}>
+      <Harness {...props} />
+    </WithProblems>,
+  );
   return props;
 }
 
@@ -318,6 +324,139 @@ describe('ReviewPanel: approve reminder', () => {
     renderPanel(fakeReview(), { isSeen: () => true });
     fireEvent.click(screen.getByRole('radio', { name: 'Approve' }));
     expect(screen.queryByText(/You haven't seen/)).toBeNull();
+    expect(submitButton().textContent).toBe('Submit review');
+  });
+});
+
+describe('ReviewPanel: possible problems in the approve reminder', () => {
+  const bug = problem('p1', 'bug', line('src/a.ts', 5), 'F1.S3', { title: 'The fee is lost' });
+  const risk = problem('p2', 'risk', line('src/a.ts', 7), 'F1.S1', { title: 'Two repays race' });
+  const look = problem('p3', 'look', line('m.sql', 2), 'f1', { title: 'Name is unclear' });
+  const ci = problem('p4', 'bug', { kind: 'pr' }, null, {
+    title: 'CI check "test" fails',
+    url: 'https://github.com/acme/loans/actions/runs/1',
+  });
+  const approve = () => fireEvent.click(screen.getByRole('radio', { name: 'Approve' }));
+
+  it('lists unmarked problems above unseen items when approving', () => {
+    const onGoTo = vi.fn();
+    renderPanel(fakeReview(), {
+      isSeen: (id) => id !== 'f1',
+      problems: { problems: [bug, ci, risk, look], onGoTo },
+    });
+    expect(screen.queryByRole('region', { name: 'Possible problems not marked' })).toBeNull();
+    approve();
+
+    const section = screen.getByRole('region', { name: 'Possible problems not marked' });
+    expect(within(section).getByText('4 possible problems are not marked')).toBeTruthy();
+    const items = within(section).getAllByRole('listitem');
+    expect(items.map((li) => li.textContent)).toEqual([
+      expect.stringMatching(/^Likely bug.*The fee is lost/),
+      expect.stringMatching(/^Likely bug.*CI check "test" fails/),
+      expect.stringMatching(/^Risk.*Two repays race/),
+      expect.stringMatching(/^Worth a look.*Name is unclear/),
+    ]);
+    const unseen = screen.getByRole('region', { name: 'Not seen yet' });
+    expect(section.compareDocumentPosition(unseen) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+
+    fireEvent.click(within(items[0]!).getByRole('button', { name: 'Go to it' }));
+    expect(onGoTo).toHaveBeenCalledWith(bug);
+
+    // A PR-wide problem has no place to go: its title links to the run instead.
+    expect(within(items[1]!).queryByRole('button', { name: 'Go to it' })).toBeNull();
+    const link = within(items[1]!).getByRole('link', { name: 'CI check "test" fails' });
+    expect(link.getAttribute('href')).toBe('https://github.com/acme/loans/actions/runs/1');
+    expect(link.getAttribute('target')).toBe('_blank');
+    expect(link.getAttribute('rel')).toBe('noreferrer');
+  });
+
+  it('says "1 possible problem is not marked" for one', () => {
+    renderPanel(fakeReview(), { problems: { problems: [risk] } });
+    approve();
+    expect(screen.getByText('1 possible problem is not marked')).toBeTruthy();
+  });
+
+  it('a problem with no home and no safe url has no button and no link', () => {
+    const elsewhere = problem('p5', 'risk', line('lib/x.ts', 3), null, { title: 'Off the tour' });
+    const unsafe = problem('p6', 'bug', { kind: 'pr' }, null, {
+      title: 'Bad link',
+      url: 'javascript:alert(1)',
+    });
+    renderPanel(fakeReview(), { problems: { problems: [unsafe, elsewhere] } });
+    approve();
+    const section = screen.getByRole('region', { name: 'Possible problems not marked' });
+    expect(within(section).queryByRole('button')).toBeNull();
+    expect(within(section).queryByRole('link')).toBeNull();
+    expect(within(section).getByText('Bad link')).toBeTruthy();
+  });
+
+  it('lists problems marked real as a last warning', () => {
+    const onGoTo = vi.fn();
+    const marks: Record<string, 'real' | 'not'> = { p1: 'real', p2: 'real' };
+    renderPanel(fakeReview(), {
+      problems: { problems: [bug, risk, look], markOf: (k) => marks[k], onGoTo },
+    });
+    approve();
+
+    const unmarked = screen.getByRole('region', { name: 'Possible problems not marked' });
+    expect(within(unmarked).getByText('1 possible problem is not marked')).toBeTruthy();
+    const real = screen.getByRole('region', { name: 'Problems you marked real' });
+    expect(within(real).getByText('You marked 2 as real problems')).toBeTruthy();
+    const items = within(real).getAllByRole('listitem');
+    expect(items.map((li) => li.textContent)).toEqual([
+      expect.stringMatching(/^Likely bug.*The fee is lost/),
+      expect.stringMatching(/^Risk.*Two repays race/),
+    ]);
+    expect(unmarked.compareDocumentPosition(real) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    fireEvent.click(within(items[1]!).getByRole('button', { name: 'Go to it' }));
+    expect(onGoTo).toHaveBeenCalledWith(risk);
+  });
+
+  it('says "You marked 1 as a real problem" for one', () => {
+    renderPanel(fakeReview(), {
+      problems: { problems: [bug], markOf: (k) => (k === 'p1' ? 'real' : undefined) },
+    });
+    approve();
+    expect(screen.getByText('You marked 1 as a real problem')).toBeTruthy();
+    expect(screen.queryByRole('region', { name: 'Possible problems not marked' })).toBeNull();
+  });
+
+  it('leaves out problems marked not a problem', () => {
+    renderPanel(fakeReview(), {
+      problems: { problems: [bug, risk], markOf: (k) => (k === 'p1' ? 'not' : undefined) },
+    });
+    approve();
+    const section = screen.getByRole('region', { name: 'Possible problems not marked' });
+    expect(within(section).getByText('1 possible problem is not marked')).toBeTruthy();
+    expect(screen.queryByText('The fee is lost')).toBeNull();
+  });
+
+  it('says Approve anyway when problems are open', () => {
+    renderPanel(fakeReview(), { isSeen: () => true, problems: { problems: [look] } });
+    approve();
+    expect(submitButton().textContent).toBe('Approve anyway');
+  });
+
+  it('says Approve anyway when only a problem marked real is left', () => {
+    renderPanel(fakeReview(), {
+      problems: { problems: [look], markOf: () => 'real' },
+    });
+    approve();
+    expect(submitButton().textContent).toBe('Approve anyway');
+  });
+
+  it('says Submit review when every problem is marked not a problem', () => {
+    renderPanel(fakeReview(), { problems: { problems: [look], markOf: () => 'not' } });
+    approve();
+    expect(submitButton().textContent).toBe('Submit review');
+  });
+
+  it('shows nothing when Comment is chosen', () => {
+    renderPanel(fakeReview(), {
+      problems: { problems: [bug, risk], markOf: (k) => (k === 'p1' ? 'real' : undefined) },
+    });
+    expect(screen.queryByRole('region', { name: 'Possible problems not marked' })).toBeNull();
+    expect(screen.queryByRole('region', { name: 'Problems you marked real' })).toBeNull();
     expect(submitButton().textContent).toBe('Submit review');
   });
 });

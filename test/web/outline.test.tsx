@@ -421,4 +421,16 @@ describe('problem pins', () => {
     expect(screen.queryByRole('dialog', { name: 'Flow map: Repay a loan' })).toBeNull();
     expect(screen.getByRole('button', { name: /Back to the map/ })).toBeTruthy();
   });
+
+  it('Go to it in the approve reminder is a move, even with the overview open', async () => {
+    await openWithProblem();
+    fireEvent.click(screen.getByRole('button', { name: 'Overview' }));
+    expect(screen.getByRole('button', { name: 'Overview', pressed: true })).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: /^Review/ }));
+    fireEvent.click(screen.getByRole('radio', { name: 'Approve' }));
+    const reminder = await screen.findByRole('region', { name: 'Possible problems not marked' });
+    fireEvent.click(within(reminder).getByRole('button', { name: 'Go to it' }));
+    expect(currentTitle()).toContain('Record the repayment');
+    expect(screen.queryByRole('button', { name: /Back to/ })).toBeNull();
+  });
 });
