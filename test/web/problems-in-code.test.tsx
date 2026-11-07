@@ -89,7 +89,7 @@ function makeFlow(): Flow {
   };
 }
 
-function makeTour(): Tour {
+function makeTour(other: Tour['other'] = []): Tour {
   return {
     repo: 'acme/loans',
     pr: 42,
@@ -100,7 +100,7 @@ function makeTour(): Tour {
     summary: 'Adds early repayment of loans.',
     foundations: [],
     flows: [makeFlow()],
-    other: [],
+    other,
     check: { problems: [] },
     hashes: {},
   };
@@ -198,6 +198,31 @@ describe('Possible problems in the code', () => {
     );
   });
 
+  it('Comment keeps text already being written and adds the problem text below it', async () => {
+    renderCode([{ ...FEE, at: line(PATH, 5) }]);
+    const card = await findCard(FEE.title);
+    fireEvent.click(screen.getByRole('button', { name: 'Comment on line 6' }));
+    fireEvent.change(screen.getByRole('textbox'), { target: { value: 'My own note' } });
+
+    fireEvent.click(within(card).getByRole('button', { name: 'Comment' }));
+    const field = screen.getByRole<HTMLTextAreaElement>('textbox');
+    expect(field.value).toBe(`My own note\n\n${FEE.title}\n\n${FEE.why}`);
+    expect(rowAbove(field).querySelector('.code-text')!.textContent).toBe('new five');
+    // Its own text is in there: closing it asks first.
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(screen.getByRole('textbox')).toBeTruthy();
+  });
+
+  it('Comment twice on the same problem does not repeat its text', async () => {
+    renderCode([{ ...FEE, at: line(PATH, 5) }]);
+    const card = await findCard(FEE.title);
+    fireEvent.click(within(card).getByRole('button', { name: 'Comment' }));
+    fireEvent.click(within(card).getByRole('button', { name: 'Comment' }));
+    expect(screen.getByRole<HTMLTextAreaElement>('textbox').value).toBe(
+      `${FEE.title}\n\n${FEE.why}`,
+    );
+  });
+
   it('Cancel closes an untouched problem comment at once', async () => {
     renderCode([{ ...FEE, at: line(PATH, 5) }]);
     const card = await findCard(FEE.title);
@@ -206,7 +231,7 @@ describe('Possible problems in the code', () => {
     expect(screen.queryByRole('textbox')).toBeNull();
   });
 
-  it('Comment on a second problem of the same line fills in its text', async () => {
+  it('Comment on a second problem of the same line adds its text below', async () => {
     const other = problem('other', 'look', line(PATH, 5), 'F1.S1', { title: 'Name it fee.' });
     renderCode([{ ...FEE, at: line(PATH, 5) }, other]);
     const first = await findCard(FEE.title);
@@ -214,7 +239,13 @@ describe('Possible problems in the code', () => {
     fireEvent.click(
       within(await findCard('Name it fee.')).getByRole('button', { name: 'Comment' }),
     );
-    expect(screen.getByRole<HTMLTextAreaElement>('textbox').value).toBe('Name it fee.');
+    expect(screen.getByRole<HTMLTextAreaElement>('textbox').value).toBe(
+      `${FEE.title}
+
+${FEE.why}
+
+Name it fee.`,
+    );
   });
 
   it('Not a problem collapses the card to one line', async () => {
@@ -227,6 +258,7 @@ describe('Possible problems in the code', () => {
 
     fireEvent.click(not);
     const folded = screen.getByRole('button', { name: `Not a problem · ${FEE.title}` });
+    expect(folded.hasAttribute('aria-expanded')).toBe(false);
     expect(screen.queryByText(FEE.why!)).toBeNull();
     expect(screen.queryByRole('button', { name: 'Real problem' })).toBeNull();
 
@@ -295,8 +327,9 @@ describe('Possible problems in the code', () => {
 });
 
 describe('Possible problems at the top of the step', () => {
-  function renderStep(problems: PlacedProblem[]) {
-    const tour = makeTour();
+  function renderStep(problems: PlacedProblem[], other: Tour['other'] = []) {
+    const tour = makeTour(other);
+    const onOpenHome = vi.fn();
     const home = homesInOrder(tour).find((h) => h.id === 'F1.S1')!;
     render(
       <WithProblems value={{ problems }}>
@@ -311,7 +344,7 @@ describe('Possible problems at the top of the step', () => {
           onShowLine={vi.fn()}
           onRevealLine={vi.fn()}
           onBack={vi.fn()}
-          onOpenHome={vi.fn()}
+          onOpenHome={onOpenHome}
           onOpenMap={vi.fn()}
           nav={{
             previousStep: undefined,
@@ -323,6 +356,7 @@ describe('Possible problems at the top of the step', () => {
         />
       </WithProblems>,
     );
+    return { onOpenHome };
   }
 
   it('a failing test shows at the top of its step', () => {
@@ -354,5 +388,44 @@ describe('Possible problems at the top of the step', () => {
   it('no band when the step has no step or file problems', () => {
     renderStep([{ ...FEE, at: line(PATH, 5) }]);
     expect(screen.queryByRole('region', { name: 'Possible problems in this step' })).toBeNull();
+  });
+
+  const FAILING = problem('ci', 'bug', { kind: 'step', test: 'TestRepayChargesFee' }, 'F1.S1', {
+    title: 'Test TestRepayChargesFee fails in CI',
+    sources: ['CI'],
+    url: 'https://github.com/acme/loans/actions/runs/1',
+  });
+  const TESTS_GROUP: Tour['other'] = [
+    {
+      kind: 'tests',
+      title: 'Tests',
+      summary: 'Tests for repay.',
+      items: [
+        {
+          id: 'o1.1',
+          file: 'test/repay.test.ts',
+          title: 'Repay tests',
+          homes: [{ file: 'test/repay.test.ts', side: 'new', start: 1, end: 9 }],
+        },
+      ],
+    },
+  ];
+
+  it("a failing test whose file is in the tour: 'Show the test' opens it", () => {
+    const { onOpenHome } = renderStep([FAILING], TESTS_GROUP);
+    const band = screen.getByRole('region', { name: 'Possible problems in this step' });
+    fireEvent.click(within(band).getByRole('button', { name: 'Show the test' }));
+    expect(onOpenHome).toHaveBeenCalledWith('o1.1');
+    // The test's file takes the place of the CI run.
+    expect(within(band).queryByRole('link', { name: FAILING.title })).toBeNull();
+  });
+
+  it('a failing test whose file is not in the tour links to the CI run', () => {
+    renderStep([FAILING]);
+    const band = screen.getByRole('region', { name: 'Possible problems in this step' });
+    expect(within(band).queryByRole('button', { name: 'Show the test' })).toBeNull();
+    expect(within(band).getByRole('link', { name: FAILING.title }).getAttribute('href')).toBe(
+      FAILING.url,
+    );
   });
 });

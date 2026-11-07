@@ -266,11 +266,9 @@ describe('Thread: a bot thread that is a possible problem', () => {
     const real = within(head).getByRole('button', { name: 'Real problem' });
     const not = within(head).getByRole('button', { name: 'Not a problem' });
     expect(real.getAttribute('aria-pressed')).toBe('false');
+    expect(not.getAttribute('aria-pressed')).toBe('false');
     fireEvent.click(real);
     expect(real.getAttribute('aria-pressed')).toBe('true');
-    fireEvent.click(not);
-    expect(real.getAttribute('aria-pressed')).toBe('false');
-    expect(not.getAttribute('aria-pressed')).toBe('true');
     // No problem card next to the thread.
     expect(document.querySelector('.problem-card')).toBeNull();
     // The comments stay.
@@ -287,5 +285,24 @@ describe('Thread: a bot thread that is a possible problem', () => {
     renderThread({}, [{ ...botProblem, threadId: 'T2' }]);
     expect(screen.queryByText('Likely bug')).toBeNull();
     expect(document.querySelector('.thread-head')).toBeNull();
+  });
+
+  it('marked "Not a problem", it folds to one line; a click opens it', () => {
+    renderThread({ thread: thread({ bot: true }) }, [botProblem]);
+    fireEvent.click(screen.getByRole('button', { name: 'Not a problem' }));
+    const folded = screen.getByRole('button', { name: `Not a problem · ${botProblem.title}` });
+    expect(screen.queryAllByRole('article')).toHaveLength(0);
+    expect(screen.queryByRole('button', { name: 'Reply' })).toBeNull();
+
+    fireEvent.click(folded);
+    expect(screen.getAllByRole('article')).toHaveLength(2);
+    const not = screen.getByRole('button', { name: 'Not a problem' });
+    expect(not.getAttribute('aria-pressed')).toBe('true');
+    // Taking the mark away keeps it open; marking it again folds it again.
+    fireEvent.click(not);
+    fireEvent.click(screen.getByRole('button', { name: 'Not a problem' }));
+    expect(
+      screen.getByRole('button', { name: `Not a problem · ${botProblem.title}` }),
+    ).toBeTruthy();
   });
 });

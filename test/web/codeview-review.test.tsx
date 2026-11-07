@@ -1,7 +1,6 @@
 import { fireEvent, render, screen, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { FileDiff, Hunk } from '../../src/shared/diff.js';
-import type { PlacedProblem } from '../../src/shared/problems.js';
 import type { Draft, DraftComment, ReviewThread } from '../../src/shared/review.js';
 import type { Tour } from '../../src/shared/tour.js';
 import * as api from '../../src/web/api.js';
@@ -10,6 +9,7 @@ import { ComposerMemory, ComposerMemoryContext } from '../../src/web/composer-me
 import { CodeView } from '../../src/web/CodeView.js';
 import { buildRows } from '../../src/shared/rows.js';
 import type { ReviewState } from '../../src/web/useReview.js';
+import { problem } from './problems-fake.js';
 import { fakeReview } from './review-fake.js';
 
 // Comments in the code view: selecting lines, the composer, threads and drafts in place.
@@ -124,14 +124,6 @@ function draft(overrides: Partial<DraftComment> = {}): Draft {
     createdAt: '2026-10-28T10:00:00Z',
     ...overrides,
   };
-}
-
-function problem(
-  key: string,
-  at: PlacedProblem['at'],
-  more: Partial<PlacedProblem> = {},
-): PlacedProblem {
-  return { key, level: 'risk', title: key, sources: ['CI'], at, homeId: null, ...more };
 }
 
 function renderView(
@@ -802,13 +794,13 @@ describe('threadRows / draftRows / problemRows', () => {
     const placed = problemRows(
       rows,
       [
-        problem('new', at('new', 5)),
-        problem('old', at('old', 5)),
-        problem('thread', at('new', 5), { threadId: 'T1' }),
-        problem('other-file', at('new', 5, 'src/fees.ts')),
-        problem('step', { kind: 'step', test: 'TestRepay' }),
-        problem('file', { kind: 'file', file: PATH }),
-        problem('gone', at('new', 99)),
+        problem('new', 'risk', at('new', 5), null),
+        problem('old', 'risk', at('old', 5), null),
+        problem('thread', 'risk', at('new', 5), null, { threadId: 'T1' }),
+        problem('other-file', 'risk', at('new', 5, 'src/fees.ts'), null),
+        problem('step', 'risk', { kind: 'step', test: 'TestRepay' }, null),
+        problem('file', 'risk', { kind: 'file', file: PATH }, null),
+        problem('gone', 'risk', at('new', 99), null),
       ],
       PATH,
     );

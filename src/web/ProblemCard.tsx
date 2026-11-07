@@ -68,10 +68,24 @@ export function commentText(problem: PlacedProblem): string {
   return problem.why === undefined ? problem.title : `${problem.title}\n\n${problem.why}`;
 }
 
+/** A problem marked "Not a problem", folded to one line: `Not a problem · <title>`. */
+export function FoldedProblem({ title, onOpen }: { title: string; onOpen: () => void }) {
+  return (
+    <button type="button" className="link-button problem-unfold" onClick={onOpen}>
+      Not a problem · {title}
+    </button>
+  );
+}
+
 type Props = {
   problem: PlacedProblem;
   /** Opens the comment box on the problem's line with `text`; no "Comment" button without it. */
   onComment?: ((text: string) => void) | undefined;
+  /**
+   * Opens the home of a failing test's file: then a "Show the test" button takes the place of
+   * the link to the CI run.
+   */
+  onShowTest?: (() => void) | undefined;
   /** Show the problem only: no marks and no "Comment". */
   readOnly?: boolean;
 };
@@ -80,7 +94,7 @@ type Props = {
  * One possible problem, in its level's colour: level chip, title, reason, sources, and the
  * marks. Marked "Not a problem", it folds up to one line; a click opens it.
  */
-export function ProblemCard({ problem, onComment, readOnly = false }: Props) {
+export function ProblemCard({ problem, onComment, onShowTest, readOnly = false }: Props) {
   const { markOf } = useProblemsContext();
   const mark = markOf(problem.key);
   const [open, setOpen] = useState(false);
@@ -89,21 +103,17 @@ export function ProblemCard({ problem, onComment, readOnly = false }: Props) {
   if (mark === 'not' && !open) {
     return (
       <div className={className}>
-        <button
-          type="button"
-          className="link-button problem-unfold"
-          aria-expanded={false}
-          onClick={() => setOpen(true)}
-        >
-          Not a problem · {problem.title}
-        </button>
+        <FoldedProblem title={problem.title} onOpen={() => setOpen(true)} />
       </div>
     );
   }
 
-  // A line problem's place is the line itself; others link to where they were found (CI).
+  // A line problem's place is the line itself; others link to where they were found (CI),
+  // unless the test's own file can be shown.
   const href =
-    problem.at.kind !== 'line' && problem.url !== undefined ? safeHref(problem.url) : null;
+    problem.at.kind !== 'line' && !onShowTest && problem.url !== undefined
+      ? safeHref(problem.url)
+      : null;
   return (
     <div className={className}>
       <div className="problem-head">
@@ -121,6 +131,11 @@ export function ProblemCard({ problem, onComment, readOnly = false }: Props) {
       {problem.why !== undefined && <p className="problem-why muted">{problem.why}</p>}
       <div className="problem-foot">
         <ProblemSources sources={problem.sources} />
+        {onShowTest && (
+          <button type="button" className="link-button problem-show-test" onClick={onShowTest}>
+            Show the test
+          </button>
+        )}
         {!readOnly && (
           // Marked "Not a problem" again: it folds up again.
           <ProblemMarks problemKey={problem.key} onMark={(m) => m === 'not' && setOpen(false)}>

@@ -274,11 +274,21 @@ function FileCode({
     typed.current = '';
     setFilled((f) => ({ ...f, text: '' }));
   }
-  /** Opens the composer on `line` with `text`, a draft to edit before it is added. */
+  /**
+   * Opens the composer on `line` with `text`, a draft to edit before it is added. Text being
+   * written already stays: `text` goes below it (once).
+   */
   function commentOn(side: DiffSide, line: number, text: string) {
-    typed.current = text;
+    const before = typed.current;
+    const body =
+      before.trim() === ''
+        ? text
+        : before.includes(text)
+          ? before
+          : `${before.trimEnd()}\n\n${text}`;
+    typed.current = body;
     setSelection({ side, anchor: line, line });
-    setFilled((f) => ({ seq: f.seq + 1, text }));
+    setFilled((f) => ({ seq: f.seq + 1, text: body === text ? text : '' }));
   }
   // The picked rows, where the composer sits, stay open (folding them would drop its text).
   const pickedRows = useMemo((): Array<[number, number]> => {

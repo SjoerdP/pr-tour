@@ -2542,6 +2542,12 @@ span.problem-where {
   padding-block: var(--space-1);
 }
 
+/* A bot's thread marked "Not a problem": one line, like a folded card. */
+.thread.thread-folded {
+  padding-block: var(--space-1);
+  background: var(--bg);
+}
+
 .problem-unfold {
   color: var(--fg-muted);
   text-align: left;

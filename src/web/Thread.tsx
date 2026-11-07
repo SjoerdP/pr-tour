@@ -3,7 +3,7 @@ import type { Draft, DraftReply, ReviewThread, ThreadComment } from '../shared/r
 import { Composer } from './Composer.js';
 import { useComposerMemory } from './composer-memory.js';
 import { errorText } from './errors.js';
-import { LevelChip, ProblemMarks, ProblemSources } from './ProblemCard.js';
+import { FoldedProblem, LevelChip, ProblemMarks, ProblemSources } from './ProblemCard.js';
 import { useProblemsContext } from './ProblemsContext.js';
 import { safeHref } from './safe-href.js';
 
@@ -56,8 +56,10 @@ export function Thread({
   }
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const { problems } = useProblemsContext();
+  const { problems, markOf } = useProblemsContext();
   const problem = problems.find((p) => p.threadId === thread.id);
+  // Marked "Not a problem", the thread folds to one line until it is opened.
+  const [notOpen, setNotOpen] = useState(false);
 
   const replies = drafts.filter(
     (d): d is DraftReply => d.kind === 'reply' && d.threadId === thread.id,
@@ -85,6 +87,14 @@ export function Thread({
     setReplying(false);
   }
 
+  if (problem && markOf(problem.key) === 'not' && !notOpen) {
+    return (
+      <section className="thread thread-folded" aria-label={`Thread on ${thread.path}`}>
+        <FoldedProblem title={problem.title} onOpen={() => setNotOpen(true)} />
+      </section>
+    );
+  }
+
   return (
     <section className="thread" aria-label={`Thread on ${thread.path}`}>
       {(thread.resolved || thread.outdated || problem) && (
@@ -102,7 +112,13 @@ export function Thread({
           )}
           {thread.outdated && <span className="thread-label">Outdated</span>}
           {problem && <ProblemSources sources={problem.sources} />}
-          {problem && !readOnly && <ProblemMarks problemKey={problem.key} />}
+          {problem && !readOnly && (
+            // Marked "Not a problem" again: it folds up again.
+            <ProblemMarks
+              problemKey={problem.key}
+              onMark={(m) => m === 'not' && setNotOpen(false)}
+            />
+          )}
         </div>
       )}
       {open && (

@@ -7,11 +7,20 @@ import {
   type ReactNode,
   type Ref,
 } from 'react';
+import type { PlacedProblem } from '../shared/problems.js';
 import type { Flow, Mark, Range, SideEffect, Step, Tour } from '../shared/tour.js';
 import type { Focus as CodeFocus, Reveal } from './code-lines.js';
 import { CodeView } from './CodeView.js';
 import { FlowEndNote } from './FlowEndNote.js';
-import { cameFrom, homeTouches, homeTitle, type CameFrom, type Home } from './homes.js';
+import {
+  cameFrom,
+  homeRanges,
+  homesInOrder,
+  homeTouches,
+  homeTitle,
+  type CameFrom,
+  type Home,
+} from './homes.js';
 import { keepsReviewOpen } from './keep-review-open.js';
 import { ProblemCard } from './ProblemCard.js';
 import { useProblemsContext } from './ProblemsContext.js';
@@ -53,6 +62,24 @@ export function codeTarget(home: Home): { file: string; focus: Focus } {
     case 'other':
       return { file: home.item.file, focus: firstRange(home.item.homes, home.item.file) };
   }
+}
+
+/**
+ * For a failing test of `home` whose file a home of the tour holds: opens that home. The
+ * step's `tests` entry gives the test's file.
+ */
+function testHome(
+  problem: PlacedProblem,
+  home: Home,
+  tour: Tour,
+  onOpenHome: (homeId: string) => void,
+): (() => void) | undefined {
+  if (problem.at.kind !== 'step' || home.kind !== 'step') return undefined;
+  const { test } = problem.at;
+  const file = home.step.tests.find((t) => t.name === test)?.file;
+  if (file === undefined) return undefined;
+  const holder = homesInOrder(tour).find((h) => homeRanges(h).some((r) => r.file === file));
+  return holder && (() => onOpenHome(holder.id));
 }
 
 /** Where the home sits in the tour: "Flow 1 · step 4 of 14", "Foundation · migration", ... */
@@ -304,7 +331,11 @@ export function StepPane({
           {band.length > 0 && (
             <section className="step-problems" aria-label="Possible problems in this step">
               {band.map((p) => (
-                <ProblemCard key={p.key} problem={p} />
+                <ProblemCard
+                  key={p.key}
+                  problem={p}
+                  onShowTest={testHome(p, home, tour, onOpenHome)}
+                />
               ))}
             </section>
           )}
