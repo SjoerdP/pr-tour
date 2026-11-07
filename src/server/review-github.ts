@@ -11,6 +11,7 @@ import {
   type ReviewThread,
   type ThreadComment,
 } from '../shared/review.js';
+import { isBotLogin } from '../shared/problems.js';
 import { CommandError, runOk, type Runner } from './exec.js';
 import { ghGraphql, GraphqlError, prGraphql, PrNotFoundError } from './graphql.js';
 
@@ -23,7 +24,7 @@ export const CI_FIELDS = `
   } } } } } }
 `;
 
-const COMMENT_FIELDS = `pageInfo { hasNextPage endCursor } nodes { id author { login } body createdAt url }`;
+const COMMENT_FIELDS = `pageInfo { hasNextPage endCursor } nodes { id author { login __typename } body createdAt url }`;
 
 const REVIEW_QUERY = `query($owner: String!, $name: String!, $number: Int!, $cursor: String) {
   repository(owner: $owner, name: $name) {
@@ -169,7 +170,7 @@ type Page<T> = { pageInfo: { hasNextPage: boolean; endCursor: string | null }; n
 type CommentNode = {
   id: string;
   /** Null when the author's account was deleted. */
-  author: { login: string } | null;
+  author: { login: string; __typename?: string } | null;
   body: string;
   createdAt: string;
   url: string;
@@ -262,6 +263,11 @@ function toComment(node: CommentNode): ThreadComment {
   };
 }
 
+/** True when `author` is a GitHub App (GraphQL type `Bot`) or has a `[bot]` login. */
+function isBotAuthor(author: CommentNode['author']): boolean {
+  return author !== null && (author.__typename === 'Bot' || isBotLogin(author.login));
+}
+
 function toThread(node: ThreadNode, comments: CommentNode[]): ReviewThread {
   const fileLevel = node.subjectType === 'FILE' || node.line === null;
   return {
@@ -272,6 +278,7 @@ function toThread(node: ThreadNode, comments: CommentNode[]): ReviewThread {
     startLine: fileLevel ? null : node.startLine,
     outdated: node.isOutdated,
     resolved: node.isResolved,
+    bot: isBotAuthor(comments[0]?.author ?? null),
     comments: comments.map(toComment),
   };
 }

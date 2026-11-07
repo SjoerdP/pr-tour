@@ -27,6 +27,7 @@ function thread(overrides: Partial<ReviewThread> = {}): ReviewThread {
     startLine: null,
     outdated: false,
     resolved: false,
+    bot: false,
     comments: [comment('c1'), comment('c2', { author: 'bob', createdAt: '2026-10-28T11:58:00Z' })],
     ...overrides,
   };

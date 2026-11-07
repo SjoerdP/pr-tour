@@ -94,6 +94,7 @@ function thread(overrides: Partial<ReviewThread> = {}): ReviewThread {
     startLine: null,
     outdated: false,
     resolved: false,
+    bot: false,
     comments: [
       {
         id: 'c1',

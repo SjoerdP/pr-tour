@@ -69,6 +69,7 @@ const THREAD: ReviewThread = {
   startLine: null,
   outdated: false,
   resolved: false,
+  bot: false,
   comments: [
     {
       id: 'c1',

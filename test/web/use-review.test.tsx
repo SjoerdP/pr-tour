@@ -12,6 +12,7 @@ function thread(id: string, path: string, resolved = false): ReviewThread {
     startLine: null,
     outdated: false,
     resolved,
+    bot: false,
     comments: [],
   };
 }
