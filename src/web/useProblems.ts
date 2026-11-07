@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { ProblemMark, ProblemsResponse } from '../shared/api.js';
 import {
   botLevel,
+  botName,
   botTitle,
   mergeProblems,
   placeProblems,
@@ -17,18 +18,6 @@ import type { ProblemsValue } from './ProblemsContext.js';
 /** How often CI results are read again while CI runs. */
 const PENDING_POLL_MS = 60_000;
 
-/** Bot logins with a name people know them by; any other bot shows its login. */
-const BOT_NAMES: Record<string, string> = {
-  coderabbitai: 'CodeRabbit',
-  'copilot-pull-request-reviewer': 'Copilot',
-};
-
-/** The name a bot is shown by: `coderabbitai[bot]` → `CodeRabbit`. */
-export function botName(login: string): string {
-  const bare = login.replace(/\[bot\]$/, '');
-  return BOT_NAMES[bare] ?? bare;
-}
-
 /** An open bot thread as a possible problem; resolved and outdated threads are none. */
 function botProblem(thread: ReviewThread): Problem | null {
   const first = thread.comments[0];
@@ -36,7 +25,7 @@ function botProblem(thread: ReviewThread): Problem | null {
   const source = botName(first.author);
   return {
     key: `bot|${thread.id}`,
-    level: botLevel(first.body),
+    level: botLevel(first.author, first.body),
     title: botTitle(first.body) || `Comment by ${source}`,
     sources: [source],
     at:

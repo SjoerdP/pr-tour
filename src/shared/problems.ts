@@ -143,16 +143,36 @@ function cmp(a: number, b: number): number {
 }
 
 /**
- * Levels read from bot comments. The first match wins; a comment with no match is
- * `look`. Add a row to map another bot's label.
+ * Review bots pr-tour knows by name. Any other bot still counts: it shows its login (without
+ * `[bot]`) and its comments are `look`. To add a bot, add one row: its login, the name people
+ * know it by, and the labels in its comments that mean a higher level (the first match wins).
  */
-const BOT_LEVELS: { match: string | RegExp; level: Level }[] = [
-  // CodeRabbit: `_⚠️ Potential issue_`
-  { match: 'Potential issue', level: 'risk' },
-];
+const BOTS: { login: string; name: string; levels: { match: string | RegExp; level: Level }[] }[] =
+  [
+    // CodeRabbit marks its comments `_⚠️ Potential issue_` or `_🛠️ Refactor suggestion_`.
+    {
+      login: 'coderabbitai',
+      name: 'CodeRabbit',
+      levels: [{ match: 'Potential issue', level: 'risk' }],
+    },
+    // Copilot's review comments carry no level.
+    { login: 'copilot-pull-request-reviewer', name: 'Copilot', levels: [] },
+  ];
 
-export function botLevel(body: string): Level {
-  const row = BOT_LEVELS.find(({ match }) =>
+function bareLogin(login: string): string {
+  return login.replace(/\[bot\]$/, '');
+}
+
+/** The name a bot is shown by: `coderabbitai[bot]` → `CodeRabbit`; an unknown bot shows its login. */
+export function botName(login: string): string {
+  const bare = bareLogin(login);
+  return BOTS.find((b) => b.login === bare)?.name ?? bare;
+}
+
+/** The level of a bot's comment, from that bot's own labels; `look` when none matches. */
+export function botLevel(login: string, body: string): Level {
+  const bot = BOTS.find((b) => b.login === bareLogin(login));
+  const row = bot?.levels.find(({ match }) =>
     typeof match === 'string' ? body.includes(match) : match.test(body),
   );
   return row?.level ?? 'look';

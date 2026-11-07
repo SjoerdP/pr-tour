@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   botLevel,
+  botName,
   botTitle,
   isBotLogin,
   mergeProblems,
@@ -252,9 +253,24 @@ describe('sortProblems', () => {
 
 describe('bot comments', () => {
   it('botLevel reads CodeRabbit potential issues as a risk', () => {
-    expect(botLevel('_⚠️ Potential issue_\n\n**Charge the fee.**')).toBe('risk');
-    expect(botLevel('_🛠️ Refactor suggestion_\n\n**Extract a helper.**')).toBe('look');
-    expect(botLevel('Consider renaming this.')).toBe('look');
+    expect(botLevel('coderabbitai[bot]', '_⚠️ Potential issue_\n\n**Charge the fee.**')).toBe(
+      'risk',
+    );
+    expect(botLevel('coderabbitai', '_🛠️ Refactor suggestion_\n\n**Extract a helper.**')).toBe(
+      'look',
+    );
+    expect(botLevel('coderabbitai', 'Consider renaming this.')).toBe('look');
+  });
+
+  it("botLevel uses only that bot's own labels", () => {
+    expect(botLevel('some-other-bot[bot]', '_⚠️ Potential issue_')).toBe('look');
+    expect(botLevel('copilot-pull-request-reviewer', 'Potential issue here')).toBe('look');
+  });
+
+  it('botName shows known bots by name and others by login', () => {
+    expect(botName('coderabbitai[bot]')).toBe('CodeRabbit');
+    expect(botName('copilot-pull-request-reviewer')).toBe('Copilot');
+    expect(botName('lint-helper[bot]')).toBe('lint-helper');
   });
 
   it('botTitle skips the label line and strips markdown', () => {
