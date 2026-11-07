@@ -1,5 +1,6 @@
 // HTTP wire types: what the server's /api returns and the web renders.
 
+import type { Problem } from './problems.js';
 import type { CiStatus } from './review.js';
 import type { Tour } from './tour.js';
 
@@ -68,4 +69,20 @@ export type PrResponse = {
   outdated: boolean;
   /** The PR's latest build job, if one ran since the server started. */
   job: Job | null;
+};
+
+/** What the user said about a possible problem: it is real, or it is not. */
+export type ProblemMark = 'real' | 'not';
+
+/** Possible problems from CI for the tour's head commit, and the user's marks on them. */
+export type ProblemsResponse = {
+  problems: Problem[];
+  /** `key → mark` of every marked problem. */
+  marks: Record<string, ProblemMark>;
+  /** CI is still running on the tour's head commit. */
+  pending: boolean;
+  /** The PR has commits the tour was not built from; their CI results are not shown. */
+  outdated: boolean;
+  /** Why CI could not be read, or null. */
+  error: string | null;
 };

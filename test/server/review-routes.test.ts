@@ -8,8 +8,10 @@ import type { GitHub } from '../../src/server/github.js';
 import { GraphqlError } from '../../src/server/graphql.js';
 import { Jobs } from '../../src/server/jobs.js';
 import type { RepoManager } from '../../src/server/repo.js';
+import type { CheckRunNode, ProblemsGitHub } from '../../src/server/problems-github.js';
 import { ReviewSubmitError, type ReviewGitHub } from '../../src/server/review-github.js';
 import { Store } from '../../src/server/store.js';
+import type { PrSummary, ProblemsResponse } from '../../src/shared/api.js';
 import type { CiStatus, Draft, ReviewResponse, ReviewThread } from '../../src/shared/review.js';
 import type { Tour } from '../../src/shared/tour.js';
 
@@ -81,6 +83,7 @@ type Fakes = {
     submitReview: Mock<ReviewGitHub['submitReview']>;
     setResolved: Mock<ReviewGitHub['setResolved']>;
   };
+  problems: { checkRuns: Mock<ProblemsGitHub['checkRuns']> };
   store: Store;
   jobs: Jobs;
 };
@@ -116,6 +119,11 @@ beforeEach(() => {
         .fn<ReviewGitHub['submitReview']>()
         .mockResolvedValue({ url: 'https://github.com/acme/greet/pull/7#review-1' }),
       setResolved: vi.fn<ReviewGitHub['setResolved']>().mockResolvedValue(undefined),
+    },
+    problems: {
+      checkRuns: vi
+        .fn<ProblemsGitHub['checkRuns']>()
+        .mockResolvedValue({ runs: [], pending: false }),
     },
     store: new Store(':memory:'),
     jobs: new Jobs(),
@@ -786,5 +794,180 @@ describe('POST /threads/:threadId/resolve', () => {
     });
     expect(res.status).toBe(403);
     expect(fakes.review.setResolved).not.toHaveBeenCalled();
+  });
+});
+
+/** `acme/greet#7` as GitHub sees it now, with head `headSha`. */
+function prSummary(headSha: string): PrSummary {
+  return {
+    repo: 'acme/greet',
+    number: 7,
+    title: 'Rename the greeting parts',
+    author: 'alice',
+    url: 'https://github.com/acme/greet/pull/7',
+    additions: 3,
+    deletions: 2,
+    isDraft: false,
+    updatedAt: '2026-10-28T12:00:00Z',
+    baseSha: BASE,
+    headSha,
+    viewerIsAuthor: false,
+  };
+}
+
+/** A lint run with a warning on line 3 of greet.js, which the PR added. */
+const LINT_RUN: CheckRunNode = {
+  name: 'lint',
+  status: 'COMPLETED',
+  conclusion: 'SUCCESS',
+  detailsUrl: 'https://github.com/acme/greet/runs/1',
+  summary: null,
+  text: null,
+  annotations: {
+    nodes: [
+      {
+        path: 'greet.js',
+        annotationLevel: 'WARNING',
+        title: 'separator is never used',
+        message: 'Remove it or use it.',
+        location: { start: { line: 3 }, end: { line: 3 } },
+      },
+    ],
+  },
+};
+
+describe('GET /problems', () => {
+  beforeEach(() => {
+    fakes.store.saveTour(greetTour());
+    fakes.github.pr.mockResolvedValue(prSummary(HEAD));
+  });
+
+  it('GET problems returns CI problems for the tour head commit', async () => {
+    // The PR moved on; CI is still read for the commit the tour was built from.
+    fakes.github.pr.mockResolvedValue(prSummary(OLD_HEAD));
+    fakes.problems.checkRuns.mockResolvedValue({ runs: [LINT_RUN], pending: false });
+    fakes.store.setProblemMark('acme/greet', 7, 'PRRT_1', 'not');
+
+    const res = await api('/problems');
+
+    expect(res.status).toBe(200);
+    expect(fakes.problems.checkRuns).toHaveBeenCalledWith('acme/greet', HEAD);
+    expect(fakes.repos.diffText).toHaveBeenCalledWith('acme/greet', BASE, HEAD);
+    expect(await json<ProblemsResponse>(res)).toEqual({
+      problems: [
+        {
+          key: 'ci|lint|greet.js|  const separator = ": ";|separator is never used',
+          level: 'risk',
+          title: 'separator is never used',
+          why: 'Remove it or use it.',
+          sources: ['lint'],
+          at: { kind: 'line', file: 'greet.js', side: 'new', line: 3 },
+          url: 'https://github.com/acme/greet/runs/1',
+        },
+      ],
+      marks: { PRRT_1: 'not' },
+      pending: false,
+      outdated: true,
+      error: null,
+    });
+  });
+
+  it('says when the tour is outdated', async () => {
+    const current = await json<ProblemsResponse>(await api('/problems'));
+    expect(current.outdated).toBe(false);
+
+    fakes.github.pr.mockResolvedValue(prSummary(OLD_HEAD));
+    const moved = await json<ProblemsResponse>(await api('/problems'));
+    expect(moved.outdated).toBe(true);
+
+    // Not knowing the PR's head is not a reason to fail.
+    captureErrorLog();
+    fakes.github.pr.mockRejectedValue(new GraphqlError('Something went wrong'));
+    const unknown = await api('/problems');
+    expect(unknown.status).toBe(200);
+    expect((await json<ProblemsResponse>(unknown)).outdated).toBe(false);
+  });
+
+  it('a GitHub failure is a note, not an error', async () => {
+    captureErrorLog();
+    fakes.problems.checkRuns.mockRejectedValue(new GraphqlError('Something went wrong'));
+
+    const res = await api('/problems');
+
+    expect(res.status).toBe(200);
+    expect(await json<ProblemsResponse>(res)).toEqual({
+      problems: [],
+      marks: {},
+      pending: false,
+      outdated: false,
+      error: 'Could not read CI results from GitHub: Something went wrong',
+    });
+
+    // The failure is not cached: the next read tries again.
+    fakes.problems.checkRuns.mockResolvedValue({ runs: [LINT_RUN], pending: false });
+    const again = await json<ProblemsResponse>(await api('/problems'));
+    expect(again.error).toBeNull();
+    expect(again.problems).toHaveLength(1);
+  });
+
+  it('caches finished CI until restart and pending CI for 60 seconds', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    try {
+      fakes.problems.checkRuns.mockResolvedValue({ runs: [], pending: true });
+      expect((await json<ProblemsResponse>(await api('/problems'))).pending).toBe(true);
+      await api('/problems');
+      expect(fakes.problems.checkRuns).toHaveBeenCalledTimes(1);
+
+      vi.advanceTimersByTime(61_000);
+      fakes.problems.checkRuns.mockResolvedValue({ runs: [LINT_RUN], pending: false });
+      const done = await json<ProblemsResponse>(await api('/problems'));
+      expect(done.pending).toBe(false);
+      expect(done.problems).toHaveLength(1);
+      expect(fakes.problems.checkRuns).toHaveBeenCalledTimes(2);
+
+      vi.advanceTimersByTime(24 * 3600_000);
+      await api('/problems');
+      expect(fakes.problems.checkRuns).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('GET problems without a tour is 404', async () => {
+    fakes.store.close();
+    fakes.store = new Store(':memory:');
+    app = createApp({ ...fakes, port: PORT });
+
+    const res = await api('/problems');
+
+    expect(res.status).toBe(404);
+    expect(fakes.problems.checkRuns).not.toHaveBeenCalled();
+  });
+});
+
+describe('POST /problems/marks', () => {
+  it('POST marks stores and clears a mark', async () => {
+    const key = 'ci|lint|greet.js|  const separator = ": ";|separator is never used';
+
+    const set = await api('/problems/marks', { method: 'POST', body: { key, mark: 'real' } });
+    expect(set.status).toBe(204);
+    expect(fakes.store.problemMarks('acme/greet', 7)).toEqual({ [key]: 'real' });
+
+    const cleared = await api('/problems/marks', { method: 'POST', body: { key, mark: null } });
+    expect(cleared.status).toBe(204);
+    expect(fakes.store.problemMarks('acme/greet', 7)).toEqual({});
+  });
+
+  it('POST marks rejects a bad body', async () => {
+    for (const body of [
+      { key: '', mark: 'real' },
+      { key: 'k'.repeat(1001), mark: 'real' },
+      { key: 'PRRT_1', mark: 'maybe' },
+      { key: 'PRRT_1' },
+    ]) {
+      const res = await api('/problems/marks', { method: 'POST', body });
+      expect(res.status).toBe(400);
+    }
+    expect(fakes.store.problemMarks('acme/greet', 7)).toEqual({});
   });
 });

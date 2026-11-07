@@ -13,6 +13,7 @@ import {
   type PrSummary,
 } from '../../src/server/github.js';
 import { Jobs } from '../../src/server/jobs.js';
+import type { ProblemsGitHub } from '../../src/server/problems-github.js';
 import type { RepoManager } from '../../src/server/repo.js';
 import type { ReviewGitHub } from '../../src/server/review-github.js';
 import { Store, StoreError } from '../../src/server/store.js';
@@ -101,6 +102,7 @@ type Fakes = {
     submitReview: Mock<ReviewGitHub['submitReview']>;
     setResolved: Mock<ReviewGitHub['setResolved']>;
   };
+  problems: { checkRuns: Mock<ProblemsGitHub['checkRuns']> };
   store: Store;
   jobs: Jobs;
 };
@@ -128,6 +130,7 @@ beforeEach(() => {
       submitReview: vi.fn<ReviewGitHub['submitReview']>(),
       setResolved: vi.fn<ReviewGitHub['setResolved']>(),
     },
+    problems: { checkRuns: vi.fn<ProblemsGitHub['checkRuns']>() },
     store: new Store(':memory:'),
     jobs: new Jobs(),
   };

@@ -5,7 +5,7 @@ import type { Level, Problem } from '../shared/problems.js';
 import type { Tour } from '../shared/tour.js';
 import { lineChanges, type FileDiff } from './diff.js';
 import type { Runner } from './exec.js';
-import { ghGraphql, splitRepo } from './graphql.js';
+import { ghGraphql, GraphqlError, splitRepo } from './graphql.js';
 
 type AnnotationLevel = 'NOTICE' | 'WARNING' | 'FAILURE';
 
@@ -47,6 +47,7 @@ const CHECK_RUNS_QUERY = `query($owner: String!, $name: String!, $sha: GitObject
 }`;
 
 type CheckRunsData = {
+  /** Null when GitHub does not know the repo, or the user cannot read it. */
   repository: {
     /** Null when GitHub does not know the commit. */
     object: {
@@ -60,7 +61,10 @@ type CheckRunsData = {
 export class ProblemsGitHub {
   constructor(private readonly run: Runner) {}
 
-  /** The check runs of commit `sha` in `repo` (`owner/name`), and whether CI is still running. */
+  /**
+   * The check runs of commit `sha` in `repo` (`owner/name`), and whether CI is still running.
+   * A commit GitHub does not know has no runs; a repo it does not know is an error.
+   */
   async checkRuns(repo: string, sha: string): Promise<{ runs: CheckRunNode[]; pending: boolean }> {
     const { owner, name } = splitRepo(repo);
     const data = await ghGraphql<CheckRunsData>(this.run, CHECK_RUNS_QUERY, [
@@ -71,7 +75,9 @@ export class ProblemsGitHub {
       '-f',
       `sha=${sha}`,
     ]);
-    const commit = data.repository?.object;
+    // GitHub answers `repository: null` for a repo it does not know or the user cannot read.
+    if (!data.repository) throw new GraphqlError(`repository ${repo} not found`);
+    const commit = data.repository.object;
     if (!commit) return { runs: [], pending: false };
     const state = commit.statusCheckRollup?.state;
     return {

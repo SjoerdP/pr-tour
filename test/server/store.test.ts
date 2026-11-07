@@ -131,6 +131,22 @@ describe('Store', () => {
     expect(store.seen('acme/loans', 7)).toEqual({ 'F1.S1': 'new' });
   });
 
+  it('stores, reads and clears problem marks', () => {
+    const store = new Store(':memory:');
+    store.setProblemMark('acme/loans', 7, 'ci|lint|loans/fees.go|x|overflow', 'real');
+    store.setProblemMark('Acme/Loans', 7, 'PRRT_1', 'not');
+    store.setProblemMark('acme/loans', 8, 'PRRT_2', 'real');
+    expect(store.problemMarks('acme/loans', 7)).toEqual({
+      'ci|lint|loans/fees.go|x|overflow': 'real',
+      PRRT_1: 'not',
+    });
+
+    store.setProblemMark('acme/loans', 7, 'PRRT_1', 'real');
+    store.setProblemMark('acme/loans', 7, 'ci|lint|loans/fees.go|x|overflow', null);
+    expect(store.problemMarks('acme/loans', 7)).toEqual({ PRRT_1: 'real' });
+    expect(store.problemMarks('acme/loans', 8)).toEqual({ PRRT_2: 'real' });
+  });
+
   it('seen marks are kept per PR', () => {
     const store = new Store(':memory:');
     store.markSeen('acme/loans', 7, 'f1', 'h');
@@ -402,7 +418,7 @@ describe('Store migration', () => {
     store.close();
 
     const check = new Database(path);
-    expect(check.pragma('user_version', { simple: true })).toBe(2);
+    expect(check.pragma('user_version', { simple: true })).toBe(3);
     check.close();
   });
 });

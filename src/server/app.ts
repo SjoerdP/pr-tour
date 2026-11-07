@@ -18,6 +18,7 @@ import { InvalidRepoError, PrNotFoundError, type GitHub } from './github.js';
 import { GraphqlError } from './graphql.js';
 import { HttpError, jsonBody, optionalJsonBody, parse, prParams } from './http.js';
 import type { Jobs } from './jobs.js';
+import type { ProblemsGitHub } from './problems-github.js';
 import type { RepoManager } from './repo.js';
 import type { ReviewGitHub } from './review-github.js';
 import { registerReviewRoutes } from './review-routes.js';
@@ -29,6 +30,7 @@ export type AppDeps = {
   store: Store;
   builder: Pick<TourBuilder, 'build'>;
   review: Pick<ReviewGitHub, 'reviewState' | 'submitReview' | 'setResolved'>;
+  problems: Pick<ProblemsGitHub, 'checkRuns'>;
   jobs: Jobs;
   /** The port the server listens on; the only one the `Host` header may name. */
   port: number;
@@ -94,7 +96,7 @@ function errorStatus(err: unknown): 400 | 403 | 404 | 409 | 500 | 502 {
  * `127.0.0.1:<port>` or `localhost:<port>`, may use it.
  */
 export function createApp(deps: AppDeps): Hono {
-  const { github, repos, store, builder, review, jobs, port } = deps;
+  const { github, repos, store, builder, review, problems, jobs, port } = deps;
   const app = new Hono();
 
   /** The stored tour; a tour that no longer reads is logged and treated as missing, so it can be rebuilt. */
@@ -236,7 +238,7 @@ export function createApp(deps: AppDeps): Hono {
     return c.body(null, 204);
   });
 
-  registerReviewRoutes(app, { review, store, repos, readTour, requireTour });
+  registerReviewRoutes(app, { review, problems, github, store, repos, readTour, requireTour });
 
   app.all('/api/*', (c) => c.json({ error: 'Not found' }, 404));
 

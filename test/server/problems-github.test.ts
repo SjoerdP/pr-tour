@@ -341,4 +341,11 @@ describe('ProblemsGitHub.checkRuns', () => {
       pending: false,
     });
   });
+
+  it('an unknown repo, or one without access, is an error', async () => {
+    const { run } = fakeRunner(ok(JSON.stringify({ data: { repository: null } })));
+    await expect(new ProblemsGitHub(run).checkRuns('acme/loans', HEAD)).rejects.toThrow(
+      'acme/loans',
+    );
+  });
 });
