@@ -933,6 +933,64 @@ describe('GET /problems', () => {
     }
   });
 
+  it('a new tour for the same head places CI problems by the new tour', async () => {
+    const failed: CheckRunNode = {
+      ...LINT_RUN,
+      name: 'test',
+      conclusion: 'FAILURE',
+      summary: 'FAIL TestGreet',
+      annotations: { nodes: [] },
+    };
+    fakes.problems.checkRuns.mockResolvedValue({ runs: [failed], pending: false });
+    const before = await json<ProblemsResponse>(await api('/problems'));
+    expect(before.problems.map((p) => p.at)).toEqual([{ kind: 'pr' }]);
+
+    // Rebuilt for the same head, now with a step whose test fails in CI.
+    const tour = greetTour();
+    fakes.store.saveTour({
+      ...tour,
+      flows: [
+        {
+          id: 'F1',
+          title: 'Greet',
+          entry: { kind: 'http', label: 'GET /greet' },
+          steps: [
+            {
+              id: 'F1.S1',
+              title: 'greet',
+              file: 'greet.js',
+              startLine: 1,
+              endLine: 7,
+              changed: true,
+              why: 'Builds the greeting.',
+              risk: 'skim',
+              sideEffects: [],
+              tests: [{ file: 'greet.test.js', name: 'TestGreet' }],
+              calls: [],
+              homes: [{ file: 'greet.js', side: 'new', start: 2, end: 4 }],
+            },
+          ],
+        },
+      ],
+    });
+    const after = await json<ProblemsResponse>(await api('/problems'));
+    expect(after.problems.map((p) => p.at)).toEqual([{ kind: 'step', test: 'TestGreet' }]);
+    // The check runs themselves came from the cache.
+    expect(fakes.problems.checkRuns).toHaveBeenCalledTimes(1);
+  });
+
+  it('a failed diff read is its own note', async () => {
+    captureErrorLog();
+    fakes.repos.diffText.mockRejectedValue(new Error('git diff failed'));
+
+    const res = await api('/problems');
+
+    expect(res.status).toBe(200);
+    const body = await json<ProblemsResponse>(res);
+    expect(body.problems).toEqual([]);
+    expect(body.error).toBe("Could not read the PR's diff: git diff failed");
+  });
+
   it('GET problems without a tour is 404', async () => {
     fakes.store.close();
     fakes.store = new Store(':memory:');

@@ -18,11 +18,11 @@ import {
   type SubmitResponse,
 } from '../shared/review.js';
 import type { Tour } from '../shared/tour.js';
-import { findFileDiff, parseDiff } from './diff.js';
+import { findFileDiff, parseDiff, type FileDiff } from './diff.js';
 import { CommandError } from './exec.js';
 import type { GitHub } from './github.js';
 import { HttpError, jsonBody, parse, prParams } from './http.js';
-import { ciProblems, type ProblemsGitHub } from './problems-github.js';
+import { ciProblems, type CheckRunNode, type ProblemsGitHub } from './problems-github.js';
 import type { RepoManager } from './repo.js';
 import { ReviewSubmitError, type ReviewGitHub } from './review-github.js';
 import { StoreError, type Store } from './store.js';
@@ -70,8 +70,13 @@ const ProblemMarkBodySchema = z.object({
 /** How long CI results are kept while CI still runs; finished results are kept until restart. */
 const PENDING_CACHE_MS = 60_000;
 
-/** CI problems of one tour head, and when they were read. */
-type CachedProblems = { problems: Problem[]; pending: boolean; readAt: number };
+/** The check runs of one tour head, and when they were read. */
+type CachedRuns = { runs: CheckRunNode[]; pending: boolean; readAt: number };
+
+/** No problems, with a note on why. */
+function failed(error: string): { problems: Problem[]; pending: boolean; error: string } {
+  return { problems: [], pending: false, error };
+}
 
 /** A short reason for a failed GitHub read, fit to show the user. */
 function reason(err: unknown): string {
@@ -89,19 +94,44 @@ export function registerReviewRoutes(app: Hono, deps: ReviewRouteDeps): void {
    * send the same drafts again, and a review on GitHub cannot be taken back.
    */
   const submitting = new Set<string>();
-  /** CI problems per `repo#pr@headSha`. Failed reads are not kept, so the next read tries again. */
-  const problemsCache = new Map<string, CachedProblems>();
+  /**
+   * Check runs per `repo#pr@headSha`. Only GitHub's answer is kept: the problems are worked
+   * out from it on every read, because a rebuilt tour for the same head can place them
+   * differently. Failed reads are not kept, so the next read tries again.
+   */
+  const checkRunsCache = new Map<string, CachedRuns>();
 
-  /** CI problems for the tour's head commit, from the cache when still fresh. */
-  async function tourProblems(repo: string, key: string, tour: Tour): Promise<CachedProblems> {
+  /** The check runs of the tour's head commit, from the cache when still fresh. */
+  async function tourCheckRuns(repo: string, key: string, tour: Tour): Promise<CachedRuns> {
     const cacheKey = `${key}@${tour.headSha}`;
-    const cached = problemsCache.get(cacheKey);
+    const cached = checkRunsCache.get(cacheKey);
     if (cached && (!cached.pending || Date.now() - cached.readAt < PENDING_CACHE_MS)) return cached;
-    const { runs, pending } = await problems.checkRuns(repo, tour.headSha);
-    const files = parseDiff(await repos.diffText(repo, tour.baseSha, tour.headSha));
-    const fresh = { problems: ciProblems(runs, files, tour), pending, readAt: Date.now() };
-    problemsCache.set(cacheKey, fresh);
+    const fresh = { ...(await problems.checkRuns(repo, tour.headSha)), readAt: Date.now() };
+    checkRunsCache.set(cacheKey, fresh);
     return fresh;
+  }
+
+  /** The tour's CI problems, or a note on why they could not be read. */
+  async function tourProblems(
+    repo: string,
+    key: string,
+    tour: Tour,
+  ): Promise<{ problems: Problem[]; pending: boolean; error: string | null }> {
+    let ci: CachedRuns;
+    try {
+      ci = await tourCheckRuns(repo, key, tour);
+    } catch (err) {
+      console.error(`Reading CI of ${key} failed: ${reason(err)}`);
+      return failed(`Could not read CI results from GitHub: ${reason(err)}`);
+    }
+    let files: FileDiff[];
+    try {
+      files = parseDiff(await repos.diffText(repo, tour.baseSha, tour.headSha));
+    } catch (err) {
+      console.error(`Reading the diff of ${key} failed: ${reason(err)}`);
+      return failed(`Could not read the PR's diff: ${reason(err)}`);
+    }
+    return { problems: ciProblems(ci.runs, files, tour), pending: ci.pending, error: null };
   }
 
   /** Whether the PR's head moved past the tour's; false when GitHub cannot say. */
@@ -240,17 +270,7 @@ export function registerReviewRoutes(app: Hono, deps: ReviewRouteDeps): void {
     const { repo, pr, key } = prParams(c);
     const tour = requireTour(repo, pr);
     const [ci, outdated] = await Promise.all([
-      tourProblems(repo, key, tour).then(
-        (found) => ({ ...found, error: null }),
-        (err: unknown) => {
-          console.error(`Reading CI of ${key} failed: ${reason(err)}`);
-          return {
-            problems: [],
-            pending: false,
-            error: `Could not read CI results from GitHub: ${reason(err)}`,
-          };
-        },
-      ),
+      tourProblems(repo, key, tour),
       isOutdated(repo, pr, tour),
     ]);
     const body: ProblemsResponse = {
