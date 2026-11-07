@@ -19,6 +19,8 @@ export type ProblemsValue = {
   note: string | null;
   /** Why the last mark was not saved. */
   error: string | null;
+  /** Opens the problem's home at its line: "Go to the line" in a pin's popup. */
+  onGoTo?: (problem: PlacedProblem) => void;
 };
 
 /** No problems and nothing loading: what views see outside a tour. */

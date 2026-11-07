@@ -2405,7 +2405,8 @@ p.why {
 }
 
 .problem-card,
-.problem-chip {
+.problem-chip,
+.problem-pin {
   --level: var(--level-look);
 }
 
@@ -2564,6 +2565,125 @@ span.problem-where {
 /* A bot's thread that is a possible problem: the marks sit at the right of its head. */
 .thread-head .problem-marks {
   margin-left: auto;
+}
+
+/*
+ * Pins: a dot per possible problem in its level's colour, on a step's outline row and its map
+ * box. They lie over the row or box, so they change neither its size nor the map's lines.
+ */
+.problem-pins {
+  display: flex;
+  gap: 3px;
+}
+
+.problem-pin {
+  justify-content: center;
+  min-width: var(--pin);
+  height: var(--pin);
+  padding: 0;
+  border: none;
+  border-radius: 999px;
+  background: var(--level);
+  color: var(--bg);
+  font-size: var(--font-size-tiny);
+  font-weight: 700;
+  line-height: var(--pin);
+}
+
+.problem-pin:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--level) 85%, var(--fg));
+}
+
+.problem-pin[aria-expanded='true'] {
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--level) 35%, transparent);
+}
+
+.problem-pin-more {
+  --level: var(--fg-muted);
+  padding: 0 4px;
+  font-weight: 600;
+}
+
+/* In the outline: at the row's right end, on its first line. The row keeps room for them. */
+.outline .card-list > li {
+  --pin: 14px;
+  position: relative;
+}
+
+.outline .card-list > li > .problem-pins {
+  position: absolute;
+  top: calc(3px + (var(--outline-line) - var(--pin)) / 2);
+  right: var(--space-2);
+}
+
+.outline .card-list > li:has(> .problem-pins) > .outline-item {
+  padding-right: calc(var(--space-2) + var(--pins-width));
+  --pins-width: 20px;
+}
+
+.outline .card-list > li:has(> .problem-pins > button:nth-of-type(2)) > .outline-item {
+  --pins-width: 37px;
+}
+
+.outline .card-list > li:has(> .problem-pins > button:nth-of-type(3)) > .outline-item {
+  --pins-width: 54px;
+}
+
+.outline .card-list > li:has(> .problem-pins > button:nth-of-type(4)) > .outline-item {
+  --pins-width: 80px;
+}
+
+/* On a map box: on its top right corner, ringed in the page colour to stand off the border. */
+.flow-map-card {
+  position: relative;
+}
+
+.flow-map-card > .problem-pins {
+  --pin: 16px;
+  position: absolute;
+  top: calc(var(--pin) / -2);
+  right: var(--space-2);
+}
+
+.flow-map-card > .problem-pins > .problem-pin {
+  box-shadow: 0 0 0 2px var(--bg);
+}
+
+.flow-map-card > .problem-pins > .problem-pin[aria-expanded='true'] {
+  box-shadow:
+    0 0 0 2px var(--bg),
+    0 0 0 4px color-mix(in srgb, var(--level) 35%, transparent);
+}
+
+/* A pin's popup: the problem, read only, and the way to its line. */
+.problem-pop {
+  position: fixed;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  width: min(360px, calc(100vw - 16px));
+  overflow-y: auto;
+  padding: var(--space-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg);
+  box-shadow: var(--shadow-popover);
+  font-size: var(--font-size-small);
+  font-weight: normal;
+  text-align: left;
+  white-space: normal;
+}
+
+.problem-pop-item {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-1);
+}
+
+.problem-pop-item > .problem-card {
+  align-self: stretch;
 }
 
 .overview-flows > h3 {

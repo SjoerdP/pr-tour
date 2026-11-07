@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import type { Flow, FlowLink, Step } from '../../src/shared/tour.js';
 import { FlowMap } from '../../src/web/FlowMap.js';
 import { placeMapBoxes, scrolled } from './map-scroll.js';
+import { line, problem, WithProblems } from './problems-fake.js';
 
 // The flow map drawn: boxes for steps, arrow labels for calls, loops, folding and the key.
 
@@ -128,6 +129,32 @@ describe('FlowMap', () => {
     expect(onOpenStep).toHaveBeenCalledWith('S3');
     fireEvent.click(screen.getByRole('button', { name: /^line 20/ }));
     expect(onOpenLine).toHaveBeenCalledWith('S2', 'src/fees.ts', 20);
+  });
+
+  it('shows a coloured dot per problem on its map box, beside the box button', () => {
+    const onOpenStep = vi.fn();
+    render(
+      <WithProblems
+        value={{
+          problems: [
+            problem('a', 'risk', line('src/fees.ts', 3), 'S2'),
+            problem('b', 'bug', line('src/fees.ts', 4), 'S2'),
+          ],
+        }}
+      >
+        <FlowMap flow={repay()} currentId="S1" onOpenStep={onOpenStep} onOpenLine={vi.fn()} />
+      </WithProblems>,
+    );
+    const pin = within(card(2)).getByRole('button', { name: 'Likely bug: Title b' });
+    expect(pin.classList.contains('problem-bug')).toBe(true);
+    expect(within(card(2)).getByRole('button', { name: 'Risk: Title a' })).toBeTruthy();
+    // Never inside the box button, and only on its own step's box.
+    expect(box(2).contains(pin)).toBe(false);
+    expect(within(card(1)).queryByRole('button', { name: /Title/ })).toBeNull();
+    // A pin click opens the popup, not the step.
+    fireEvent.click(pin);
+    expect(screen.getByRole('dialog', { name: 'Possible problem' })).toBeTruthy();
+    expect(onOpenStep).not.toHaveBeenCalled();
   });
 
   it('arrow labels say how the code check backs them up', () => {

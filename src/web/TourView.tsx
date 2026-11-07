@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import type { PlacedProblem } from '../shared/problems.js';
 import { BuildStatus } from './BuildStatus.js';
 import type { Reveal, RevealPlace } from './code-lines.js';
 import { ComposerMemory, ComposerMemoryContext } from './composer-memory.js';
@@ -102,6 +103,18 @@ export function TourView({ repo, pr }: { repo: string; pr: number }) {
   const review = useReview(repo, pr);
   // The tour's possible problems, shared by every view that shows them.
   const problems = useProblems(repo, pr, tour, review.threads);
+  // "Go to the line" in a pin's popup. The outline's pins move the tour there; the pins in
+  // the map panel and on the overview visit it, with the way back. Read through a ref, so the
+  // values below change only when the problems do.
+  const problemMove = useRef<(p: PlacedProblem, from: 'outline' | 'main') => void>(() => {});
+  const outlineProblems = useMemo(
+    () => ({ ...problems, onGoTo: (p: PlacedProblem) => problemMove.current(p, 'outline') }),
+    [problems],
+  );
+  const mainProblems = useMemo(
+    () => ({ ...problems, onGoTo: (p: PlacedProblem) => problemMove.current(p, 'main') }),
+    [problems],
+  );
   // What the reviewer is writing, kept across moves through this PR's tour.
   const memory = useMemo(() => new ComposerMemory(`${repo}#${pr}`), [repo, pr]);
   // A rebuild swaps in a tour on another head: load the review again for it.
@@ -281,6 +294,25 @@ export function TourView({ repo, pr }: { repo: string; pr: number }) {
     paneFocus.current = true;
   }
 
+  /**
+   * Opens a problem's home at its line. From the map panel or the overview it is a visit; from
+   * the outline (or with neither open) a move.
+   */
+  function goToProblem(p: PlacedProblem, from: 'outline' | 'main') {
+    if (p.homeId === null) return;
+    const at = p.at.kind === 'line' ? p.at : null;
+    if (from === 'main' && (mapShown || overviewOpen)) {
+      const line = at?.side === 'new' ? { file: at.file, line: at.line } : undefined;
+      visitHome(p.homeId, mapShown ? 'map' : 'overview', line);
+      return;
+    }
+    closeOverview();
+    openHome(p.homeId, at ? { path: at.file, side: at.side, line: at.line } : undefined);
+  }
+  useEffect(() => {
+    problemMove.current = goToProblem;
+  });
+
   /** Ends a visit where it began: the old place, the map or overview, the same peek. */
   function goBack() {
     if (!visit) return;
@@ -441,7 +473,7 @@ export function TourView({ repo, pr }: { repo: string; pr: number }) {
 
   return (
     <ComposerMemoryContext.Provider value={memory}>
-      <ProblemsContext.Provider value={problems}>
+      <ProblemsContext.Provider value={mainProblems}>
         {/* An open review panel takes a column on wide windows: see .review-open in the CSS. */}
         <div className={reviewOpen ? 'tour-app review-open' : 'tour-app'}>
           <TopBar
@@ -517,17 +549,19 @@ export function TourView({ repo, pr }: { repo: string; pr: number }) {
 
           {tour && current !== null && currentHome && (
             <div className="tour-body">
-              <Outline
-                tour={tour}
-                currentId={current}
-                isSeen={isSeen}
-                onSelect={(homeId) => {
-                  closeOverview();
-                  goTo(homeId);
-                }}
-                previousFlow={nav.previousFlow}
-                nextFlow={nav.nextFlow}
-              />
+              <ProblemsContext.Provider value={outlineProblems}>
+                <Outline
+                  tour={tour}
+                  currentId={current}
+                  isSeen={isSeen}
+                  onSelect={(homeId) => {
+                    closeOverview();
+                    goTo(homeId);
+                  }}
+                  previousFlow={nav.previousFlow}
+                  nextFlow={nav.nextFlow}
+                />
+              </ProblemsContext.Provider>
               <main className="tour-main">
                 {/* Kept, hidden, during a visit from it: it comes back as it was. */}
                 {(overviewOpen || visit?.back === 'overview') && (
