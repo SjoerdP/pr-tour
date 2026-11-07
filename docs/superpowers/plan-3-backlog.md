@@ -143,3 +143,12 @@ the "→ step N" badges, seen counts and the keys.
 - Make some choices configurable, like whether unchanged flow steps count in progress.
 - Open question: the server could move from TypeScript to Go (the code checker is Go
   already). First decide what pr-tour should become and how it is shipped.
+
+## Possible problems: import for other tools (wanted, after Claude's check)
+
+Decided 2026-11-08: the import comes right after part 2 (Claude's check) of
+`specs/2026-11-07-possible-problems-design.md`. It is the way for a Claude skill, a script or a
+local linter to add warnings, since they do not post to GitHub. Two shapes to choose from when it
+is planned: a new `pr-tour problems import` command (as in the spec), or an optional `problems`
+list in the tour JSON that `pr-tour import` (and so the `/tour` skill) already takes. The warning
+model and all screens already exist, so it is one small PR without screen work.
