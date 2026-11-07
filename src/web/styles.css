@@ -68,8 +68,8 @@
   --composer-min-height: 72px;
 
   /* Possible problems, one colour per level: likely bug, risk, worth a look. */
-  --level-bug: #cf222e;
-  --level-risk: #c2410c;
+  --level-bug: var(--del);
+  --level-risk: var(--warn);
   --level-look: #0969da;
 }
 
@@ -103,8 +103,6 @@
     --pending-border: #5c4813;
     --suggestion-bg: color-mix(in srgb, var(--add) 12%, transparent);
 
-    --level-bug: #f85149;
-    --level-risk: #f0883e;
     --level-look: #4493f8;
   }
 }

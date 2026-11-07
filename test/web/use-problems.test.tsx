@@ -163,6 +163,16 @@ describe('useProblems', () => {
     expect(result.current.error).toBe('Could not save the mark: disk full');
   });
 
+  it('keeps the same value while nothing changed', async () => {
+    get.mockResolvedValue(answer({ problems: [ci('pr', 'bug', { kind: 'pr' })] }));
+    const threads: ReviewThread[] = [];
+    const { result, rerender } = renderHook(() => useProblems('acme/loans', 42, tour, threads));
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    const first = result.current;
+    rerender();
+    expect(result.current).toBe(first);
+  });
+
   it('passes on the notes from the server', async () => {
     get.mockResolvedValue(
       answer({ pending: true, outdated: true, error: 'Could not read CI results from GitHub: x' }),

@@ -86,7 +86,8 @@ export function PossibleProblems({ tour, onVisit }: Props): ReactNode {
 
   function where(p: PlacedProblem): ReactNode {
     const at = headLine(p);
-    const lineText = p.at.kind === 'line' ? `, line ${p.at.line}` : '';
+    // A deleted line: its home opens at its start, so the label names no line.
+    const lineText = p.at.kind === 'line' && p.at.side === 'new' ? `, line ${p.at.line}` : '';
     const home = p.homeId === null ? undefined : homes.get(p.homeId);
     if (home) {
       return (
@@ -168,7 +169,10 @@ export function PossibleProblems({ tour, onVisit }: Props): ReactNode {
       {!shown && !loading && (
         <>
           <p>No possible problems found.</p>
-          <p className="muted">Read: CI checks and review bots.</p>
+          {/* CI could not be read: only the review bots were. */}
+          <p className="muted">
+            {note === null ? 'Read: CI checks and review bots.' : 'Read: review bots.'}
+          </p>
         </>
       )}
       {notes.map((n) => (

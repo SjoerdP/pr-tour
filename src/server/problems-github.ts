@@ -29,14 +29,16 @@ export type CheckRunNode = {
 };
 
 // The commit goes in as `$sha`, never into the query text.
+// GitHub refuses a query that may return more than 500,000 nodes, counting the nested
+// limits multiplied: 20 suites × 50 runs × 50 annotations is 50,000.
 const CHECK_RUNS_QUERY = `query($owner: String!, $name: String!, $sha: GitObjectID!) {
   repository(owner: $owner, name: $name) {
     object(oid: $sha) {
       ... on Commit {
         statusCheckRollup { state }
-        checkSuites(first: 50) { nodes { checkRuns(first: 100) { nodes {
+        checkSuites(first: 20) { nodes { checkRuns(first: 50) { nodes {
           name status conclusion detailsUrl summary text
-          annotations(first: 100) { nodes {
+          annotations(first: 50) { nodes {
             path annotationLevel title message
             location { start { line } end { line } }
           } }

@@ -423,6 +423,31 @@ describe('Overview', () => {
     );
   });
 
+  it('when CI could not be read, says only the review bots were read', () => {
+    show({ problems: { problems: [], note: 'Could not read CI results from GitHub: x' } });
+    const block = screen.getByRole('region', { name: 'Possible problems' });
+    expect(within(block).getByText('No possible problems found.')).toBeTruthy();
+    expect(within(block).getByText('Read: review bots.').className).toContain('muted');
+    expect(within(block).queryByText('Read: CI checks and review bots.')).toBeNull();
+  });
+
+  it('a problem on a deleted line names its home without the line', () => {
+    const { onVisit } = show({
+      problems: {
+        problems: [
+          problem(
+            'gone',
+            'look',
+            { kind: 'line', file: 'src/a.ts', side: 'old', line: 4 },
+            'F1.S1',
+          ),
+        ],
+      },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Flow 1 · step 1 · Parse the request' }));
+    expect(onVisit).toHaveBeenLastCalledWith('F1.S1');
+  });
+
   it('shows the outdated and pending notes', () => {
     show({
       problems: {

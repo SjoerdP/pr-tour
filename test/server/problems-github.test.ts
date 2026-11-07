@@ -313,6 +313,13 @@ describe('ProblemsGitHub.checkRuns', () => {
     expect(fieldValue(args, 'sha')).toBe(HEAD);
     expect(fieldValue(args, 'query')).toContain('object(oid: $sha)');
     expect(fieldValue(args, 'query')).not.toContain(HEAD);
+    // GitHub refuses a query that may return more than 500,000 nodes: the nested limits
+    // (suites × runs × annotations) must stay well under it.
+    const limits = [...(fieldValue(args, 'query') ?? '').matchAll(/first: (\d+)/g)].map((m) =>
+      Number(m[1]),
+    );
+    expect(limits).toEqual([20, 50, 50]);
+    expect(limits.reduce((a, b) => a * b, 1)).toBeLessThan(500_000);
   });
 
   it('reads a finished commit as not pending, and a missing one as no runs', async () => {

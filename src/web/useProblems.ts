@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { ProblemMark, ProblemsResponse } from '../shared/api.js';
 import {
   botLevel,
@@ -106,34 +106,36 @@ export function useProblems(
     return sortProblems(tour, placeProblems(tour, mergeProblems([...ci, ...bot])));
   }, [tour, threads, answer]);
 
-  function markOf(key: string): ProblemMark | undefined {
-    if (key in local) return local[key] ?? undefined;
-    return answer?.marks[key];
-  }
+  const markOf = useCallback(
+    (key: string): ProblemMark | undefined =>
+      key in local ? (local[key] ?? undefined) : answer?.marks[key],
+    [local, answer],
+  );
 
-  function setMark(key: string, mark: ProblemMark | null) {
-    const before = markOf(key) ?? null;
-    setLocal((prev) => ({ ...prev, [key]: mark }));
-    setProblemMark(repo, pr, key, mark).then(
-      () => setError(null),
-      (err: unknown) => {
-        setLocal((prev) => ({ ...prev, [key]: before }));
-        setError(`Could not save the mark: ${errorText(err)}`);
-      },
-    );
-  }
+  const setMark = useCallback(
+    (key: string, mark: ProblemMark | null) => {
+      const before = markOf(key) ?? null;
+      setLocal((prev) => ({ ...prev, [key]: mark }));
+      setProblemMark(repo, pr, key, mark).then(
+        () => setError(null),
+        (err: unknown) => {
+          setLocal((prev) => ({ ...prev, [key]: before }));
+          setError(`Could not save the mark: ${errorText(err)}`);
+        },
+      );
+    },
+    [repo, pr, markOf],
+  );
 
-  return {
-    problems,
-    markOf,
-    setMark,
-    loading: tourKey !== null && current === null,
-    pending,
-    outdated: answer?.outdated ?? false,
-    note:
-      current?.failed != null
-        ? `Could not read possible problems: ${current.failed}`
-        : (answer?.error ?? null),
-    error,
-  };
+  const loading = tourKey !== null && current === null;
+  const outdated = answer?.outdated ?? false;
+  const note =
+    current?.failed != null
+      ? `Could not read possible problems: ${current.failed}`
+      : (answer?.error ?? null);
+  // One value while nothing changed, so the views that read it do not render again.
+  return useMemo(
+    () => ({ problems, markOf, setMark, loading, pending, outdated, note, error }),
+    [problems, markOf, setMark, loading, pending, outdated, note, error],
+  );
 }
