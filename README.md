@@ -2,22 +2,73 @@
 
 Review a pull request as a guided tour, in the order the code runs.
 
-pr-tour shows a PR in three parts: the **foundations** the change builds on
-(migrations, models, config, dependencies), the **flows** that follow the code
-from an entry point (a route, a job, an event handler) step by step, and the
-**other** changes (refactors, tests, infra, docs). Every changed line has exactly
-one place in the tour. Lines the tour does not explain are listed under
-"Unexplained", so nothing is hidden.
+A diff shows files in alphabetical order. pr-tour shows the change the way you
+would explain it to a colleague: what it builds on, then each flow from its entry
+point (a route, a job, an event handler) step by step, with a map of who calls whom.
+You do your GitHub review in the same place.
 
-A tour comes from one of two places:
+![The overview of a PR: a summary, possible problems from CI, and a map of each flow](docs/images/overview.png)
 
-- **Inferred:** pr-tour asks the `claude` CLI to read the diff and the code and build one.
-- **By the author:** the PR's author runs `/tour` in Claude Code right after pushing.
-  The author knows why each change was made, so the notes say that.
+<sub>All screenshots show a made-up PR in a made-up repo, `acme/loans`.</sub>
 
-pr-tour runs on your machine only. It listens on 127.0.0.1. It never pushes to a
-PR. It posts to GitHub only when you submit a review or resolve a thread, and it
-does that with your own `gh` login.
+## What you get
+
+- **Flows, in the order the code runs.** Each flow starts at its entry point and
+  follows the calls, step by step. Every step says why it changed and what it touches:
+  database writes, events, calls to other services.
+- **A flow map.** A diagram of each flow: which step calls which, and on what line.
+  For Go code, pr-tour checks every arrow against the real code and marks it
+  **proven**.
+- **Nothing hidden.** Every changed line has exactly one place in the tour. Lines the
+  tour does not explain are listed under "Unexplained".
+- **Your GitHub review, in the tour.** Comment on lines, suggest changes, reply to and
+  resolve threads, then submit one review. CI failures and review-bot findings show up
+  next to the code they are about.
+- **Tours from Claude or from the author.** pr-tour asks the `claude` CLI to build a
+  tour. Or the PR's author runs `/tour` right after pushing, and the notes say _why_
+  each change was made.
+
+## Flows and the flow map
+
+A PR is split in three parts. **Foundations** are what the change builds on:
+migrations, models, config and dependencies. **Flows** follow the code from an entry
+point. **Other changes** are the rest: refactors, tests, infra and docs.
+
+The flow map draws each flow as a call tree. A blue edge means the step has changes.
+An orange outline means: read this one closely. Each arrow names the line that makes
+the call, and says if the code check proved it.
+
+![The flow map of one flow: five steps, each arrow proven by the code](docs/images/flow-map.png)
+
+Click a step on the map to peek into its code without leaving the map.
+
+![Peeking into a step from the flow map](docs/images/peek.png)
+
+## A step in the tour
+
+Each step shows its code with the diff, the author's (or Claude's) note on why, and
+where the flow came from. Calls that lead to another step get a **→ step N** badge, so
+you can follow the flow in the code. Side effects, like database writes, are marked
+on their line.
+
+![A step with step badges, a GitHub thread, a pending reply and the review panel](docs/images/step.png)
+
+## Works with GitHub
+
+- **Inbox.** PRs waiting for your review and your own open PRs, with CI status, tour
+  progress and unsent drafts.
+- **Threads.** Existing review threads show up next to their lines. Reply, resolve or
+  unresolve them.
+- **Drafts.** Comments stay on your machine until you submit them as one review.
+- **Possible problems.** Failed CI checks and their line notes are listed on the
+  overview and pinned to the step they belong to. Mark each one as a real problem or not.
+- **Your own login.** pr-tour talks to GitHub with your `gh` login. It never pushes to a
+  PR.
+
+![The inbox: PRs waiting for review, with CI status and tour progress](docs/images/inbox.png)
+
+pr-tour runs on your machine only. It listens on 127.0.0.1. It posts to GitHub only
+when you submit a review or resolve a thread.
 
 ## Requirements
 
@@ -61,8 +112,11 @@ click **Build tour** to get an inferred tour. In the tour:
 
 | Key       | Does                                              |
 | --------- | ------------------------------------------------- |
-| `j` / `k` | next / previous stop in the tour                  |
+| `j` / `k` | next / previous step in the tour                  |
+| `[` / `]` | previous / next flow                              |
 | `n` / `p` | next / previous change                            |
+| `o`       | open or close the overview                        |
+| `m`       | show or hide the flow map of this flow            |
 | `f`       | show the whole file, or fold unchanged code again |
 
 Seen marks are saved, so you can stop and come back.
