@@ -17,8 +17,9 @@ which. And you do your GitHub review in the same place.
   follows the calls, step by step. Every step says why it is there and what it
   touches: database writes, events, calls to other services.
 - **A flow map.** A diagram of each flow: which step calls which, and on what line.
-  For Go code, pr-tour checks each arrow against the real code. An arrow the code
-  backs up is marked **proven**.
+- **Any language, and proof for Go.** Claude reads the code, so tours work in any
+  language. For Go, pr-tour also parses the code and checks each flow against it.
+  Every call it finds in the code is marked **proven**.
 - **Your GitHub review, in the tour.** Comment on lines and suggest changes. Reply to
   threads and resolve them. Then submit it all as one review. CI problems and
   review-bot comments show up next to the code they are about.
@@ -32,8 +33,10 @@ which. And you do your GitHub review in the same place.
 
 The flow map draws each flow as a call tree. A blue edge means the step has changes.
 A dashed box has no changes; it is there to show the flow. An orange outline marks a
-step to read closely. Each arrow between steps names the line that makes the call. A
-✓ means the code check proved it.
+step to read closely. Each arrow between steps names the line that makes the call.
+
+In Go, a ✓ means the call is in the code: the checker found it. In other languages, an
+arrow shows what the tour says. It is drawn dashed and marked "not checked".
 
 <p align="center">
   <img src="docs/images/flow-map.png" width="520" alt="The flow map of one flow: five steps, each arrow proven by the code">
@@ -82,7 +85,12 @@ it can only read files. Hooks and settings in the PR's code do not run.
 - [`gh`](https://cli.github.com/), logged in (`gh auth status`)
 - The [`claude`](https://docs.anthropic.com/en/docs/claude-code) CLI, logged in (for inferred tours)
 - `git`
-- Go 1.26 or later (optional, for the code check)
+
+### Optional
+
+- Go 1.26 or later, for the [code check](#code-check) of Go code. pr-tour works
+  without it, in any language. Only Go flows get proven calls, and only with Go
+  installed.
 
 ## Install
 
@@ -131,10 +139,15 @@ Seen marks are saved, so you can stop and come back.
 
 ### Code check
 
-pr-tour can check a tour against the code. For Go files it adds the real functions
-and calls to the tour, and it reports steps that do not match the code
-(`finding:` lines in `pr-tour import`). **About this PR** shows how many steps sit on
-their function and how many links the code proved. The checker never downloads
+Tours work in any language, because Claude reads the code and writes the flows. In
+most languages, pr-tour does not parse the code. So nothing checks the flows: they are
+what Claude (or the author) says. The flow map draws their arrows dashed.
+
+For Go, pr-tour goes further. A checker parses the code with Go's own tools. It finds
+the function behind each step and the calls between steps. Each call it finds is
+marked **proven**. Steps that do not match the code are reported (`finding:` lines in
+`pr-tour import`). **About this PR** shows how many steps sit on their function and
+how many calls were proven. The checker never downloads
 anything: it loads the project with `GOPROXY=off`.
 
 This needs Go 1.26 or later. It is optional. `npm run build` builds the checker when
