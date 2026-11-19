@@ -2,22 +2,79 @@
 
 Review a pull request as a guided tour, in the order the code runs.
 
-pr-tour shows a PR in three parts: the **foundations** the change builds on
-(migrations, models, config, dependencies), the **flows** that follow the code
-from an entry point (a route, a job, an event handler) step by step, and the
-**other** changes (refactors, tests, infra, docs). Every changed line has exactly
-one place in the tour. Lines the tour does not explain are listed under
-"Unexplained", so nothing is hidden.
+A diff shows files in alphabetical order. pr-tour shows the change the way you would
+explain it to a colleague. First what it builds on. Then each flow, step by step, from
+its entry point: a route, a job or an event handler. A map shows which step calls
+which. And you do your GitHub review in the same place.
 
-A tour comes from one of two places:
+![The overview of a PR: a summary, a possible problem from CI, and the map of each flow](docs/images/overview.png)
 
-- **Inferred:** pr-tour asks the `claude` CLI to read the diff and the code and build one.
-- **By the author:** the PR's author runs `/tour` in Claude Code right after pushing.
-  The author knows why each change was made, so the notes say that.
+<sub>All screenshots show a made-up PR in a made-up repo, `acme/loans`.</sub>
 
-pr-tour runs on your machine only. It listens on 127.0.0.1. It never pushes to a
-PR. It posts to GitHub only when you submit a review or resolve a thread, and it
-does that with your own `gh` login.
+## What you get
+
+- **Flows, in the order the code runs.** Each flow starts at its entry point and
+  follows the calls, step by step. Every step says why it is there and what it
+  touches: database writes, events, calls to other services.
+- **A flow map.** A diagram of each flow: which step calls which, and on what line.
+  For Go code, pr-tour checks each arrow against the real code. An arrow the code
+  backs up is marked **proven**.
+- **Your GitHub review, in the tour.** Comment on lines and suggest changes. Reply to
+  threads and resolve them. Then submit it all as one review. CI problems and
+  review-bot comments show up next to the code they are about.
+- **Nothing hidden.** Every changed line has exactly one place in the tour. Lines the
+  tour does not explain are listed under "Unexplained".
+- **Tours from Claude or from the author.** pr-tour asks the `claude` CLI to build a
+  tour. Or the PR's author runs `/tour` right after pushing. Then the notes say _why_
+  each change was made.
+
+## Flows and the flow map
+
+The flow map draws each flow as a call tree. A blue edge means the step has changes.
+A dashed box has no changes; it is there to show the flow. An orange outline marks a
+step to read closely. Each arrow between steps names the line that makes the call. A
+✓ means the code check proved it.
+
+<p align="center">
+  <img src="docs/images/flow-map.png" width="520" alt="The flow map of one flow: five steps, each arrow proven by the code">
+</p>
+
+Peek: click a step on the map and read its code below it, without leaving the map.
+
+![Peeking into a step from the flow map](docs/images/peek.png)
+
+## A step in the tour
+
+A PR is split into three parts. **Foundations** are what the change builds on:
+migrations, models, config and dependencies. **Flows** follow the code from an entry
+point. **Other changes** are the rest: refactors, tests, infra and docs.
+
+Each step shows its code with the diff. A note says why, written by the author or by
+Claude. A line says which step called it. Calls that lead to another step get a
+**→ step N** badge. Click the call to go to that step. Side effects, like database
+writes, are marked on their line. A step with no test says so.
+
+![A step: the author's why, step badges on calls, DB writes marked, a GitHub thread with a pending reply, and the review panel](docs/images/step.png)
+
+## Works with GitHub
+
+- **Inbox.** PRs waiting for your review and your own open PRs, with CI status, tour
+  progress and unsent drafts.
+- **Threads.** Existing review threads show up next to their lines. Reply to them,
+  resolve them or unresolve them.
+- **Drafts.** Comments stay on your machine until you submit them as one review. If
+  you approve while some steps are not seen yet, pr-tour lists them first.
+- **Possible problems.** Failed CI checks, CI notes on changed lines, and open comments
+  from review bots (CodeRabbit, Copilot and others) are listed on the overview. Each
+  one is pinned to the step it is about. Mark each one as a real problem or not.
+- **Your own login.** pr-tour talks to GitHub with your `gh` login. It never pushes to a
+  PR.
+
+![The inbox: PRs waiting for review, with CI status, tour progress and drafts](docs/images/inbox.png)
+
+pr-tour runs on your machine only. It listens on 127.0.0.1. It posts to GitHub only
+when you submit a review, or resolve or unresolve a thread. When Claude builds a tour,
+it can only read files. Hooks and settings in the PR's code do not run.
 
 ## Requirements
 
@@ -25,6 +82,7 @@ does that with your own `gh` login.
 - [`gh`](https://cli.github.com/), logged in (`gh auth status`)
 - The [`claude`](https://docs.anthropic.com/en/docs/claude-code) CLI, logged in (for inferred tours)
 - `git`
+- Go 1.26 or later (optional, for the code check)
 
 ## Install
 
@@ -52,28 +110,32 @@ pr-tour open owner/name#123     # open the tour of one PR
 
 `pr-tour open` uses the pr-tour that is already running. If none is running, it
 starts one in the background, waits until it answers, opens the browser and
-exits. That background pr-tour keeps running; it prints its pid and writes its
-output to `server.log` in the data dir (`~/.pr-tour/server.log` by default).
+exits. That background pr-tour keeps running. It prints its pid. Its output goes to
+`server.log` in the data dir (`~/.pr-tour/server.log` by default).
 Stop it with `kill <pid>`.
 
-The inbox lists PRs waiting for your review and your own open PRs. Open one and
-click **Build tour** to get an inferred tour. In the tour:
+Open a PR from the inbox and click **Build tour**. While the tour builds, pr-tour
+shows what Claude is doing and how long it has run. In the tour:
 
 | Key       | Does                                              |
 | --------- | ------------------------------------------------- |
-| `j` / `k` | next / previous stop in the tour                  |
+| `j` / `k` | next / previous step in the tour                  |
+| `[` / `]` | previous / next flow                              |
 | `n` / `p` | next / previous change                            |
+| `o`       | open or close the overview                        |
+| `m`       | show or hide the flow map of this flow            |
 | `f`       | show the whole file, or fold unchanged code again |
+| `Esc`     | close the peek, the map or the overview           |
 
 Seen marks are saved, so you can stop and come back.
-
-The inbox also shows each PR's CI status and how many unsent drafts it has.
 
 ### Code check
 
 pr-tour can check a tour against the code. For Go files it adds the real functions
 and calls to the tour, and it reports steps that do not match the code
-(`finding:` lines in `pr-tour import`).
+(`finding:` lines in `pr-tour import`). **About this PR** shows how many steps sit on
+their function and how many links the code proved. The checker never downloads
+anything: it loads the project with `GOPROXY=off`.
 
 This needs Go 1.26 or later. It is optional. `npm run build` builds the checker when
 it finds a suitable `go`, and prints one line and goes on when it does not. Without
@@ -81,16 +143,16 @@ it, tours still build. To check a tour again, run `pr-tour recheck owner/name#12
 `pr-tour functions owner/name#123` lists the functions in a PR.
 
 pr-tour runs the checker built at `dist/bin/pr-tour-check-go`. Set `PR_TOUR_CHECKER`
-to the path of another checker binary to use that one instead. The override wins: if
-the file it names is not executable, the check does not run (and the tour says the
-checker is not installed). pr-tour does not fall back to the built one.
+to the path of another checker binary to use that one instead. The override wins.
+If the file it names is not executable, the check does not run. The tour then says the
+checker is not installed. pr-tour does not fall back to the built one.
 
 ### Reviewing
 
 You can do your GitHub review inside the tour.
 
-- **Comment:** click a line number in the code view. Shift-click a second line
-  to pick a range. Type your comment and save it.
+- **Comment:** click a line number in the code view. To pick a range, drag over
+  the line numbers or Shift-click a second line. Type your comment and save it.
 - **Suggest:** on new lines inside the diff, click **Suggest change**. You get a
   `suggestion` block to edit.
 - **Lines outside the diff:** GitHub can't take a line comment there. pr-tour
@@ -126,8 +188,8 @@ stops (exit code 2).
 
 After you push a PR, run `/tour` in the Claude Code session where you made the
 change. Claude writes the tour from what it knows about why each change was
-made, checks it with `pr-tour import`, and opens it. The tour is labeled
-"Notes by the author".
+made, checks it with `pr-tour import`, and opens it. The tour says
+"notes by the author".
 
 The skill uses these commands, which you can also run yourself:
 
