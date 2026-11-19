@@ -469,6 +469,10 @@ describe('TourBuilder.build', () => {
     expect(args.join(' ')).toContain('--allowedTools Read Grep Glob');
     expect(args.join(' ')).toContain('--tools Read,Grep,Glob');
     expect(args).toContain('--strict-mcp-config');
+    // No settings files: no hooks from the PR's worktree or the user's plugins.
+    const sources = args.indexOf('--setting-sources');
+    expect(sources).toBeGreaterThan(-1);
+    expect(args[sources + 1]).toBe('');
     expect(args).not.toContain('--dangerously-skip-permissions');
     expect(opts?.cwd).toBe(WORKTREE);
   });

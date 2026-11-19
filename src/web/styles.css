@@ -2904,8 +2904,10 @@ span.problem-where {
 
 /* A flow map with a peek below it. In the map panel the two split the panel's height; the
    divider sets the map's share. In an overview card, while a peek is open, the map keeps at
-   most 300px and the peek gets its own height. */
+   most 300px and the peek gets its own height. Either way the peek never gets smaller than
+   --peek-min, so its head always leaves room for code, whatever share is stored. */
 .map-peek {
+  --peek-min: min(22rem, 70vh);
   display: flex;
   flex-direction: column;
   min-height: 0;
@@ -2933,10 +2935,11 @@ span.problem-where {
 
 .map-peek.panel .map-peek-peek {
   flex: calc(1 - var(--map-share)) 1 0;
+  min-height: var(--peek-min);
 }
 
 .map-peek.card .map-peek-peek {
-  height: var(--peek-height);
+  height: max(var(--peek-height), var(--peek-min));
 }
 
 .map-peek-divider {

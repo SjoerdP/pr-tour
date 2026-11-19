@@ -506,6 +506,9 @@ export class TourBuilder {
     // - `--add-dir` lets the file tools read the diff, which lives outside the worktree.
     // - `--strict-mcp-config` with no `--mcp-config` loads none of the user's MCP servers.
     // - `--disable-slash-commands` keeps the user's skills and commands out of the run.
+    // - `--setting-sources ''` loads no settings files. The worktree is the PR's code, and
+    //   `-p` has no trust prompt, so its `.claude/settings.json` hooks would otherwise run
+    //   shell commands on this machine. It also keeps the user's plugins and their hooks out.
     // - `--no-session-persistence` keeps these runs out of the user's session history.
     // - `stream-json` prints each step as it happens, so a silent run can be told from a slow
     //   one; partial messages keep it printing while Claude writes a long answer.
@@ -521,6 +524,8 @@ export class TourBuilder {
       ...(addDir !== undefined ? ['--add-dir', addDir] : []),
       '--strict-mcp-config',
       '--disable-slash-commands',
+      '--setting-sources',
+      '',
       '--no-session-persistence',
       '--allowedTools',
       'Read',
