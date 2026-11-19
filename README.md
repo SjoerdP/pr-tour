@@ -85,7 +85,12 @@ it can only read files. Hooks and settings in the PR's code do not run.
 - [`gh`](https://cli.github.com/), logged in (`gh auth status`)
 - The [`claude`](https://docs.anthropic.com/en/docs/claude-code) CLI, logged in (for inferred tours)
 - `git`
-- Go 1.26 or later (optional, for the code check)
+
+### Optional
+
+- Go 1.26 or later, for the [code check](#code-check) of Go code. pr-tour works
+  without it, in any language. Only Go flows get proven calls, and only with Go
+  installed.
 
 ## Install
 
