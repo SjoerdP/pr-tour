@@ -15,6 +15,7 @@ vi.mock('../../src/web/api.js', () => ({
   markSeen: vi.fn(),
   // The tour view loads the PR's review; these tests are not about it: it never arrives.
   getReview: () => new Promise(() => {}),
+  getProblems: vi.fn(),
 }));
 
 vi.mock('../../src/web/CodeView.js', () => ({
@@ -23,6 +24,7 @@ vi.mock('../../src/web/CodeView.js', () => ({
 
 const getPr = vi.mocked(api.getPr);
 const markSeen = vi.mocked(api.markSeen);
+const getProblems = vi.mocked(api.getProblems);
 
 function outline(): HTMLElement {
   return screen.getByRole('navigation', { name: 'Tour outline' });
@@ -50,6 +52,8 @@ async function open(tour: Tour = baseTour) {
 
 beforeEach(() => {
   markSeen.mockResolvedValue(undefined);
+  // Most tests are not about possible problems: they never arrive.
+  getProblems.mockReturnValue(new Promise(() => {}));
 });
 
 afterEach(() => {
@@ -332,5 +336,101 @@ describe('other changes groups', () => {
 
     expect(currentTitle()).toContain('Repay tests');
     expect(toggle('Tests').getAttribute('aria-expanded')).toBe('true');
+  });
+});
+
+describe('problem pins', () => {
+  /** Repay with its third step in its own file, and a likely bug on line 5 there. */
+  async function openWithProblem() {
+    const repay = baseTour.flows[0]!;
+    const tour: Tour = {
+      ...baseTour,
+      flows: [
+        {
+          ...repay,
+          steps: repay.steps.map((s) =>
+            s.id === 'F1.S3'
+              ? {
+                  ...s,
+                  file: 'src/b.ts',
+                  homes: [{ file: 'src/b.ts', side: 'new', start: 1, end: 9 }],
+                }
+              : s,
+          ),
+        },
+        ...baseTour.flows.slice(1),
+      ],
+    };
+    getProblems.mockResolvedValue({
+      problems: [
+        {
+          key: 'p1',
+          level: 'bug',
+          title: 'The fee is never charged',
+          sources: ['CodeRabbit'],
+          at: { kind: 'line', file: 'src/b.ts', side: 'new', line: 5 },
+        },
+      ],
+      marks: {},
+      pending: false,
+      outdated: false,
+      error: null,
+    });
+    await open(tour);
+    fireEvent.keyDown(window, { key: ']' });
+  }
+
+  it('shows a coloured dot on the step row, beside the row button', async () => {
+    await openWithProblem();
+    const pin = await within(outline()).findByRole('button', {
+      name: 'Likely bug: The fee is never charged',
+    });
+    expect(pin.classList.contains('problem-bug')).toBe(true);
+    const row = item('Record the repayment');
+    expect(row.contains(pin)).toBe(false);
+    expect(pin.closest('li')).toBe(row.closest('li'));
+  });
+
+  it('a pin click opens the popup, not the step; Go to the line goes there', async () => {
+    await openWithProblem();
+    expect(currentTitle()).toContain('Parse the request');
+    fireEvent.click(
+      await within(outline()).findByRole('button', {
+        name: 'Likely bug: The fee is never charged',
+      }),
+    );
+    expect(screen.getByRole('dialog', { name: 'Possible problem' })).toBeTruthy();
+    expect(currentTitle()).toContain('Parse the request');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Go to the line' }));
+    expect(currentTitle()).toContain('Record the repayment');
+    expect(screen.queryByRole('dialog', { name: 'Possible problem' })).toBeNull();
+    // A move from the outline, not a visit: no way back.
+    expect(screen.queryByRole('button', { name: /Back to/ })).toBeNull();
+  });
+
+  it('Go to the line from the map panel is a visit, with the way back', async () => {
+    await openWithProblem();
+    fireEvent.keyDown(window, { key: 'm' });
+    const panel = screen.getByRole('dialog', { name: 'Flow map: Repay a loan' });
+    fireEvent.click(
+      await within(panel).findByRole('button', { name: 'Likely bug: The fee is never charged' }),
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Go to the line' }));
+    expect(currentTitle()).toContain('Record the repayment');
+    expect(screen.queryByRole('dialog', { name: 'Flow map: Repay a loan' })).toBeNull();
+    expect(screen.getByRole('button', { name: /Back to the map/ })).toBeTruthy();
+  });
+
+  it('Go to it in the approve reminder is a move, even with the overview open', async () => {
+    await openWithProblem();
+    fireEvent.click(screen.getByRole('button', { name: 'Overview' }));
+    expect(screen.getByRole('button', { name: 'Overview', pressed: true })).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: /^Review/ }));
+    fireEvent.click(screen.getByRole('radio', { name: 'Approve' }));
+    const reminder = await screen.findByRole('region', { name: 'Possible problems not marked' });
+    fireEvent.click(within(reminder).getByRole('button', { name: 'Go to it' }));
+    expect(currentTitle()).toContain('Record the repayment');
+    expect(screen.queryByRole('button', { name: /Back to/ })).toBeNull();
   });
 });

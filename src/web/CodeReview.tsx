@@ -50,10 +50,18 @@ function Items({ path, headSha, threads, drafts, review, readOnly = false }: Ite
   );
 }
 
-/** What is shown under one code row: its threads, its drafts, then the open composer. */
-export function ReviewRow({ composer, ...items }: ItemsProps & { composer: ReactNode }) {
+/**
+ * What is shown under one code row: its possible problems, its threads, its drafts, then the
+ * open composer.
+ */
+export function ReviewRow({
+  problems,
+  composer,
+  ...items
+}: ItemsProps & { problems: ReactNode; composer: ReactNode }) {
   return (
     <div className="code-review-row">
+      {problems}
       <Items {...items} />
       {composer}
     </div>

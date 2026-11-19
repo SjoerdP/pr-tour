@@ -4,11 +4,12 @@ import type { FileDiff, Hunk } from '../../src/shared/diff.js';
 import type { Draft, DraftComment, ReviewThread } from '../../src/shared/review.js';
 import type { Tour } from '../../src/shared/tour.js';
 import * as api from '../../src/web/api.js';
-import { draftRows, threadRows } from '../../src/web/code-lines.js';
+import { draftRows, problemRows, threadRows } from '../../src/web/code-lines.js';
 import { ComposerMemory, ComposerMemoryContext } from '../../src/web/composer-memory.js';
 import { CodeView } from '../../src/web/CodeView.js';
 import { buildRows } from '../../src/shared/rows.js';
 import type { ReviewState } from '../../src/web/useReview.js';
+import { problem } from './problems-fake.js';
 import { fakeReview } from './review-fake.js';
 
 // Comments in the code view: selecting lines, the composer, threads and drafts in place.
@@ -94,6 +95,7 @@ function thread(overrides: Partial<ReviewThread> = {}): ReviewThread {
     startLine: null,
     outdated: false,
     resolved: false,
+    bot: false,
     comments: [
       {
         id: 'c1',
@@ -747,7 +749,7 @@ describe('CodeView: binary files', () => {
   });
 });
 
-describe('threadRows / draftRows', () => {
+describe('threadRows / draftRows / problemRows', () => {
   const rows = buildRows(lines(10, { 5: 'new five' }), lines(10, { 5: 'old five' }), [HUNK]);
   // Rows: 0-3 lines 1-4, 4 old five, 5 new five, 6.. lines 6-10.
 
@@ -780,6 +782,31 @@ describe('threadRows / draftRows', () => {
     expect(placed.get(5)?.map((d) => d.id)).toEqual([1]);
     expect(placed.get(4)?.map((d) => d.id)).toEqual([2]);
     expect(placed.get(-1)?.map((d) => d.id)).toEqual([3]);
+  });
+
+  it('places line problems of the file by side and line; bot threads and others are left out', () => {
+    const at = (side: 'new' | 'old', line: number, file = PATH) => ({
+      kind: 'line' as const,
+      file,
+      side,
+      line,
+    });
+    const placed = problemRows(
+      rows,
+      [
+        problem('new', 'risk', at('new', 5), null),
+        problem('old', 'risk', at('old', 5), null),
+        problem('thread', 'risk', at('new', 5), null, { threadId: 'T1' }),
+        problem('other-file', 'risk', at('new', 5, 'src/fees.ts'), null),
+        problem('step', 'risk', { kind: 'step', test: 'TestRepay' }, null),
+        problem('file', 'risk', { kind: 'file', file: PATH }, null),
+        problem('gone', 'risk', at('new', 99), null),
+      ],
+      PATH,
+    );
+    expect([...placed.keys()].sort()).toEqual([4, 5]);
+    expect(placed.get(5)?.map((p) => p.key)).toEqual(['new']);
+    expect(placed.get(4)?.map((p) => p.key)).toEqual(['old']);
   });
 });
 

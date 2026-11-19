@@ -1,6 +1,12 @@
 // The browser's client for the pr-tour server's /api.
 
-import type { InboxResponse, Job, PrResponse } from '../shared/api.js';
+import type {
+  InboxResponse,
+  Job,
+  PrResponse,
+  ProblemMark,
+  ProblemsResponse,
+} from '../shared/api.js';
 import type { FileDiff } from '../shared/diff.js';
 import type {
   Draft,
@@ -168,4 +174,19 @@ export function setResolved(
     `${prPath(repo, pr)}/threads/${encodeURIComponent(threadId)}/resolve`,
     withJson('POST', { resolved }),
   );
+}
+
+/** Possible problems from CI for the tour's head commit, with the user's marks. */
+export function getProblems(repo: string, pr: number): Promise<ProblemsResponse> {
+  return request(`${prPath(repo, pr)}/problems`);
+}
+
+/** Marks a possible problem as real or not (kept locally); `null` removes the mark. */
+export function setProblemMark(
+  repo: string,
+  pr: number,
+  key: string,
+  mark: ProblemMark | null,
+): Promise<void> {
+  return request(`${prPath(repo, pr)}/problems/marks`, withJson('POST', { key, mark }));
 }

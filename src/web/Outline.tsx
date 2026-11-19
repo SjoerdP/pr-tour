@@ -10,6 +10,7 @@ import {
 } from '../shared/tour.js';
 import { otherGroupsInOrder } from './homes.js';
 import { keepsReviewOpen } from './keep-review-open.js';
+import { ProblemPins } from './ProblemPins.js';
 import { withKey } from './shortcuts.js';
 
 type Props = {
@@ -418,6 +419,7 @@ function Item({
             </span>
           ))}
       </button>
+      <ProblemPins homeId={id} />
     </li>
   );
 }

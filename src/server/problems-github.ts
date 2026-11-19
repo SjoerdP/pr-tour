@@ -1,0 +1,201 @@
+// Possible problems from CI on GitHub: the check runs of the tour's head commit, their line
+// annotations, and failed runs.
+
+import { createHash } from 'node:crypto';
+import type { Level, Problem } from '../shared/problems.js';
+import type { Tour } from '../shared/tour.js';
+import { lineChanges, type FileDiff } from './diff.js';
+import type { Runner } from './exec.js';
+import { ghGraphql, GraphqlError, splitRepo } from './graphql.js';
+
+type AnnotationLevel = 'NOTICE' | 'WARNING' | 'FAILURE';
+
+/** A check run as `CHECK_RUNS_QUERY` selects it. */
+export type CheckRunNode = {
+  name: string;
+  status: string;
+  conclusion: string | null;
+  detailsUrl: string | null;
+  summary: string | null;
+  text: string | null;
+  annotations: {
+    nodes: Array<{
+      path: string;
+      annotationLevel: AnnotationLevel | null;
+      title: string | null;
+      message: string;
+      location: { start: { line: number }; end: { line: number } };
+    }>;
+  };
+};
+
+// The commit goes in as `$sha`, never into the query text.
+// GitHub refuses a query that may return more than 500,000 nodes, counting the nested
+// limits multiplied: 20 + 20 × 50 + 20 × 50 × 100 is about 101,000.
+const CHECK_RUNS_QUERY = `query($owner: String!, $name: String!, $sha: GitObjectID!) {
+  repository(owner: $owner, name: $name) {
+    object(oid: $sha) {
+      ... on Commit {
+        statusCheckRollup { state }
+        checkSuites(first: 20) { nodes { checkRuns(first: 50) { nodes {
+          name status conclusion detailsUrl summary text
+          annotations(first: 100) { nodes {
+            path annotationLevel title message
+            location { start { line } end { line } }
+          } }
+        } } } }
+      }
+    }
+  }
+}`;
+
+type CheckRunsData = {
+  /** Null when GitHub does not know the repo, or the user cannot read it. */
+  repository: {
+    /** Null when GitHub does not know the commit. */
+    object: {
+      statusCheckRollup: { state: string } | null;
+      checkSuites: { nodes: { checkRuns: { nodes: CheckRunNode[] } }[] };
+    } | null;
+  } | null;
+};
+
+/** CI on GitHub, through the user's own `gh` login. */
+export class ProblemsGitHub {
+  constructor(private readonly run: Runner) {}
+
+  /**
+   * The check runs of commit `sha` in `repo` (`owner/name`), and whether CI is still running.
+   * A commit GitHub does not know has no runs; a repo it does not know is an error.
+   */
+  async checkRuns(repo: string, sha: string): Promise<{ runs: CheckRunNode[]; pending: boolean }> {
+    const { owner, name } = splitRepo(repo);
+    const data = await ghGraphql<CheckRunsData>(this.run, CHECK_RUNS_QUERY, [
+      '-f',
+      `owner=${owner}`,
+      '-f',
+      `name=${name}`,
+      '-f',
+      `sha=${sha}`,
+    ]);
+    // GitHub answers `repository: null` for a repo it does not know or the user cannot read.
+    if (!data.repository) throw new GraphqlError(`repository ${repo} not found`);
+    const commit = data.repository.object;
+    if (!commit) return { runs: [], pending: false };
+    const state = commit.statusCheckRollup?.state;
+    return {
+      runs: commit.checkSuites.nodes.flatMap((suite) => suite.checkRuns.nodes),
+      pending: state === 'PENDING' || state === 'EXPECTED',
+    };
+  }
+}
+
+const ANNOTATION_LEVEL: Record<AnnotationLevel, Level> = {
+  FAILURE: 'bug',
+  WARNING: 'risk',
+  NOTICE: 'look',
+};
+
+/** Check run conclusions that mean the run failed. */
+const FAILED_RUN = new Set(['FAILURE', 'TIMED_OUT', 'STARTUP_FAILURE']);
+
+/**
+ * The possible problems in check runs `runs` of the tour's head commit. An annotation counts
+ * only on a line the PR added (`files`); others are dropped. A failed run with no annotation
+ * kept is one problem: on a step when its output (or a dropped annotation) names one of the
+ * steps' tests on a failure line, else PR-wide.
+ */
+export function ciProblems(runs: CheckRunNode[], files: FileDiff[], tour: Tour): Problem[] {
+  const added = new Map<string, string>();
+  for (const change of lineChanges(files)) {
+    if (change.kind === 'add') added.set(lineId(change.file, change.line), change.text);
+  }
+  const tests = [
+    ...new Set(tour.flows.flatMap((f) => f.steps.flatMap((s) => s.tests)).map((t) => t.name)),
+  ];
+
+  const problems: Problem[] = [];
+  for (const run of runs) {
+    let kept = 0;
+    const dropped: string[] = [];
+    for (const a of run.annotations.nodes) {
+      const line = a.location.start.line;
+      const lineText = added.get(lineId(a.path, line));
+      if (lineText === undefined) {
+        dropped.push(a.title ?? '', a.message);
+        continue;
+      }
+      kept++;
+      const [first = '', ...rest] = a.message.split('\n');
+      const title = a.title?.trim() || first.trim();
+      const why = a.title?.trim() ? a.message.trim() : rest.join('\n').trim();
+      problems.push({
+        // The line's text, hashed: a long line would make a key too long to save a mark.
+        key: `ci|${run.name}|${a.path}|${shortHash(lineText)}|${title}`,
+        level: (a.annotationLevel && ANNOTATION_LEVEL[a.annotationLevel]) ?? 'look',
+        title,
+        ...(why ? { why } : {}),
+        sources: [run.name],
+        at: { kind: 'line', file: a.path, side: 'new', line },
+        ...(run.detailsUrl ? { url: run.detailsUrl } : {}),
+      });
+    }
+    if (kept > 0 || run.conclusion === null || !FAILED_RUN.has(run.conclusion)) continue;
+
+    const failures = [run.summary ?? '', run.text ?? '', ...dropped]
+      .flatMap((text) => text.split('\n'))
+      .filter(isFailureLine);
+    const failing = tests.filter((test) => failures.some((l) => wholeWord(test).test(l)));
+    const base = {
+      level: 'bug' as const,
+      sources: ['CI'],
+      ...(run.detailsUrl ? { url: run.detailsUrl } : {}),
+    };
+    if (failing.length === 0) {
+      problems.push({
+        ...base,
+        key: `ci|${tour.headSha}|${run.name}|`,
+        title: `CI check "${run.name}" fails`,
+        at: { kind: 'pr' },
+      });
+    }
+    for (const test of failing) {
+      problems.push({
+        ...base,
+        key: `ci|${tour.headSha}|${run.name}|${test}`,
+        title: `Test ${test} fails in CI`,
+        at: { kind: 'step', test },
+      });
+    }
+  }
+  return uniqueByKey(problems);
+}
+
+/** A line of test output that reports a failure: `--- FAIL: TestX`, `✗ charges a fee`. */
+const FAILURE_WORD = /\bfail(ed|ure|s)?\b|✗|❌|×/i;
+/** A line that reports a pass: `--- PASS: TestX`, Go's `ok  acme/loans`, `✓ charges a fee`. */
+const PASS_WORD = /\bPASS(ED)?\b|\bpassed\b|^\s*ok\b|✓|✔/;
+
+function isFailureLine(line: string): boolean {
+  return FAILURE_WORD.test(line) && !PASS_WORD.test(line);
+}
+
+/** The first 16 hex digits of the SHA-1 of `text`. */
+function shortHash(text: string): string {
+  return createHash('sha1').update(text).digest('hex').slice(0, 16);
+}
+
+function lineId(file: string, line: number): string {
+  return `${file}:${line}`;
+}
+
+/** Matches `word` with no word character right before or after it. */
+function wholeWord(word: string): RegExp {
+  return new RegExp(`(?<!\\w)${word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?!\\w)`);
+}
+
+/** `problems` without later ones whose key was seen (e.g. two runs of a matrix with one name). */
+function uniqueByKey(problems: Problem[]): Problem[] {
+  const seen = new Set<string>();
+  return problems.filter((p) => !seen.has(p.key) && seen.add(p.key));
+}

@@ -66,6 +66,9 @@ type Load =
 
 const NO_CI: CiStatus = { state: 'none', failing: null };
 
+const NO_THREADS: ReviewThread[] = [];
+const NO_DRAFTS: Draft[] = [];
+
 /**
  * The PR's review: threads, local drafts and CI from the server, and the actions on them.
  * Drafts change only from the server's answers (nothing optimistic). Nothing reaches
@@ -184,8 +187,9 @@ export function useReview(repo: string, pr: number): ReviewState {
   }
 
   const data = load.state === 'ready' ? load.data : null;
-  const threads = data?.threads ?? [];
-  const drafts = data?.drafts ?? [];
+  // The same empty lists every render while nothing is loaded, so memos on them hold.
+  const threads = data?.threads ?? NO_THREADS;
+  const drafts = data?.drafts ?? NO_DRAFTS;
 
   return {
     state: load.state,

@@ -2,6 +2,7 @@ import { useEffect, useId, useRef, useState, type ReactNode } from 'react';
 import type { Flow, Step } from '../shared/tour.js';
 import { buildFlowMap, type MapEdge, type MapNode, type MapProof } from './flow-map.js';
 import { effectWords } from './Outline.js';
+import { ProblemPins } from './ProblemPins.js';
 
 type Props = {
   flow: Flow;
@@ -356,6 +357,7 @@ function Card({ node, ctx }: { node: MapNode; ctx: Ctx }) {
           {inLoop && <span className="flow-map-tag flow-map-loop">↻ Loop</span>}
         </span>
       </button>
+      <ProblemPins homeId={step.id} />
       <Notes edges={loopEdges} texts={loopNotes} className="flow-map-loop-notes" ctx={ctx} />
       <Notes edges={node.alsoFrom} texts={alsoNotes} ctx={ctx} />
       {below > 0 && (

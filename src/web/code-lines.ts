@@ -7,6 +7,7 @@ import {
   type DraftComment,
   type ReviewThread,
 } from '../shared/review.js';
+import type { PlacedProblem } from '../shared/problems.js';
 import type { Row } from '../shared/rows.js';
 import type { CallRef, CallSite, Tour } from '../shared/tour.js';
 import { homeRanges, homesInOrder, homeTitle } from './homes.js';
@@ -114,6 +115,24 @@ export function draftRows(
   const placed = new Map<number, DraftComment[]>();
   for (const d of drafts) {
     push(placed, isOlderDraft(d, headSha) ? -1 : rowOf(rows, d.side, d.endLine), d);
+  }
+  return placed;
+}
+
+/**
+ * The row index each possible problem about a line of `file` is shown after. A bot's
+ * problem (one with a `threadId`) is left out: it shows as its thread. So is a line no row has.
+ */
+export function problemRows(
+  rows: Row[],
+  problems: PlacedProblem[],
+  file: string,
+): Map<number, PlacedProblem[]> {
+  const placed = new Map<number, PlacedProblem[]>();
+  for (const p of problems) {
+    if (p.at.kind !== 'line' || p.at.file !== file || p.threadId !== undefined) continue;
+    const at = rowOf(rows, p.at.side, p.at.line);
+    if (at >= 0) push(placed, at, p);
   }
   return placed;
 }

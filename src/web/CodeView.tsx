@@ -9,6 +9,7 @@ import {
   type ReactNode,
 } from 'react';
 import type { FileDiff } from '../shared/diff.js';
+import type { PlacedProblem } from '../shared/problems.js';
 import {
   commentTarget,
   type DiffSide,
@@ -22,6 +23,7 @@ import {
   callMatches,
   draftRows,
   focusRows,
+  problemRows,
   rowOf,
   rowOwners,
   siteMatches,
@@ -36,6 +38,8 @@ import { Composer } from './Composer.js';
 import { useComposerMemory, type Selection } from './composer-memory.js';
 import type { HighlightedLine, Token } from './highlight.js';
 import { homesInOrder } from './homes.js';
+import { ProblemCard } from './ProblemCard.js';
+import { useProblemsContext } from './ProblemsContext.js';
 import { withKey } from './shortcuts.js';
 import { placeBadges, stepTargets, type PlacedBadge, type StepTarget } from './step-badges.js';
 import { useCodeFile, type CodeFile, type Tokens } from './useCodeFile.js';
@@ -227,12 +231,17 @@ function FileCode({
     () => draftRows(rows, draftsOn(drafts, file.path), tour.headSha),
     [rows, drafts, file.path, tour.headSha],
   );
-  // Rows with a thread or a draft stay open, like changes.
+  const { problems } = useProblemsContext();
+  const problemsAt = useMemo(
+    () => problemRows(rows, problems, file.path),
+    [rows, problems, file.path],
+  );
+  // Rows with a thread, a draft or a possible problem stay open, like changes.
   const reviewRows = useMemo(() => {
-    const at = new Set([...threadsAt.keys(), ...draftsAt.keys()]);
+    const at = new Set([...threadsAt.keys(), ...draftsAt.keys(), ...problemsAt.keys()]);
     at.delete(-1);
     return [...at].map((i): [number, number] => [i, i]);
-  }, [threadsAt, draftsAt]);
+  }, [threadsAt, draftsAt, problemsAt]);
 
   // GitHub takes comments only on files the PR changes.
   const diff = file.diff;
@@ -256,9 +265,30 @@ function FileCode({
   useEffect(() => {
     memory?.setFile(memoryKey, selection ? { selection, typed: typed.current } : null);
   }, [memory, memoryKey, selection]);
+  // What "Comment" on a possible problem filled in, so closing it unchanged asks nothing.
+  // `seq` counts the fills: a new one remounts the composer, so it shows the new text even
+  // when it was open on that line already.
+  const [filled, setFilled] = useState({ seq: 0, text: '' });
   function clearSelection() {
     setSelection(null);
     typed.current = '';
+    setFilled((f) => ({ ...f, text: '' }));
+  }
+  /**
+   * Opens the composer on `line` with `text`, a draft to edit before it is added. Text being
+   * written already stays: `text` goes below it (once).
+   */
+  function commentOn(side: DiffSide, line: number, text: string) {
+    const before = typed.current;
+    const body =
+      before.trim() === ''
+        ? text
+        : before.includes(text)
+          ? before
+          : `${before.trimEnd()}\n\n${text}`;
+    typed.current = body;
+    setSelection({ side, anchor: line, line });
+    setFilled((f) => ({ seq: f.seq + 1, text: body === text ? text : '' }));
   }
   // The picked rows, where the composer sits, stay open (folding them would drop its text).
   const pickedRows = useMemo((): Array<[number, number]> => {
@@ -425,12 +455,25 @@ function FileCode({
       : {},
   );
 
+  /** The cards of possible problems under a row; "Comment" needs a file the PR changes. */
+  function problemCards(list: PlacedProblem[]): ReactNode {
+    return list.map((p) => {
+      const at = p.at;
+      const onComment =
+        diff && !readOnly && at.kind === 'line'
+          ? (text: string) => commentOn(at.side, at.line, text)
+          : undefined;
+      return <ProblemCard key={p.key} problem={p} readOnly={readOnly} onComment={onComment} />;
+    });
+  }
+
   let composerRow = -1;
   let composer: ReactNode = null;
   if (diff && picked) {
     composerRow = rowOf(rows, picked.side, picked.end);
     composer = (
       <PickedComposer
+        key={filled.seq}
         diff={diff}
         rows={rows}
         picked={picked}
@@ -448,6 +491,7 @@ function FileCode({
           clearSelection();
         }}
         onCancel={clearSelection}
+        initial={filled.text}
         restore={() => typed.current}
         onType={(body) => {
           typed.current = body;
@@ -530,6 +574,7 @@ function FileCode({
               const inFocus = focusRange !== null && i >= focusRange[0] && i <= focusRange[1];
               const rowThreads = threadsAt.get(i);
               const rowDrafts = draftsAt.get(i);
+              const rowProblems = problemsAt.get(i);
               const no = markedRange?.side === 'new' ? row.newNo : row.oldNo;
               const selected =
                 markedRange !== null &&
@@ -565,8 +610,9 @@ function FileCode({
                     onOpenHome={onOpenHome}
                     readOnly={readOnly}
                   />
-                  {(rowThreads || rowDrafts || composerRow === i) && (
+                  {(rowThreads || rowDrafts || rowProblems || composerRow === i) && (
                     <ReviewRow
+                      problems={rowProblems && problemCards(rowProblems)}
                       path={file.path}
                       headSha={tour.headSha}
                       threads={rowThreads ?? NO_THREADS}
@@ -648,6 +694,7 @@ function PickedComposer({
   picked,
   onSubmit,
   onCancel,
+  initial,
   restore,
   onType,
 }: {
@@ -656,6 +703,8 @@ function PickedComposer({
   picked: Picked;
   onSubmit: (body: string) => Promise<void>;
   onCancel: () => void;
+  /** Text filled in for the reader (a possible problem's): closing it unchanged asks nothing. */
+  initial: string;
   /** The text typed before the composer last moved. */
   restore: () => string;
   onType: (body: string) => void;
@@ -670,6 +719,7 @@ function PickedComposer({
       path={diff.path}
       suggestFrom={suggestFrom}
       submitLabel="Add comment"
+      initial={initial}
       restore={restore}
       onType={onType}
       onSubmit={onSubmit}

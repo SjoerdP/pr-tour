@@ -90,6 +90,7 @@ describe('ReviewGitHub.reviewState threads', () => {
       startLine: null,
       outdated: false,
       resolved: false,
+      bot: false,
       comments: [
         {
           id: 'T1-c1',
@@ -127,6 +128,57 @@ describe('ReviewGitHub.reviewState threads', () => {
     const state = await new ReviewGitHub(run).reviewState('acme/api', 7);
 
     expect(state.threads[0]?.comments[0]?.author).toBe('ghost');
+  });
+
+  it('marks threads started by a bot', async () => {
+    const { run } = answering(
+      prData({
+        threads: page([
+          threadNode('T1', {
+            comments: page([
+              comment('c1', { author: { login: 'coderabbitai', __typename: 'Bot' } }),
+              comment('c2', { author: { login: 'bob', __typename: 'User' } }),
+            ]),
+          }),
+          threadNode('T2', {
+            comments: page([
+              comment('c3', { author: { login: 'bob', __typename: 'User' } }),
+              comment('c4', { author: { login: 'coderabbitai', __typename: 'Bot' } }),
+            ]),
+          }),
+        ]),
+      }),
+    );
+
+    const state = await new ReviewGitHub(run).reviewState('acme/api', 7);
+
+    expect(state.threads.map((t) => [t.id, t.bot])).toEqual([
+      ['T1', true],
+      ['T2', false],
+    ]);
+  });
+
+  it('marks [bot] logins as bots', async () => {
+    const { run, calls } = answering(
+      prData({
+        threads: page([
+          threadNode('T1', {
+            comments: page([
+              comment('c1', { author: { login: 'lint-helper[bot]', __typename: 'User' } }),
+            ]),
+          }),
+          threadNode('T2', { comments: page([comment('c2', { author: null })]) }),
+        ]),
+      }),
+    );
+
+    const state = await new ReviewGitHub(run).reviewState('acme/api', 7);
+
+    expect(state.threads.map((t) => [t.id, t.bot])).toEqual([
+      ['T1', true],
+      ['T2', false],
+    ]);
+    expect(fieldValue(calls[0]?.args ?? [], 'query')).toContain('author { login __typename }');
   });
 
   it('follows thread pagination (2 pages)', async () => {

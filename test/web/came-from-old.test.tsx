@@ -13,6 +13,7 @@ vi.mock('../../src/web/api.js', async (importActual) => ({
   buildTour: vi.fn(),
   markSeen: vi.fn(),
   getReview: () => new Promise(() => {}),
+  getProblems: () => new Promise(() => {}),
 }));
 
 vi.mock('../../src/web/CodeView.js', () => ({ CodeView: () => <div /> }));

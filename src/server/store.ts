@@ -1,5 +1,5 @@
 import Database from 'better-sqlite3';
-import type { TourStatus } from '../shared/api.js';
+import type { ProblemMark, TourStatus } from '../shared/api.js';
 import type { DiffSide, Draft, StoredNewDraft } from '../shared/review.js';
 import { progressHomeIds, TourSchema, type Tour } from '../shared/tour.js';
 
@@ -45,6 +45,14 @@ const MIGRATIONS = [
      created_at TEXT NOT NULL
    );
    CREATE INDEX drafts_pr ON drafts(repo, pr);`,
+  `CREATE TABLE problem_marks (
+     repo TEXT NOT NULL,
+     pr INTEGER NOT NULL,
+     key TEXT NOT NULL,
+     mark TEXT NOT NULL,
+     marked_at TEXT NOT NULL,
+     PRIMARY KEY (repo, pr, key)
+   );`,
 ];
 
 const SCHEMA_VERSION = MIGRATIONS.length;
@@ -209,6 +217,31 @@ export class Store {
     return progressHomeIds(tour).filter(
       (id) => tour.hashes[id] !== undefined && seen[id] === tour.hashes[id],
     ).length;
+  }
+
+  /** Mark a possible problem (by its key) as real or not; `null` removes the mark. */
+  setProblemMark(repo: string, pr: number, key: string, mark: ProblemMark | null): void {
+    if (mark === null) {
+      this.db
+        .prepare(`DELETE FROM problem_marks WHERE repo = ? AND pr = ? AND key = ?`)
+        .run(repoKey(repo), pr, key);
+      return;
+    }
+    this.db
+      .prepare(
+        `INSERT INTO problem_marks (repo, pr, key, mark, marked_at) VALUES (?, ?, ?, ?, ?)
+         ON CONFLICT (repo, pr, key)
+         DO UPDATE SET mark = excluded.mark, marked_at = excluded.marked_at`,
+      )
+      .run(repoKey(repo), pr, key, mark, new Date().toISOString());
+  }
+
+  /** `key → mark` of every marked possible problem of the PR. */
+  problemMarks(repo: string, pr: number): Record<string, ProblemMark> {
+    const rows = this.db
+      .prepare(`SELECT key, mark FROM problem_marks WHERE repo = ? AND pr = ?`)
+      .all(repoKey(repo), pr) as { key: string; mark: ProblemMark }[];
+    return Object.fromEntries(rows.map((r) => [r.key, r.mark]));
   }
 
   /** Save a new draft for the PR and return it with its id and creation time. */

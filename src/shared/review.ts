@@ -22,6 +22,8 @@ export type ReviewThread = {
   startLine: number | null;
   outdated: boolean;
   resolved: boolean;
+  /** True when a bot (e.g. a review bot) started the thread. */
+  bot: boolean;
   comments: ThreadComment[];
 };
 

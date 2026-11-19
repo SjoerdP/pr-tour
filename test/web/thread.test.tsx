@@ -1,7 +1,9 @@
 import { fireEvent, render, screen, within } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
+import type { PlacedProblem } from '../../src/shared/problems.js';
 import type { Draft, ReviewThread, ThreadComment } from '../../src/shared/review.js';
 import { Thread } from '../../src/web/Thread.js';
+import { line, problem, WithProblems } from './problems-fake.js';
 
 // One review thread from GitHub, with its pending reply drafts.
 
@@ -27,6 +29,7 @@ function thread(overrides: Partial<ReviewThread> = {}): ReviewThread {
     startLine: null,
     outdated: false,
     resolved: false,
+    bot: false,
     comments: [comment('c1'), comment('c2', { author: 'bob', createdAt: '2026-10-28T11:58:00Z' })],
     ...overrides,
   };
@@ -38,7 +41,7 @@ function reply(id: number, body: string, threadId = 'T1'): Draft {
 
 type Options = Partial<Parameters<typeof Thread>[0]>;
 
-function renderThread(options: Options = {}) {
+function renderThread(options: Options = {}, problems: PlacedProblem[] = []) {
   const props = {
     thread: thread(),
     drafts: [] as Draft[],
@@ -50,7 +53,11 @@ function renderThread(options: Options = {}) {
     now: NOW,
     ...options,
   };
-  render(<Thread {...props} />);
+  render(
+    <WithProblems value={{ problems }}>
+      <Thread {...props} />
+    </WithProblems>,
+  );
   return props;
 }
 
@@ -240,5 +247,62 @@ describe('Thread: pending reply drafts', () => {
     expect(onDeleteDraft).toHaveBeenCalledWith(7);
     expect((await screen.findByRole('alert')).textContent).toContain('Gone wrong');
     expect(screen.getByText('Old text')).toBeTruthy();
+  });
+});
+
+describe('Thread: a bot thread that is a possible problem', () => {
+  const botProblem = problem('T1', 'bug', line('src/loan.ts', 12), 'F1.S1', {
+    threadId: 'T1',
+    sources: ['CodeRabbit', 'golangci-lint'],
+  });
+
+  it('a bot thread shows its level and the mark buttons, and no second card', () => {
+    renderThread({ thread: thread({ bot: true }) }, [botProblem]);
+    const section = screen.getByRole('region', { name: 'Thread on src/loan.ts' });
+    const head = section.querySelector('.thread-head') as HTMLElement;
+    expect(within(head).getByText('Likely bug')).toBeTruthy();
+    expect(within(head).getByText('CodeRabbit')).toBeTruthy();
+    expect(within(head).getByText('golangci-lint')).toBeTruthy();
+    const real = within(head).getByRole('button', { name: 'Real problem' });
+    const not = within(head).getByRole('button', { name: 'Not a problem' });
+    expect(real.getAttribute('aria-pressed')).toBe('false');
+    expect(not.getAttribute('aria-pressed')).toBe('false');
+    fireEvent.click(real);
+    expect(real.getAttribute('aria-pressed')).toBe('true');
+    // No problem card next to the thread.
+    expect(document.querySelector('.problem-card')).toBeNull();
+    // The comments stay.
+    expect(screen.getAllByRole('article')).toHaveLength(2);
+  });
+
+  it('read-only: the level and sources, but no mark buttons', () => {
+    renderThread({ thread: thread({ bot: true }), readOnly: true }, [botProblem]);
+    expect(screen.getByText('Likely bug')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Real problem' })).toBeNull();
+  });
+
+  it('a thread that is no problem has no level', () => {
+    renderThread({}, [{ ...botProblem, threadId: 'T2' }]);
+    expect(screen.queryByText('Likely bug')).toBeNull();
+    expect(document.querySelector('.thread-head')).toBeNull();
+  });
+
+  it('marked "Not a problem", it folds to one line; a click opens it', () => {
+    renderThread({ thread: thread({ bot: true }) }, [botProblem]);
+    fireEvent.click(screen.getByRole('button', { name: 'Not a problem' }));
+    const folded = screen.getByRole('button', { name: `Not a problem · ${botProblem.title}` });
+    expect(screen.queryAllByRole('article')).toHaveLength(0);
+    expect(screen.queryByRole('button', { name: 'Reply' })).toBeNull();
+
+    fireEvent.click(folded);
+    expect(screen.getAllByRole('article')).toHaveLength(2);
+    const not = screen.getByRole('button', { name: 'Not a problem' });
+    expect(not.getAttribute('aria-pressed')).toBe('true');
+    // Taking the mark away keeps it open; marking it again folds it again.
+    fireEvent.click(not);
+    fireEvent.click(screen.getByRole('button', { name: 'Not a problem' }));
+    expect(
+      screen.getByRole('button', { name: `Not a problem · ${botProblem.title}` }),
+    ).toBeTruthy();
   });
 });

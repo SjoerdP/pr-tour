@@ -41,6 +41,14 @@ export async function ghGraphql<T>(run: Runner, query: string, fields: string[])
   return response.data as T;
 }
 
+/** The owner and name of `repo` (`owner/name`); throws `InvalidRepoError` for anything else. */
+export function splitRepo(repo: string): { owner: string; name: string } {
+  const match = REPO.exec(repo);
+  if (!match) throw new InvalidRepoError(repo);
+  const [, owner = '', name = ''] = match;
+  return { owner, name };
+}
+
 /**
  * Run a query that takes `$owner`, `$name` and `$number` for a PR of `repo` (`owner/name`).
  * `fields` adds more variables. A repo or PR GitHub cannot resolve throws `PrNotFoundError`.
@@ -52,9 +60,7 @@ export async function prGraphql<T>(
   query: string,
   fields: string[] = [],
 ): Promise<T> {
-  const match = REPO.exec(repo);
-  if (!match) throw new InvalidRepoError(repo);
-  const [, owner = '', name = ''] = match;
+  const { owner, name } = splitRepo(repo);
   try {
     // `-f` passes strings as-is; `-F` would read a value starting with "@" as a file.
     return await ghGraphql<T>(run, query, [

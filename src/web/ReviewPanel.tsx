@@ -1,9 +1,13 @@
-import { useEffect, useId, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState, type ReactNode } from 'react';
+import type { PlacedProblem } from '../shared/problems.js';
 import { isOlderDraft, type Draft, type ReviewEvent, type ReviewThread } from '../shared/review.js';
 import type { Tour } from '../shared/tour.js';
 import type { RevealPlace } from './code-lines.js';
 import { errorText } from './errors.js';
 import { homeAt, homeFile, homeTitle, unseenForReview } from './homes.js';
+import { LevelChip } from './ProblemCard.js';
+import { useProblemsContext } from './ProblemsContext.js';
+import { safeHref } from './safe-href.js';
 import { OLDER_DRAFT_NOTICE } from './Thread.js';
 import type { ReviewState } from './useReview.js';
 
@@ -63,10 +67,62 @@ function preview(text: string): string {
   return first.length > 80 ? `${first.slice(0, 79)}…` : first;
 }
 
+/** "3 possible problems are not marked", "1 possible problem is not marked". */
+function unmarkedText(n: number): string {
+  return n === 1 ? '1 possible problem is not marked' : `${n} possible problems are not marked`;
+}
+
+/** "You marked 1 as a real problem", "You marked 2 as real problems". */
+function realText(n: number): string {
+  return n === 1 ? 'You marked 1 as a real problem' : `You marked ${n} as real problems`;
+}
+
+/**
+ * A problem has a place to go to: its home, or a line of the PR on the head side when no
+ * home holds it.
+ */
+function canGoTo(problem: PlacedProblem): boolean {
+  return problem.homeId !== null || (problem.at.kind === 'line' && problem.at.side === 'new');
+}
+
+/**
+ * One possible problem in the approve reminder: its level, its title and "Go to it". A
+ * PR-wide problem has no place to go: its title links to its page (a CI run) instead.
+ */
+function ProblemRow({
+  problem,
+  onGoTo,
+}: {
+  problem: PlacedProblem;
+  onGoTo?: (problem: PlacedProblem) => void;
+}): ReactNode {
+  const href = problem.at.kind === 'pr' && problem.url !== undefined ? safeHref(problem.url) : null;
+  return (
+    <li>
+      <LevelChip level={problem.level} />{' '}
+      {href ? (
+        <a href={href} target="_blank" rel="noreferrer">
+          {problem.title}
+        </a>
+      ) : (
+        problem.title
+      )}
+      {onGoTo && canGoTo(problem) && (
+        <>
+          {' '}
+          <button type="button" className="link-button" onClick={() => onGoTo(problem)}>
+            Go to it
+          </button>
+        </>
+      )}
+    </li>
+  );
+}
+
 /**
  * The review: pending drafts and unresolved threads (each opens its place), a summary, the
- * event, and Submit. Approving with unseen items first lists them. Nothing reaches GitHub
- * before Submit.
+ * event, and Submit. Approving with possible problems that are not marked, problems marked
+ * real, or unseen items first lists them. Nothing reaches GitHub before Submit.
  */
 export function ReviewPanel({
   review,
@@ -88,7 +144,13 @@ export function ReviewPanel({
   const own = review.viewerIsAuthor;
   // On their own PR the author can only comment, whatever was picked before.
   const chosen: ReviewEvent = own ? 'COMMENT' : event;
-  const unseen = chosen === 'APPROVE' ? unseenForReview(tour, isSeen) : [];
+  const approving = chosen === 'APPROVE';
+  const unseen = approving ? unseenForReview(tour, isSeen) : [];
+  // Worst first, as the context keeps them. "Not a problem" ones are left out.
+  const { problems, markOf, onGoTo } = useProblemsContext();
+  const unmarked = approving ? problems.filter((p) => markOf(p.key) === undefined) : [];
+  const real = approving ? problems.filter((p) => markOf(p.key) === 'real') : [];
+  const remind = unseen.length > 0 || unmarked.length > 0 || real.length > 0;
   const { drafts, submitError } = review;
   // "Review sent" is about the last review: a new draft starts the next one.
   const [draftCount, setDraftCount] = useState(drafts.length);
@@ -316,6 +378,28 @@ export function ReviewPanel({
         )}
       </fieldset>
 
+      {unmarked.length > 0 && (
+        <section className="approve-reminder" aria-label="Possible problems not marked">
+          <p>{unmarkedText(unmarked.length)}</p>
+          <ul className="approve-problems">
+            {unmarked.map((p) => (
+              <ProblemRow key={p.key} problem={p} onGoTo={onGoTo} />
+            ))}
+          </ul>
+        </section>
+      )}
+
+      {real.length > 0 && (
+        <section className="approve-reminder" aria-label="Problems you marked real">
+          <p>{realText(real.length)}</p>
+          <ul className="approve-problems">
+            {real.map((p) => (
+              <ProblemRow key={p.key} problem={p} onGoTo={onGoTo} />
+            ))}
+          </ul>
+        </section>
+      )}
+
       {unseen.length > 0 && (
         <section className="approve-reminder" aria-label="Not seen yet">
           <p>
@@ -346,7 +430,7 @@ export function ReviewPanel({
           disabled={review.submitting || missing !== null}
           onClick={() => void submit()}
         >
-          {unseen.length > 0 ? 'Approve anyway' : 'Submit review'}
+          {remind ? 'Approve anyway' : 'Submit review'}
         </button>
         {missing !== null && sent === null && <span className="muted">{missing}</span>}
       </div>

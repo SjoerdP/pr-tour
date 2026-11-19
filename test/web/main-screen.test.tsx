@@ -16,6 +16,7 @@ vi.mock('../../src/web/api.js', () => ({
   buildTour: vi.fn(),
   markSeen: vi.fn(),
   getReview: vi.fn(),
+  getProblems: () => new Promise(() => {}),
 }));
 
 vi.mock('../../src/web/CodeView.js', () => ({
@@ -429,6 +430,7 @@ function reviewThread(overrides: Partial<ReviewThread> = {}): ReviewThread {
     startLine: null,
     outdated: false,
     resolved: false,
+    bot: false,
     comments: [
       {
         id: 'c1',

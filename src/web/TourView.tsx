@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import type { PlacedProblem } from '../shared/problems.js';
 import { BuildStatus } from './BuildStatus.js';
 import type { Reveal, RevealPlace } from './code-lines.js';
 import { ComposerMemory, ComposerMemoryContext } from './composer-memory.js';
@@ -12,11 +13,14 @@ import {
 import { MapWithPeek, type PeekState } from './MapWithPeek.js';
 import { Outline } from './Outline.js';
 import { Overview } from './Overview.js';
-import { StepPane } from './StepPane.js';
+import type { VisitAt } from './PossibleProblems.js';
+import { ProblemsContext } from './ProblemsContext.js';
+import { codeTarget, StepPane } from './StepPane.js';
 import { TopBar } from './TopBar.js';
 import { useAboutPanel } from './useAboutPanel.js';
 import { withKey } from './shortcuts.js';
 import { useKeys } from './useKeys.js';
+import { useProblems } from './useProblems.js';
 import { useReview } from './useReview.js';
 import { useSeenMarks } from './useSeenMarks.js';
 import { useTourBuild } from './useTourBuild.js';
@@ -97,6 +101,20 @@ export function TourView({ repo, pr }: { repo: string; pr: number }) {
   const reviewOpen = tour !== null && reviewChoice;
   // One review for the PR, shared by everything that shows or adds comments.
   const review = useReview(repo, pr);
+  // The tour's possible problems, shared by every view that shows them.
+  const problems = useProblems(repo, pr, tour, review.threads);
+  // "Go to the line" in a pin's popup. The outline's pins and the review panel's "Go to it"
+  // move the tour there; the pins in the map panel and on the overview visit it, with the way
+  // back. Read through a ref, so the values below change only when the problems do.
+  const problemMove = useRef<(p: PlacedProblem, from: 'move' | 'main') => void>(() => {});
+  const moveProblems = useMemo(
+    () => ({ ...problems, onGoTo: (p: PlacedProblem) => problemMove.current(p, 'move') }),
+    [problems],
+  );
+  const mainProblems = useMemo(
+    () => ({ ...problems, onGoTo: (p: PlacedProblem) => problemMove.current(p, 'main') }),
+    [problems],
+  );
   // What the reviewer is writing, kept across moves through this PR's tour.
   const memory = useMemo(() => new ComposerMemory(`${repo}#${pr}`), [repo, pr]);
   // A rebuild swaps in a tour on another head: load the review again for it.
@@ -145,6 +163,16 @@ export function TourView({ repo, pr }: { repo: string; pr: number }) {
     setOverviewOpen(false);
     revealSeq.current += 1;
     setReveal(at === null ? null : { at, seq: revealSeq.current });
+  }
+
+  /**
+   * Shows a file of the PR at a line, from the current home: a possible problem on a line no
+   * home holds. The overview and the map close, as for a jump from the review panel.
+   */
+  function showLine(file: string, line: number) {
+    closeOverview();
+    setJump({ file, line });
+    show({ path: file, side: 'new', line });
   }
 
   /** Follows a traced call, or goes back from one: no place to bring into view. */
@@ -238,9 +266,10 @@ export function TourView({ repo, pr }: { repo: string; pr: number }) {
 
   /**
    * "Open in tour" from the map panel or the overview: shows that home without marking
-   * anything, and keeps the way back. A visit during a visit keeps the first place.
+   * anything, and keeps the way back. A visit during a visit keeps the first place. `at`
+   * shows a line there (a possible problem's), as the review panel's jumps do.
    */
-  function visitHome(homeId: string, back: Visit['back']) {
+  function visitHome(homeId: string, back: Visit['back'], at?: VisitAt) {
     const place = visit?.place ?? current;
     if (place === null) return;
     setVisit({
@@ -253,7 +282,12 @@ export function TourView({ repo, pr }: { repo: string; pr: number }) {
     setJump(null);
     // A peek of a calling line opens the step at that line, as the arrow used to.
     const home = homes.find((h) => h.id === homeId);
-    if (peekShown?.stepId === homeId && peekShown.line !== null && home?.kind === 'step') {
+    if (at && home) {
+      // A line in the home's own file shows in its code; one in another file is a jump there.
+      if (codeTarget(home).file !== at.file) setJump(at);
+      revealSeq.current += 1;
+      setReveal({ at: { path: at.file, side: 'new', line: at.line }, seq: revealSeq.current });
+    } else if (peekShown?.stepId === homeId && peekShown.line !== null && home?.kind === 'step') {
       revealSeq.current += 1;
       setReveal({
         at: { path: home.step.file, side: 'new', line: peekShown.line },
@@ -269,6 +303,29 @@ export function TourView({ repo, pr }: { repo: string; pr: number }) {
     setPeek(null);
     paneFocus.current = true;
   }
+
+  /**
+   * Opens a problem's home at its line. From the map panel or the overview it is a visit; from
+   * the outline or the review panel (or with neither open) a move. A problem on a line no
+   * home holds shows its file at the line.
+   */
+  function goToProblem(p: PlacedProblem, from: 'move' | 'main') {
+    const at = p.at.kind === 'line' ? p.at : null;
+    if (p.homeId === null) {
+      if (at?.side === 'new') showLine(at.file, at.line);
+      return;
+    }
+    if (from === 'main' && (mapShown || overviewOpen)) {
+      const line = at?.side === 'new' ? { file: at.file, line: at.line } : undefined;
+      visitHome(p.homeId, mapShown ? 'map' : 'overview', line);
+      return;
+    }
+    closeOverview();
+    openHome(p.homeId, at ? { path: at.file, side: at.side, line: at.line } : undefined);
+  }
+  useEffect(() => {
+    problemMove.current = goToProblem;
+  });
 
   /** Ends a visit where it began: the old place, the map or overview, the same peek. */
   function goBack() {
@@ -430,178 +487,186 @@ export function TourView({ repo, pr }: { repo: string; pr: number }) {
 
   return (
     <ComposerMemoryContext.Provider value={memory}>
-      {/* An open review panel takes a column on wide windows: see .review-open in the CSS. */}
-      <div className={reviewOpen ? 'tour-app review-open' : 'tour-app'}>
-        <TopBar
-          pr={summary}
-          tour={tour}
-          isSeen={isSeen}
-          overviewOpen={tour !== null && overviewOpen}
-          onOverview={toggleOverview}
-          aboutOpen={about.open}
-          onAboutChange={about.setOpen}
-          reviewOpen={reviewOpen}
-          onReviewChange={setReviewChoice}
-          review={review}
-          onOpenHome={openHome}
-          onJump={(file, line, at) => {
-            setJump({ file, line });
-            show(at ?? null);
-          }}
-        />
+      <ProblemsContext.Provider value={mainProblems}>
+        {/* An open review panel takes a column on wide windows: see .review-open in the CSS. */}
+        <div className={reviewOpen ? 'tour-app review-open' : 'tour-app'}>
+          {/* The review panel's "Go to it" moves the tour, as it does for unseen items. */}
+          <ProblemsContext.Provider value={moveProblems}>
+            <TopBar
+              pr={summary}
+              tour={tour}
+              isSeen={isSeen}
+              overviewOpen={tour !== null && overviewOpen}
+              onOverview={toggleOverview}
+              aboutOpen={about.open}
+              onAboutChange={about.setOpen}
+              reviewOpen={reviewOpen}
+              onReviewChange={setReviewChoice}
+              review={review}
+              onOpenHome={openHome}
+              onJump={(file, line, at) => {
+                setJump({ file, line });
+                show(at ?? null);
+              }}
+            />
+          </ProblemsContext.Provider>
 
-        {notices && (
-          <div className="notices">
-            {tour && outdated && (
-              <div className="banner">
-                <span>New commits since this tour was built</span>
-                <button
-                  type="button"
-                  onClick={startBuild}
-                  // While the replace confirm shows, its own Rebuild is the way on.
-                  disabled={
-                    build.state === 'starting' ||
-                    build.state === 'running' ||
-                    build.state === 'confirm'
-                  }
-                >
-                  Rebuild tour
-                </button>
-              </div>
-            )}
-            {tour ? (
-              build.state !== 'idle' && (
-                <BuildStatus
-                  build={build}
-                  onRetry={startBuild}
-                  onConfirm={confirmReplace}
-                  onCancel={cancelReplace}
-                />
-              )
-            ) : (
-              <section className="build-panel">
-                <p>There is no tour for this pull request yet.</p>
-                {build.state === 'idle' ? (
-                  <button type="button" className="primary" onClick={startBuild}>
-                    Build tour
+          {notices && (
+            <div className="notices">
+              {tour && outdated && (
+                <div className="banner">
+                  <span>New commits since this tour was built</span>
+                  <button
+                    type="button"
+                    onClick={startBuild}
+                    // While the replace confirm shows, its own Rebuild is the way on.
+                    disabled={
+                      build.state === 'starting' ||
+                      build.state === 'running' ||
+                      build.state === 'confirm'
+                    }
+                  >
+                    Rebuild tour
                   </button>
-                ) : (
+                </div>
+              )}
+              {tour ? (
+                build.state !== 'idle' && (
                   <BuildStatus
                     build={build}
                     onRetry={startBuild}
                     onConfirm={confirmReplace}
                     onCancel={cancelReplace}
                   />
-                )}
-              </section>
-            )}
-            {seenError && (
-              <p className="error seen-error" role="status">
-                {seenError}
-              </p>
-            )}
-          </div>
-        )}
-
-        {tour && current !== null && currentHome && (
-          <div className="tour-body">
-            <Outline
-              tour={tour}
-              currentId={current}
-              isSeen={isSeen}
-              onSelect={(homeId) => {
-                closeOverview();
-                goTo(homeId);
-              }}
-              previousFlow={nav.previousFlow}
-              nextFlow={nav.nextFlow}
-            />
-            <main className="tour-main">
-              {/* Kept, hidden, during a visit from it: it comes back as it was. */}
-              {(overviewOpen || visit?.back === 'overview') && (
-                <Overview
-                  regionRef={overviewPanel}
-                  hidden={!overviewOpen}
-                  tour={tour}
-                  title={summary.title}
-                  started={started}
-                  currentId={started ? current : null}
-                  onStart={closeOverview}
-                  peek={overviewOpen ? peek : (visit?.peek ?? null)}
-                  onPeek={changePeek}
-                  peekProps={{ ...peekProps, tour, keys: overviewOpen && peekShown !== null }}
-                  onVisit={(homeId) => visitHome(homeId, 'overview')}
-                />
-              )}
-              {!overviewOpen && (
-                <StepPane
-                  repo={repo}
-                  pr={pr}
-                  tour={tour}
-                  home={currentHome}
-                  jump={jump}
-                  reveal={reveal}
-                  onJump={followCall}
-                  onShowLine={(file, line) => follow({ file, line })}
-                  onRevealLine={(file, line) =>
-                    openHome(currentHome.id, { path: file, side: 'new', line })
-                  }
-                  onBack={() => follow(null)}
-                  onOpenHome={goTo}
-                  onOpenMap={openMap}
-                  mapButtonRef={mapButton}
-                  paneRef={stepPane}
-                  nav={nav}
-                  review={review}
-                  // The map covers the step: n / p / f are the peek's then.
-                  codeKeys={!mapShown}
-                  {...(visit && {
-                    back: {
-                      label: visit.back === 'map' ? 'Back to the map' : 'Back to the overview',
-                      go: goBack,
-                      // The same order as the Esc key above: a followed call goes first.
-                      byEsc: !peekShown && !mapShown && !jump,
-                    },
-                  })}
-                />
-              )}
-              {/* Kept, hidden, during a visit from it: it comes back as it was. */}
-              {panelFlow && (
-                <section
-                  className="flow-map-panel"
-                  role="dialog"
-                  aria-modal="true"
-                  tabIndex={-1}
-                  ref={mapPanel}
-                  aria-label={`Flow map: ${panelFlow.title}`}
-                  hidden={!mapShown}
-                >
-                  <div className="flow-map-panel-head">
-                    <h2 className="flow-map-panel-title">Flow map: {panelFlow.title}</h2>
-                    <button type="button" onClick={closeMap} title={withKey('Close', 'Esc')}>
-                      Close
+                )
+              ) : (
+                <section className="build-panel">
+                  <p>There is no tour for this pull request yet.</p>
+                  {build.state === 'idle' ? (
+                    <button type="button" className="primary" onClick={startBuild}>
+                      Build tour
                     </button>
-                  </div>
-                  <MapWithPeek
-                    place="panel"
-                    flow={panelFlow}
-                    currentId={mapShown ? current : (visit?.place ?? current)}
-                    peek={mapShown ? peek : (visit?.peek ?? null)}
-                    peekProps={{
-                      ...peekProps,
-                      tour,
-                      keys: mapShown && peekShown !== null,
-                      onOpenInTour: (stepId) => visitHome(stepId, 'map'),
-                    }}
-                    onPeek={changePeek}
-                    shown={mapShown}
-                  />
+                  ) : (
+                    <BuildStatus
+                      build={build}
+                      onRetry={startBuild}
+                      onConfirm={confirmReplace}
+                      onCancel={cancelReplace}
+                    />
+                  )}
                 </section>
               )}
-            </main>
-          </div>
-        )}
-      </div>
+              {seenError && (
+                <p className="error seen-error" role="status">
+                  {seenError}
+                </p>
+              )}
+            </div>
+          )}
+
+          {tour && current !== null && currentHome && (
+            <div className="tour-body">
+              <ProblemsContext.Provider value={moveProblems}>
+                <Outline
+                  tour={tour}
+                  currentId={current}
+                  isSeen={isSeen}
+                  onSelect={(homeId) => {
+                    closeOverview();
+                    goTo(homeId);
+                  }}
+                  previousFlow={nav.previousFlow}
+                  nextFlow={nav.nextFlow}
+                />
+              </ProblemsContext.Provider>
+              <main className="tour-main">
+                {/* Kept, hidden, during a visit from it: it comes back as it was. */}
+                {(overviewOpen || visit?.back === 'overview') && (
+                  <Overview
+                    regionRef={overviewPanel}
+                    hidden={!overviewOpen}
+                    tour={tour}
+                    title={summary.title}
+                    started={started}
+                    currentId={started ? current : null}
+                    onStart={closeOverview}
+                    peek={overviewOpen ? peek : (visit?.peek ?? null)}
+                    onPeek={changePeek}
+                    peekProps={{ ...peekProps, tour, keys: overviewOpen && peekShown !== null }}
+                    onVisit={(homeId, at) => visitHome(homeId, 'overview', at)}
+                    onShowLine={showLine}
+                  />
+                )}
+                {!overviewOpen && (
+                  <StepPane
+                    repo={repo}
+                    pr={pr}
+                    tour={tour}
+                    home={currentHome}
+                    jump={jump}
+                    reveal={reveal}
+                    onJump={followCall}
+                    onShowLine={(file, line) => follow({ file, line })}
+                    onRevealLine={(file, line) =>
+                      openHome(currentHome.id, { path: file, side: 'new', line })
+                    }
+                    onBack={() => follow(null)}
+                    onOpenHome={goTo}
+                    onOpenMap={openMap}
+                    mapButtonRef={mapButton}
+                    paneRef={stepPane}
+                    nav={nav}
+                    review={review}
+                    // The map covers the step: n / p / f are the peek's then.
+                    codeKeys={!mapShown}
+                    {...(visit && {
+                      back: {
+                        label: visit.back === 'map' ? 'Back to the map' : 'Back to the overview',
+                        go: goBack,
+                        // The same order as the Esc key above: a followed call goes first.
+                        byEsc: !peekShown && !mapShown && !jump,
+                      },
+                    })}
+                  />
+                )}
+                {/* Kept, hidden, during a visit from it: it comes back as it was. */}
+                {panelFlow && (
+                  <section
+                    className="flow-map-panel"
+                    role="dialog"
+                    aria-modal="true"
+                    tabIndex={-1}
+                    ref={mapPanel}
+                    aria-label={`Flow map: ${panelFlow.title}`}
+                    hidden={!mapShown}
+                  >
+                    <div className="flow-map-panel-head">
+                      <h2 className="flow-map-panel-title">Flow map: {panelFlow.title}</h2>
+                      <button type="button" onClick={closeMap} title={withKey('Close', 'Esc')}>
+                        Close
+                      </button>
+                    </div>
+                    <MapWithPeek
+                      place="panel"
+                      flow={panelFlow}
+                      currentId={mapShown ? current : (visit?.place ?? current)}
+                      peek={mapShown ? peek : (visit?.peek ?? null)}
+                      peekProps={{
+                        ...peekProps,
+                        tour,
+                        keys: mapShown && peekShown !== null,
+                        onOpenInTour: (stepId) => visitHome(stepId, 'map'),
+                      }}
+                      onPeek={changePeek}
+                      shown={mapShown}
+                    />
+                  </section>
+                )}
+              </main>
+            </div>
+          )}
+        </div>
+      </ProblemsContext.Provider>
     </ComposerMemoryContext.Provider>
   );
 }

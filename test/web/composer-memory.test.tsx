@@ -17,6 +17,7 @@ vi.mock('../../src/web/api.js', async (importOriginal) => ({
   buildTour: vi.fn(),
   markSeen: vi.fn(),
   getReview: vi.fn(),
+  getProblems: () => new Promise(() => {}),
   getFile: vi.fn(),
   getDiff: vi.fn(),
   addDraft: vi.fn(),
@@ -69,6 +70,7 @@ const THREAD: ReviewThread = {
   startLine: null,
   outdated: false,
   resolved: false,
+  bot: false,
   comments: [
     {
       id: 'c1',
